@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.3";
+const APP_VERSION = "1.6.4";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -5873,6 +5873,9 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
   const subStats  = st.subStats  || {};
   const subLevels = st.subLevels || {};
+  const subMuscleLevels = Object.fromEntries(
+    Object.entries(subStats).map(([id, xp]) => [id, getMuscleLevel(xp)])
+  );
 
   return (
     <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
@@ -6020,7 +6023,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
         {/* ── BODY FIGURE ── */}
         <div style={{ marginBottom: 16, padding: "0 8px" }}>
-          <BodyFigure levels={st.levels} subLevels={subStats} gender={st.gender} highlight={selectedMuscle} />
+          <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
         {/* ── STATS ── */}
