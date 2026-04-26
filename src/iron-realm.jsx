@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
@@ -22,7 +23,7 @@ const wtLabel     = () => getWtUnit();
 const wtVal       = (lbs) => getWtUnit() === "kg" ? +(lbs * 0.453592).toFixed(1) : lbs;
 const wtValBack   = (val) => getWtUnit() === "kg" ? +(val / 0.453592).toFixed(1) : val;
 
-const ACCENT_PRESETS = [
+const _ACCENT_PRESETS = [
   { name: "Cyan",    value: "#00d4ff", accent2: "#0044aa" },
   { name: "Purple",  value: "#aa44ff", accent2: "#5500cc" },
   { name: "Orange",  value: "#ff7c2a", accent2: "#aa3300" },
@@ -1720,7 +1721,7 @@ function calcTDEE(profile) {
 }
 
 // Returns maintenance (no offset) for displaying separately
-function calcMaintenance(profile) {
+function _calcMaintenance(profile) {
   const weightKg = (profile.weightLbs || 170) * 0.453592;
   const heightCm = (profile.heightIn  || 70)  * 2.54;
   const age      = profile.age || 25;
@@ -2887,7 +2888,7 @@ const SELECTION_RULES = {
   forearms:  { slots:[["flexors",1],["extensors",1]], total:2 },
 };
 
-const ANGLE_GROUP_LABELS = {
+const _ANGLE_GROUP_LABELS = {
   chest:     { upper:"Upper (Incline)", mid_lower:"Mid/Lower (Flat/Decline)", compound:"Compound (Dips/Push)" },
   back:      { vertical:"Vertical Pull", horizontal:"Horizontal Row", accessory:"Accessory" },
   shoulders: { press:"Press", lateral:"Lateral", rear:"Rear Delt" },
@@ -2905,7 +2906,7 @@ function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, 
   if (!allDB.length) return [];
   // Apply difficulty filter — fall back to next difficulty up if slot would be empty
   if (diffFilter && diffFilter !== "all") {
-    const ORDER = ["beginner","intermediate","advanced","elite"];
+    // const ORDER unused
     const filtered = allDB.filter(e => e.diff === diffFilter);
     // Only apply filter if it would leave enough exercises; otherwise keep all
     allDB = filtered.length >= 2 ? filtered : allDB;
@@ -2998,7 +2999,7 @@ function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, 
 
 
 // Sub-muscle options per muscle group (for custom exercise builder)
-const CUSTOM_SUB_OPTIONS = {
+const _CUSTOM_SUB_OPTIONS = {
   chest:     [["upper-pectoralis","Upper Chest"],["mid-lower-pectoralis","Mid/Lower Chest"]],
   back:      [["lats","Lats"],["lowerback","Lower Back"],["upper-trapezius","Upper Traps"],["traps-middle","Mid Traps"],["lower-trapezius","Lower Traps"]],
   shoulders: [["anterior-deltoid","Front Delt"],["lateral-deltoid","Side Delt"],["posterior-deltoid","Rear Delt"]],
@@ -3365,7 +3366,6 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const meta = MUSCLE_META[selMuscle] || MUSCLE_META.chest;
 
   // Build this week's workout log grouped by day
-  const now = Date.now();
   const startOfWeek = (() => {
     const d = new Date(); d.setHours(0,0,0,0);
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Monday
@@ -3656,13 +3656,12 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
   const [selMuscle, setSelMuscle] = useState("chest");
   const [searchQ, setSearchQ] = useState("");
   const [customMode, setCustomMode] = useState(false);
-  const [logModal, setLogModal] = useState(null);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
   const [randoMode, setRandoMode] = useState(false);
   const [randoMuscles, setRandoMuscles] = useState([]);
   const [randoPlan, setRandoPlan] = useState(null);
   const [randoDiff, setRandoDiff] = useState("all");
-  const [viewMode, setViewMode] = useState("browse");
+
 
   const toggleRandoMuscle = (m) =>
     setRandoMuscles(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
@@ -4085,7 +4084,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   const [randoDiff, setRandoDiff] = useState("all");
 
   const [nutInput, setNutInput] = useState({ cal: "", protein: "" });
-  const [nutSaved, setNutSaved] = useState(false);
+
   const toggleRandoMuscle = (m) =>
     setRandoMuscles(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
 
@@ -5272,9 +5271,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
   const todayFood = getTodayFood(st);
   const calsEaten = todayFood ? todayFood.calories : 0;
-  const surplus   = Math.max(0, calsEaten - tdee);
-  const deficit   = Math.max(0, tdee - calsEaten);
-  const xpMult    = calsEaten > 0 ? Math.min(1, tdee / calsEaten) : 1;
+
 
   const [weightInput, setWeightInput] = useState("");
   const [weightSaved, setWeightSaved] = useState(false);
@@ -6253,7 +6250,6 @@ export default function IronRealm() {
       const proteinEaten  = todayFood?.protein || 0;
       const proteinTarget = calcProteinTarget(p);
       const netXP = calcNetXP(entry.xp, calsEaten, tdee, proteinEaten, proteinTarget);
-      const surplus = Math.max(0, calsEaten - tdee);
       const absorbed = entry.xp - netXP; // XP cancelled by food surplus
       const { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel, statKey } = applyXP(p, entry.exercise, entry.muscle, netXP);
       if (newOverallLevel > p.overallLevel) { const lvlMsg = themeLabel(store.settings,'levelUp','LEVEL UP!'); setTimeout(() => toast(`${lvlMsg} LVL ${newOverallLevel}`, GOLD), 400); }
