@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.2";
+const APP_VERSION = "1.6.3";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -2555,38 +2555,26 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
     const parent = _ID_TO_MUSCLE[svgId];
     return (levels && parent && levels[parent]) || 1;
   };
+  const getRankColor = (lvl) => {
+    if (lvl < 2)  return "#e8eef8";   // untrained  — ice white
+    if (lvl < 6)  return "#4a7090";   // E-rank     — dark slate
+    if (lvl < 13) return "#00a8cc";   // D-rank     — dim cyan
+    if (lvl < 21) return "#00d4ff";   // C-rank     — full cyan (accent)
+    if (lvl < 31) return "#4466ff";   // B-rank     — electric blue
+    if (lvl < 51) return "#9944ff";   // A-rank     — violet
+    return "#e8c44a";                  // S-rank+    — gold
+  };
   const getColor = (svgId) => {
-    if (highlight === svgId) {
-      const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-             || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-             || ACCENT;
-      return c;
-    }
-    const lvl = getLevel(svgId);
-    const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-           || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-           || "#888";
-    const t = Math.min(1, (lvl - 1) / 30);
-    if (t < 0.05) return "#e8eef8";
-    if (t < 0.2)  return "#b8c8e0";
-    if (t < 0.4)  return c + "88";
-    if (t < 0.65) return c + "bb";
-    return c;
+    if (highlight === svgId) return ACCENT;
+    return getRankColor(getLevel(svgId));
   };
   const getGlow = (svgId) => {
-    if (highlight === svgId) {
-      const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-             || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-             || ACCENT;
-      return `drop-shadow(0 0 10px ${c}) drop-shadow(0 0 20px ${c}88)`;
-    }
+    if (highlight === svgId)
+      return `drop-shadow(0 0 10px ${ACCENT}) drop-shadow(0 0 20px ${ACCENT}88)`;
     const lvl = getLevel(svgId);
     if (lvl < 8) return null;
-    const t = Math.min(1, (lvl - 8) / 25);
-    const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-           || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-           || "#888";
-    return `drop-shadow(0 0 ${(3 + t * 7).toFixed(1)}px ${c})`;
+    const t = Math.min(1, (lvl - 8) / 30);
+    return `drop-shadow(0 0 ${(3 + t * 7).toFixed(1)}px ${getRankColor(lvl)})`;
   };
   const LINE = "#2a4a6a";
   const muscleGroups = _MUSCLE_PATHS[svgKey] || {};
