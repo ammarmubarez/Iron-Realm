@@ -1,6 +1,8 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
+const APP_VERSION = "1.6.4";
+
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
 const BG2     = "#070d1a";   // system panel dark
@@ -541,6 +543,8 @@ const EXERCISE_DB = {
     { name: "Low Cable Fly", angle: "Cable set at bottom",                diff: "beginner",     type: "strength",     primary: "chest",     svgTargets: ["upper-pectoralis","anterior-deltoid"] },
     { name: "High Cable Fly", angle: "Cable set at top",               diff: "beginner",     type: "strength",     primary: "chest",     svgTargets: ["mid-lower-pectoralis","anterior-deltoid"] },
     { name: "Smith Machine Bench Press",    diff: "intermediate", type: "strength",     primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid","lateral-head-triceps"] },
+    { name: "Converging Chest Press Machine", diff: "beginner",  type: "strength",     primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid","lateral-head-triceps"] },
+    { name: "Fly Machine",                  diff: "beginner",     type: "strength",     primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid"] },
     { name: "Landmine Press",               diff: "intermediate", type: "strength",     primary: "chest",     svgTargets: ["upper-pectoralis","anterior-deltoid","lateral-head-triceps"] },
     // ── CALISTHENICS ─────────────────────────────────────────────────────────
     { name: "Push-ups",                     diff: "beginner",     type: "calisthenics", primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid","lateral-head-triceps","medial-head-triceps"] },
@@ -588,6 +592,9 @@ const EXERCISE_DB = {
     { name: "Back Extension Machine", angle: "45° or 90°",       diff: "beginner",     type: "strength",     primary: "back",      svgTargets: ["lowerback","gluteus-maximus","medial-hamstrings"] },
     { name: "Back Extension (45°)", angle: "45°",         diff: "beginner",     type: "strength",     primary: "back",      svgTargets: ["lowerback","gluteus-maximus","lateral-hamstrings"] },
     { name: "Smith Machine Shrug",          diff: "beginner",     type: "strength",     primary: "back",      svgTargets: ["upper-trapezius","traps-middle"] },
+    { name: "Chest Supported Row Machine",  diff: "beginner",     type: "strength",     primary: "back",      svgTargets: ["traps-middle","lower-trapezius","posterior-deltoid","long-head-bicep"] },
+    { name: "Iso-Lateral Row Machine",      diff: "intermediate", type: "strength",     primary: "back",      svgTargets: ["lats","traps-middle","posterior-deltoid","long-head-bicep"] },
+    { name: "Lever Pullover Machine",       diff: "beginner",     type: "strength",     primary: "back",      svgTargets: ["lats","mid-lower-pectoralis","long-head-triceps"] },
     // ── CALISTHENICS ─────────────────────────────────────────────────────────
     { name: "Pull-ups",                     diff: "advanced",     type: "calisthenics", primary: "back",      svgTargets: ["lats","lower-trapezius","short-head-bicep","long-head-bicep","posterior-deltoid"] },
     { name: "Wide-Grip Pull-ups",           diff: "advanced",     type: "calisthenics", primary: "back",      svgTargets: ["lats","lower-trapezius","posterior-deltoid"] },
@@ -628,6 +635,9 @@ const EXERCISE_DB = {
     { name: "Cable Rear Delt Fly",          diff: "beginner",     type: "strength",     primary: "shoulders", svgTargets: ["posterior-deltoid","traps-middle"] },
     { name: "Pec Deck Reverse Fly",         diff: "beginner",     type: "strength",     primary: "shoulders", svgTargets: ["posterior-deltoid","traps-middle","lower-trapezius"] },
     { name: "Machine Lateral Raise",        diff: "beginner",     type: "strength",     primary: "shoulders", svgTargets: ["lateral-deltoid","upper-trapezius"] },
+    { name: "Deltoid Fly",                  diff: "beginner",     type: "strength",     primary: "shoulders", svgTargets: ["lateral-deltoid","posterior-deltoid","upper-trapezius"] },
+    { name: "Machine Rear Delt Fly",        diff: "beginner",     type: "strength",     primary: "shoulders", svgTargets: ["posterior-deltoid","traps-middle","lower-trapezius"] },
+    { name: "Machine Front Raise",          diff: "beginner",     type: "strength",     primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid"] },
     { name: "Smith Machine OHP",            diff: "intermediate", type: "strength",     primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","upper-trapezius","medial-head-triceps"] },
     { name: "Landmine Lateral Raise",       diff: "intermediate", type: "strength",     primary: "shoulders", svgTargets: ["lateral-deltoid","upper-trapezius"] },
     { name: "Landmine Press (Single)",      diff: "intermediate", type: "strength",     primary: "shoulders", svgTargets: ["anterior-deltoid","upper-pectoralis","lateral-head-triceps"] },
@@ -679,6 +689,10 @@ const EXERCISE_DB = {
     { name: "Adductor Machine",             diff: "beginner",     type: "strength",     primary: "legs",      svgTargets: ["inner-thigh","inner-quadricep"] },
     { name: "Abductor Machine",             diff: "beginner",     type: "strength",     primary: "legs",      svgTargets: ["gluteus-medius","inner-thigh"] },
     { name: "Pendulum Squat",               diff: "intermediate", type: "strength",     primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","inner-quadricep","gluteus-maximus"] },
+    { name: "Horizontal Leg Press",         diff: "intermediate", type: "strength",     primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","gluteus-maximus","medial-hamstrings"] },
+    { name: "V-Squat Machine",              diff: "intermediate", type: "strength",     primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","inner-quadricep","gluteus-maximus"] },
+    { name: "Seated Calf Raise Machine",    diff: "beginner",     type: "strength",     primary: "legs",      svgTargets: ["gastrocnemius"] },
+    { name: "Standing Calf Raise Machine",  diff: "beginner",     type: "strength",     primary: "legs",      svgTargets: ["gastrocnemius"] },
     // ── CALISTHENICS ─────────────────────────────────────────────────────────
     { name: "Bodyweight Squat",             diff: "beginner",     type: "calisthenics", primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","inner-quadricep","gluteus-maximus"] },
     { name: "Jump Squats",                  diff: "intermediate", type: "calisthenics", primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","inner-quadricep","gluteus-maximus","gastrocnemius"] },
@@ -748,6 +762,8 @@ const EXERCISE_DB = {
     { name: "Cable Curl",                   diff: "beginner",     type: "strength",     primary: "bicep",     svgTargets: ["short-head-bicep","long-head-bicep"] },
     { name: "High Cable Curl",              diff: "beginner",     type: "strength",     primary: "bicep",     svgTargets: ["long-head-bicep","short-head-bicep"] },
     { name: "Cable Hammer Curl",            diff: "beginner",     type: "strength",     primary: "bicep",     svgTargets: ["long-head-bicep","wrist-flexors"] },
+    { name: "Bicep Curl Machine",           diff: "beginner",     type: "strength",     primary: "bicep",     svgTargets: ["short-head-bicep","long-head-bicep"] },
+    { name: "Low Cable Curl",               diff: "beginner",     type: "strength",     primary: "bicep",     svgTargets: ["short-head-bicep","long-head-bicep"] },
     // ── CALISTHENICS ─────────────────────────────────────────────────────────
     { name: "Chin-ups",                     diff: "advanced",     type: "calisthenics", primary: "bicep",     svgTargets: ["short-head-bicep","long-head-bicep","lats","lower-trapezius"] },
     { name: "Inverted Row (Supinated)",     diff: "intermediate", type: "calisthenics", primary: "bicep",     svgTargets: ["short-head-bicep","long-head-bicep","lats","traps-middle"] },
@@ -774,6 +790,8 @@ const EXERCISE_DB = {
     { name: "Reverse Tricep Pushdown",      diff: "beginner",     type: "strength",     primary: "tricep",    svgTargets: ["medial-head-triceps","lateral-head-triceps"] },
     { name: "Overhead Cable Tricep Ext",    diff: "beginner",     type: "strength",     primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps"] },
     { name: "Tricep Machine Press",         diff: "beginner",     type: "strength",     primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps"] },
+    { name: "Assisted Dip Machine",         diff: "beginner",     type: "strength",     primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps","anterior-deltoid"] },
+    { name: "Cable Overhead Tricep Ext",    diff: "beginner",     type: "strength",     primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps"] },
     // ── CALISTHENICS ─────────────────────────────────────────────────────────
     { name: "Tricep Dips",                  diff: "intermediate", type: "calisthenics", primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps","anterior-deltoid"] },
     { name: "Bench Dips",                   diff: "beginner",     type: "calisthenics", primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps"] },
@@ -2537,38 +2555,26 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
     const parent = _ID_TO_MUSCLE[svgId];
     return (levels && parent && levels[parent]) || 1;
   };
+  const getRankColor = (lvl) => {
+    if (lvl < 2)  return "#e8eef8";   // untrained  — ice white
+    if (lvl < 6)  return "#4a7090";   // E-rank     — dark slate
+    if (lvl < 13) return "#00a8cc";   // D-rank     — dim cyan
+    if (lvl < 21) return "#00d4ff";   // C-rank     — full cyan (accent)
+    if (lvl < 31) return "#4466ff";   // B-rank     — electric blue
+    if (lvl < 51) return "#9944ff";   // A-rank     — violet
+    return "#e8c44a";                  // S-rank+    — gold
+  };
   const getColor = (svgId) => {
-    if (highlight === svgId) {
-      const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-             || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-             || ACCENT;
-      return c;
-    }
-    const lvl = getLevel(svgId);
-    const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-           || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-           || "#888";
-    const t = Math.min(1, (lvl - 1) / 30);
-    if (t < 0.05) return "#e8eef8";
-    if (t < 0.2)  return "#b8c8e0";
-    if (t < 0.4)  return c + "88";
-    if (t < 0.65) return c + "bb";
-    return c;
+    if (highlight === svgId) return ACCENT;
+    return getRankColor(getLevel(svgId));
   };
   const getGlow = (svgId) => {
-    if (highlight === svgId) {
-      const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-             || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-             || ACCENT;
-      return `drop-shadow(0 0 10px ${c}) drop-shadow(0 0 20px ${c}88)`;
-    }
+    if (highlight === svgId)
+      return `drop-shadow(0 0 10px ${ACCENT}) drop-shadow(0 0 20px ${ACCENT}88)`;
     const lvl = getLevel(svgId);
     if (lvl < 8) return null;
-    const t = Math.min(1, (lvl - 8) / 25);
-    const c = (MUSCLE_META[svgId] && MUSCLE_META[svgId].color)
-           || (MUSCLE_META[_ID_TO_MUSCLE[svgId]] && MUSCLE_META[_ID_TO_MUSCLE[svgId]].color)
-           || "#888";
-    return `drop-shadow(0 0 ${(3 + t * 7).toFixed(1)}px ${c})`;
+    const t = Math.min(1, (lvl - 8) / 30);
+    return `drop-shadow(0 0 ${(3 + t * 7).toFixed(1)}px ${getRankColor(lvl)})`;
   };
   const LINE = "#2a4a6a";
   const muscleGroups = _MUSCLE_PATHS[svgKey] || {};
@@ -3384,7 +3390,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const [tab, setTab] = useState("log"); // "log" | "browse"
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 0" }}>
@@ -3724,7 +3730,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(80px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>{themeLabel(settings,"database","DATABASE")}</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, letterSpacing: 2, marginBottom: 18 }}>EXERCISE COMPENDIUM</div>
 
@@ -4149,7 +4155,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 14px" }}>
@@ -4420,7 +4426,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                color: ACCENT, letterSpacing: 3 }}>{"// LOGGED · {DAYS[selDay]}"}</div>
+                color: ACCENT, letterSpacing: 3 }}>{`// LOGGED · ${DAYS[selDay]}`}</div>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11,
                 fontWeight: 700, color: GOLD }}>+{dayXP(selDay).toLocaleString()} XP</div>
             </div>
@@ -4439,6 +4445,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                           fontWeight: 700, color: TEXT }}>{w.exerciseName}</div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                           color: mm.color }}>{mm.name}</div>
+                        {w.exercise?.svgTargets?.length > 0 && (
+                          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
+                            color: MUTED, marginTop: 2 }}>
+                            {w.exercise.svgTargets.map(t => MUSCLE_META[t]?.name).filter(Boolean).join(" · ")}
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12,
@@ -4474,6 +4486,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 );
               })}
             </div>
+            <button onClick={() => setLogModal({ fromEmpty: true })} style={{
+              marginTop: 10, width: "100%",
+              background: `${ACCENT}0d`, border: `1px dashed ${ACCENT}44`, borderRadius: 8,
+              padding: "10px", cursor: "pointer",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2
+            }}>+ LOG ANOTHER EXERCISE</button>
           </div>
         )}
 
@@ -4799,7 +4817,7 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
   const allPrograms = [FREE_PROGRAM, ...programs];
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(80px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
         color: GOLD, letterSpacing: 2, marginBottom: 4 }}>PROGRAMS</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED,
@@ -5281,7 +5299,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
       {/* Background effects */}
       <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${ACCENT}0d 0%, transparent 60%)`, pointerEvents: "none" }} />
       {/* Shadow: void tendrils rising from the floor */}
@@ -5718,6 +5736,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <div style={{ background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8, padding: "12px 14px" }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 8 }}>{"// SYSTEM INFO"}</div>
               {[
+                ["Version", `v${APP_VERSION}`],
                 ["App", "IRON REALM"],
                 ["Exercises", "243"],
                 ["XP Science", "NSCA · Schoenfeld · Contreras"],
@@ -5854,9 +5873,12 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
   const subStats  = st.subStats  || {};
   const subLevels = st.subLevels || {};
+  const subMuscleLevels = Object.fromEntries(
+    Object.entries(subStats).map(([id, xp]) => [id, getMuscleLevel(xp)])
+  );
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* ── PROFILE SWITCHER ── */}
       <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -6001,7 +6023,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
         {/* ── BODY FIGURE ── */}
         <div style={{ marginBottom: 16, padding: "0 8px" }}>
-          <BodyFigure levels={st.levels} subLevels={subStats} gender={st.gender} highlight={selectedMuscle} />
+          <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
         {/* ── STATS ── */}
