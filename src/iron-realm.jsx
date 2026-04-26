@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.1";
+const APP_VERSION = "1.6.2";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -4438,7 +4438,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                color: ACCENT, letterSpacing: 3 }}>{"// LOGGED · {DAYS[selDay]}"}</div>
+                color: ACCENT, letterSpacing: 3 }}>{`// LOGGED · ${DAYS[selDay]}`}</div>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11,
                 fontWeight: 700, color: GOLD }}>+{dayXP(selDay).toLocaleString()} XP</div>
             </div>
@@ -4457,6 +4457,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                           fontWeight: 700, color: TEXT }}>{w.exerciseName}</div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                           color: mm.color }}>{mm.name}</div>
+                        {w.exercise?.svgTargets?.length > 0 && (
+                          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
+                            color: MUTED, marginTop: 2 }}>
+                            {w.exercise.svgTargets.map(t => MUSCLE_META[t]?.name).filter(Boolean).join(" · ")}
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12,
