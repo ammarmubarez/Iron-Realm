@@ -3384,7 +3384,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const [tab, setTab] = useState("log"); // "log" | "browse"
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 80px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 0" }}>
@@ -3724,7 +3724,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px 80px", paddingTop: "20px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(80px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>{themeLabel(settings,"database","DATABASE")}</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, letterSpacing: 2, marginBottom: 18 }}>EXERCISE COMPENDIUM</div>
 
@@ -4149,7 +4149,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 80px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 14px" }}>
@@ -4799,7 +4799,7 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
   const allPrograms = [FREE_PROGRAM, ...programs];
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px 80px", paddingTop: "20px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(80px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
         color: GOLD, letterSpacing: 2, marginBottom: 4 }}>PROGRAMS</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED,
@@ -5281,7 +5281,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 80px", position: "relative" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
       {/* Background effects */}
       <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${ACCENT}0d 0%, transparent 60%)`, pointerEvents: "none" }} />
       {/* Shadow: void tendrils rising from the floor */}
@@ -5856,7 +5856,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const subLevels = st.subLevels || {};
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 80px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(80px + env(safe-area-inset-bottom, 0px))" }}>
       {/* ── PROFILE SWITCHER ── */}
       <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
