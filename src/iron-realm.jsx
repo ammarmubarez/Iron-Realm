@@ -4476,6 +4476,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 );
               })}
             </div>
+            <button onClick={() => setLogModal({ fromEmpty: true })} style={{
+              marginTop: 10, width: "100%",
+              background: `${ACCENT}0d`, border: `1px dashed ${ACCENT}44`, borderRadius: 8,
+              padding: "10px", cursor: "pointer",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2
+            }}>+ LOG ANOTHER EXERCISE</button>
           </div>
         )}
 
