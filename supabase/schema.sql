@@ -124,9 +124,11 @@ create trigger friendships_mirror_delete
 
 
 -- ── LEADERBOARD VIEW ───────────────────────────────────────────────────────
--- Friends-only feed for the active user. Underlying RLS on friendships +
--- profiles applies, so callers only see their own friends' rows.
--- PRs are blanked when share_prs is false.
+-- Friends-only feed for the active user. RLS on friendships + profiles
+-- ensures callers only see their own non-hidden friends' rows.
+-- Admin auto-friends every new user (hidden=false on admin side) so their
+-- view naturally includes all users — no separate query path needed.
+-- PRs blanked when share_prs=false unless viewer is admin.
 create or replace view public.friend_leaderboard as
 select
   f.user_id      as viewer_id,
@@ -139,7 +141,14 @@ select
   p.overall_xp,
   p.weekly_xp,
   p.total_workouts,
-  case when p.share_prs then p.prs else '{}'::jsonb end as prs,
+  case
+    when (select is_admin from public.profiles where user_id = auth.uid()) = true
+      then p.prs
+    when p.share_prs
+      then p.prs
+    else '{}'::jsonb
+  end as prs,
   p.updated_at
 from public.friendships f
-join public.profiles p on p.user_id = f.friend_id;
+join public.profiles p on p.user_id = f.friend_id
+where f.hidden = false;
