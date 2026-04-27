@@ -57,6 +57,22 @@ In the dashboard, **Authentication → Providers**:
 In **Database → Tables** you should see `profiles`, `friend_requests`,
 `friendships`. RLS is on (the lock icon is filled). Done.
 
+### 6. Netlify (production deploys)
+
+`.env.local` only works on your dev machine. Netlify builds the app on its
+own servers and never sees `.env.local` (it's gitignored). You must add the
+same two env vars in the Netlify dashboard:
+
+1. Netlify → your site → **Site settings → Environment variables**.
+2. Add `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` with the
+   same values you put in `.env.local`.
+3. **Deploys → Trigger deploy → Clear cache and deploy** so the new build
+   picks them up.
+
+Tip: you can use a different Supabase project for production vs. local dev
+to keep test data separate. Just paste the prod project's keys into Netlify
+and the dev project's keys into `.env.local`.
+
 ## Schema overview
 
 | Object | Purpose |

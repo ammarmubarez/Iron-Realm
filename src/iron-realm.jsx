@@ -1,7 +1,10 @@
 /* eslint-disable */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import * as authService from "./services/auth";
+import * as syncService from "./services/sync";
+import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.6.4";
+const APP_VERSION = "1.7.0-dev";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -5269,12 +5272,131 @@ function OnboardScreen({ onComplete }) {
   );
 }
 
+// ─── AUTH PANEL ───────────────────────────────────────────────────────────────
+// Sign-in / create-account modal. Mounted from the Settings modal when the
+// user picks "Sign in / create account".
+
+function AuthPanel({ onClose, onSignIn, onSignUp, busy, error }) {
+  const [mode, setMode]         = useState("signin"); // "signin" | "signup"
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [localErr, setLocalErr] = useState(null);
+
+  const submit = async () => {
+    setLocalErr(null);
+    if (!email || !password) { setLocalErr("Email and password are required."); return; }
+    if (mode === "signup") {
+      if (password.length < 8) { setLocalErr("Password must be at least 8 characters."); return; }
+      if (!username) { setLocalErr("Pick a username."); return; }
+      await onSignUp({ email, password, username });
+    } else {
+      await onSignIn({ email, password });
+    }
+  };
+
+  const message = localErr || error;
+  const fieldStyle = {
+    width: "100%", padding: "10px 12px", marginTop: 4,
+    background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 6,
+    color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
+    outline: "none", boxSizing: "border-box",
+  };
+  const labelStyle = {
+    fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+    letterSpacing: 2, fontWeight: 700,
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 310, background: "rgba(3,6,15,0.95)",
+      backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
+        width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+        maxHeight: "85vh", overflowY: "auto",
+        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
+          background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>
+            {mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+        </div>
+
+        {/* Mode toggle */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
+          {["signin", "signup"].map(m => (
+            <button key={m} onClick={() => { setMode(m); setLocalErr(null); }} style={{
+              flex: 1, padding: "8px 10px", cursor: "pointer",
+              background: mode === m ? `${ACCENT}22` : BG3,
+              border: `1px solid ${mode === m ? ACCENT : MUTED + "44"}`,
+              borderRadius: 6,
+              fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
+              letterSpacing: 2, color: mode === m ? ACCENT : MUTED,
+            }}>
+              {m === "signin" ? "SIGN IN" : "CREATE ACCOUNT"}
+            </button>
+          ))}
+        </div>
+
+        {/* Form */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {mode === "signup" && (
+            <label style={{ display: "block" }}>
+              <span style={labelStyle}>USERNAME</span>
+              <input type="text" value={username} autoCapitalize="none" autoCorrect="off"
+                onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                placeholder="lowercase, 3–20 chars" maxLength={20} style={fieldStyle} />
+            </label>
+          )}
+          <label style={{ display: "block" }}>
+            <span style={labelStyle}>EMAIL</span>
+            <input type="email" value={email} autoCapitalize="none" autoCorrect="off"
+              onChange={e => setEmail(e.target.value)} style={fieldStyle} />
+          </label>
+          <label style={{ display: "block" }}>
+            <span style={labelStyle}>PASSWORD</span>
+            <input type="password" value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder={mode === "signup" ? "8+ characters" : ""}
+              style={fieldStyle} />
+          </label>
+
+          {message && (
+            <div style={{ background: `${RED}11`, border: `1px solid ${RED}55`, borderRadius: 6,
+              padding: "10px 12px", fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: RED }}>
+              {message}
+            </div>
+          )}
+
+          <button onClick={submit} disabled={busy} className="btn-primary" style={{
+            padding: "14px", fontSize: 12, letterSpacing: 2, marginTop: 4,
+            opacity: busy ? 0.5 : 1, cursor: busy ? "wait" : "pointer",
+          }}>
+            {busy ? "..." : mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}
+          </button>
+
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", marginTop: 6 }}>
+            Your local profile stays on this device. Signing in only shares a public summary with friends.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ─── SCREEN: MENU (HOME) ──────────────────────────────────────────────────────
 
-function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast }) {
+function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
+                     account, onSignIn, onSignUp, onSignOut }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
-  const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help"
+  const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
   const today = new Date().toLocaleDateString("en", { weekday: "long", month: "short", day: "numeric" });
   const _isArchitect = settings?.monarchTheme === "architect";
   const _isShadow    = settings?.monarchTheme === "shadow";
@@ -5582,6 +5704,45 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
             </div>
 
+            {/* Account */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+                letterSpacing: 3, marginBottom: 10 }}>{"// ACCOUNT"}</div>
+              {!account.supabaseConfigured ? (
+                <div style={{ background: BG3, border: `1px solid ${MUTED}33`, borderRadius: 8,
+                  padding: "12px 14px", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
+                  Online features (friends, leaderboard) are disabled — backend credentials are not configured for this build.
+                </div>
+              ) : account.session ? (
+                <div style={{ background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 1 }}>
+                        @{account.remoteProfile?.username || "..."}
+                      </div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                        {account.session.user?.email}
+                      </div>
+                    </div>
+                    <button onClick={onSignOut} disabled={account.busy} style={{
+                      background: `${RED}11`, border: `1px solid ${RED}55`, borderRadius: 6,
+                      padding: "8px 14px", cursor: account.busy ? "wait" : "pointer",
+                      fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: RED, fontWeight: 700, letterSpacing: 2,
+                      opacity: account.busy ? 0.5 : 1,
+                    }}>SIGN OUT</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setSettingsOpen("account")} style={{
+                  width: "100%", padding: "12px 14px", cursor: "pointer", textAlign: "left",
+                  background: `${ACCENT}11`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+                }}>
+                  SIGN IN / CREATE ACCOUNT
+                </button>
+              )}
+            </div>
+
             {/* Monarch Themes */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
@@ -5800,6 +5961,23 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             ))}
           </div>
         </div>
+      )}
+
+      {/* ── ACCOUNT MODAL ── */}
+      {settingsOpen === "account" && (
+        <AuthPanel
+          onClose={() => setSettingsOpen(null)}
+          onSignIn={async (creds) => {
+            const ok = await onSignIn(creds);
+            if (ok) setSettingsOpen(null);
+          }}
+          onSignUp={async (creds) => {
+            const ok = await onSignUp(creds);
+            if (ok) setSettingsOpen(null);
+          }}
+          busy={account.busy}
+          error={account.error}
+        />
       )}
     </div>
   );
@@ -6114,6 +6292,10 @@ export default function IronRealm() {
   });
   const [screen, setScreen] = useState("menu");
   const [toasts, setToasts] = useState([]);
+  const [session, setSession]             = useState(null);
+  const [remoteProfile, setRemoteProfile] = useState(null);
+  const [authBusy, setAuthBusy]           = useState(false);
+  const [authError, setAuthError]         = useState(null);
 
   const st = store.profiles[store.activeId];
   const settings = store.settings || INIT_STORE.settings;
@@ -6151,6 +6333,101 @@ export default function IronRealm() {
     setToasts(t => [...t, { id, msg, color }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
   }, []);
+
+  // ── Auth: load session on mount, subscribe to changes ──
+  useEffect(() => {
+    if (!supabaseConfigured) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await authService.getSession();
+        if (cancelled) return;
+        setSession(s);
+        if (s?.user) {
+          const row = await syncService.getProfileRow(s.user.id);
+          if (!cancelled) setRemoteProfile(row);
+        }
+      } catch {
+        // ignore — fall through to signed-out state
+      }
+    })();
+    const unsubscribe = authService.onAuthChange((newSession) => {
+      setSession(newSession);
+      if (!newSession) setRemoteProfile(null);
+    });
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
+
+  // ── Auth: snapshot push (debounced) when local stats change ──
+  const pushTimerRef = useRef(null);
+  useEffect(() => {
+    if (!supabaseConfigured || !session?.user || !remoteProfile) return;
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => {
+      const snapshot = syncService.buildSnapshotFromLocal(st, settings);
+      syncService.pushSnapshot({ userId: session.user.id, snapshot }).catch(() => {});
+    }, 1500);
+    return () => { if (pushTimerRef.current) clearTimeout(pushTimerRef.current); };
+  }, [st, settings, session, remoteProfile]);
+
+  // ── Auth handlers ──
+  const handleSignUp = useCallback(async ({ email, password, username }) => {
+    setAuthBusy(true); setAuthError(null);
+    try {
+      const cleanUsername = authService.validateUsername(username);
+      const available = await syncService.isUsernameAvailable(cleanUsername);
+      if (!available) throw new Error("That username is taken.");
+      const { user, session: newSession } = await authService.signUp({ email, password });
+      if (!user) throw new Error("Sign-up failed — no user returned.");
+      const snapshot = syncService.buildSnapshotFromLocal(st, settings);
+      const row = await syncService.upsertProfileRow({
+        userId: user.id, username: cleanUsername, snapshot,
+      });
+      setSession(newSession || (await authService.getSession()));
+      setRemoteProfile(row);
+      toast(`Welcome, @${cleanUsername}`, GREEN);
+      return true;
+    } catch (e) {
+      setAuthError(e.message || "Sign-up failed.");
+      return false;
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [st, settings, toast]);
+
+  const handleSignIn = useCallback(async ({ email, password }) => {
+    setAuthBusy(true); setAuthError(null);
+    try {
+      const { user, session: newSession } = await authService.signIn({ email, password });
+      setSession(newSession);
+      const row = user ? await syncService.getProfileRow(user.id) : null;
+      setRemoteProfile(row);
+      toast(row ? `Signed in as @${row.username}` : "Signed in", GREEN);
+      return true;
+    } catch (e) {
+      setAuthError(e.message || "Sign-in failed.");
+      return false;
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [toast]);
+
+  const handleSignOut = useCallback(async () => {
+    setAuthBusy(true);
+    try {
+      await authService.signOut();
+      setSession(null);
+      setRemoteProfile(null);
+      toast("Signed out", MUTED);
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [toast]);
+
+  const account = {
+    session, remoteProfile, busy: authBusy, error: authError,
+    supabaseConfigured,
+  };
 
   const updateActive = (fn) => setStore(s => ({ ...s, profiles: { ...s.profiles, [s.activeId]: fn(s.profiles[s.activeId]) } }));
 
@@ -6365,7 +6642,7 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
