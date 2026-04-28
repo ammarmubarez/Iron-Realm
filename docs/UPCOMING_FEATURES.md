@@ -10,11 +10,14 @@ they ship.
 
 ## v1.7 — _Next release_
 
-**Theme:**
+**Theme:** Social + progression visibility
 **Target date:**
 
 ### Features
--
+- Supabase backend (auth, profile sync, friends, leaderboard)
+- Admin moderation: suspended flag, password-reset email, wipe stats, toggle admin/share_prs, reveal/hide
+- Friends-only profile visibility (RLS-enforced)
+- PR History modal with progression sparklines
 
 ### Improvements
 -

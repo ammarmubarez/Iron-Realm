@@ -1,5 +1,5 @@
 /* eslint-disable */
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import * as authService from "./services/auth";
 import * as syncService from "./services/sync";
 import * as friendsService from "./services/friends";
@@ -1610,6 +1610,37 @@ function prBonus(newE1RM, storedE1RM) {
   if (improvement >= 0.10) return 1.30;
   if (improvement >= 0.05) return 1.20;
   return 1.10;
+}
+
+// Build a chronological history of PR-setting events, exercise by exercise.
+// Walks workouts oldest-first, tracks the running max e1RM per exercise,
+// and emits an event whenever a workout sets a new high.
+function getPRTimeline(workouts) {
+  const sorted = [...(workouts || [])].sort((a, b) => (a.date || 0) - (b.date || 0));
+  const timeline = {};
+  const running  = {};
+  for (const w of sorted) {
+    const ex = w.exercise || {};
+    if (ex.type === "cardio") continue;
+    const name = ex.name || w.exerciseName;
+    if (!name) continue;
+    const e1rm = Number.isFinite(w.newE1RM) && w.newE1RM > 0
+      ? w.newE1RM
+      : (w.weight && w.reps ? epley1RM(w.weight, w.reps) : 0);
+    if (!e1rm) continue;
+    const prev = running[name] || 0;
+    if (e1rm > prev) {
+      running[name] = e1rm;
+      (timeline[name] = timeline[name] || []).push({
+        date:   w.date,
+        e1rm:   Math.round(e1rm),
+        weight: w.weight,
+        reps:   w.reps,
+        type:   ex.type,
+      });
+    }
+  }
+  return timeline;
 }
 
 // XP for a single strength set with all modifiers applied
@@ -6053,6 +6084,141 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
 // ─── SCREEN: DATABASE ─────────────────────────────────────────────────────────
 
+// ─── PR HISTORY MODAL ────────────────────────────────────────────────────────
+
+function PRSparkline({ events, color = GOLD }) {
+  if (!events || events.length < 2) return null;
+  const W = 80, H = 24, P = 2;
+  const xs = events.map(e => e.date || 0);
+  const ys = events.map(e => e.e1rm || 0);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const xRange = xMax - xMin || 1;
+  const yRange = yMax - yMin || 1;
+  const pts = events.map(e => {
+    const x = P + ((e.date - xMin) / xRange) * (W - 2 * P);
+    const y = H - P - ((e.e1rm - yMin) / yRange) * (H - 2 * P);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0 }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      {events.map((e, i) => {
+        const x = P + ((e.date - xMin) / xRange) * (W - 2 * P);
+        const y = H - P - ((e.e1rm - yMin) / yRange) * (H - 2 * P);
+        const isLast = i === events.length - 1;
+        return <circle key={i} cx={x} cy={y} r={isLast ? 2 : 1.2} fill={isLast ? color : `${color}88`} />;
+      })}
+    </svg>
+  );
+}
+
+function PRHistoryModal({ workouts, prs, onClose }) {
+  const timeline = useMemo(() => getPRTimeline(workouts), [workouts]);
+  const [expanded, setExpanded] = useState(null);
+
+  const items = Object.entries(prs || {})
+    .map(([name, e1rm]) => ({
+      name,
+      e1rm: Math.round(Number(e1rm) || 0),
+      events: timeline[name] || [],
+    }))
+    .filter(item => item.e1rm > 0)
+    .sort((a, b) => b.e1rm - a.e1rm);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
+        width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+        maxHeight: "90vh", overflowY: "auto", position: "relative",
+        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>PERSONAL RECORDS</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>{items.length} exercises tracked</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        {items.length === 0 && (
+          <div style={{ textAlign: "center", padding: "32px 0", fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
+            Log a strength workout to start tracking PRs.
+          </div>
+        )}
+
+        {items.map(item => {
+          const isOpen = expanded === item.name;
+          const lastEvent = item.events[item.events.length - 1];
+          return (
+            <div key={item.name} style={{
+              background: BG2, border: `1px solid ${GOLD}1a`,
+              borderRadius: 8, marginBottom: 8, overflow: "hidden",
+            }}>
+              <button onClick={() => setExpanded(isOpen ? null : item.name)} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 12,
+                background: "none", border: "none", padding: "12px 14px",
+                cursor: "pointer", textAlign: "left",
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {item.name}
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2 }}>
+                    {item.events.length} PR{item.events.length === 1 ? "" : "s"}
+                    {lastEvent && ` · last ${new Date(lastEvent.date).toLocaleDateString()}`}
+                  </div>
+                </div>
+                <PRSparkline events={item.events} />
+                <div style={{ textAlign: "right", flexShrink: 0, minWidth: 56 }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: GOLD }}>
+                    {item.e1rm}
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{wtLabel().toUpperCase()} e1RM</div>
+                </div>
+              </button>
+
+              {isOpen && item.events.length > 0 && (
+                <div style={{ borderTop: `1px solid ${GOLD}22`, padding: "8px 14px 12px" }}>
+                  {item.events.slice().reverse().map((e, i) => (
+                    <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "6px 0",
+                      borderBottom: i < item.events.length - 1 ? `1px solid ${GOLD}11` : "none",
+                    }}>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT }}>
+                        {wtVal(e.weight)} {wtLabel()} × {e.reps}
+                      </div>
+                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD }}>
+                        {e.e1rm} e1RM
+                      </div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                        {new Date(e.date).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {isOpen && item.events.length === 0 && (
+                <div style={{ borderTop: `1px solid ${GOLD}22`, padding: "10px 14px", fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+                  No tracked PR events yet — older workouts may pre-date the PR log.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, toast }) {
   const st = store.profiles[store.activeId];
   const rank = getRank(st.overallLevel);
@@ -6083,6 +6249,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
   const specialStats = ["cardio", "calisthenics"];
   const [selectedMuscle, setSelectedMuscle] = useState(null);
+  const [prHistoryOpen, setPrHistoryOpen]   = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -6271,6 +6438,24 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
+        {/* PR HISTORY entry point */}
+        <button onClick={() => setPrHistoryOpen(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 8,
+          padding: "12px 14px", marginBottom: 16, cursor: "pointer",
+          fontFamily: "'Rajdhani',sans-serif",
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M10 1l2.5 5.5 6 .8-4.4 4.2 1 6L10 14.7 4.9 17.5l1-6L1.5 7.3l6-.8z" stroke={GOLD} strokeWidth="1.4"/>
+            </svg>
+            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 2, fontWeight: 700 }}>PR HISTORY</span>
+          </span>
+          <span style={{ fontSize: 10, color: GOLD, opacity: 0.6 }}>
+            {Object.keys(st.prs || {}).length} TRACKED →
+          </span>
+        </button>
+
         {/* ── STATS ── */}
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
@@ -6288,6 +6473,14 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
         />
       </div>
+
+      {prHistoryOpen && (
+        <PRHistoryModal
+          workouts={st.workouts}
+          prs={st.prs}
+          onClose={() => setPrHistoryOpen(false)}
+        />
+      )}
     </div>
 
   );
