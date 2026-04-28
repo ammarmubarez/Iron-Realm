@@ -18,6 +18,7 @@ they ship.
 - Admin moderation: suspended flag, password-reset email, wipe stats, toggle admin/share_prs, reveal/hide
 - Friends-only profile visibility (RLS-enforced)
 - PR History modal with progression sparklines
+- Workout Heatmap (13-week grid, daily XP intensity, streaks, day-detail drill-down)
 
 ### Improvements
 -

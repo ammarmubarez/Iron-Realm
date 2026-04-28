@@ -6219,6 +6219,234 @@ function PRHistoryModal({ workouts, prs, onClose }) {
 }
 
 
+// ─── WORKOUT HEATMAP MODAL ───────────────────────────────────────────────────
+
+function HeatmapModal({ workouts, onClose }) {
+  const WEEKS = 13;
+  const TOTAL_DAYS = WEEKS * 7;
+
+  const data = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startMs = today.getTime() - (TOTAL_DAYS - 1) * 86400000;
+
+    const xpByDay = {};
+    for (const w of (workouts || [])) {
+      const d = new Date(w.date || 0);
+      if (isNaN(d.getTime()) || d.getTime() < startMs) continue;
+      d.setHours(0, 0, 0, 0);
+      const k = d.getTime();
+      xpByDay[k] = (xpByDay[k] || 0) + (w.xp || 0);
+    }
+
+    const cells = [];
+    let weekIdx = 0;
+    let totalXP = 0;
+    let activeDays = 0;
+    let maxDaily = 0;
+    for (let i = 0; i < TOTAL_DAYS; i++) {
+      const d = new Date(startMs + i * 86400000);
+      d.setHours(0, 0, 0, 0);
+      const dow = d.getDay();
+      if (i > 0 && dow === 0) weekIdx++;
+      const xp = xpByDay[d.getTime()] || 0;
+      cells.push({ date: d, key: d.getTime(), dow, weekIdx, xp });
+      if (xp > 0) { totalXP += xp; activeDays++; }
+      if (xp > maxDaily) maxDaily = xp;
+    }
+
+    let currentStreak = 0;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      if (cells[i].xp > 0) currentStreak++;
+      else if (i === cells.length - 1 && cells[i].xp === 0) continue; // grace for today not yet trained
+      else break;
+    }
+
+    let longestStreak = 0;
+    let runStreak = 0;
+    for (const c of cells) {
+      if (c.xp > 0) { runStreak++; longestStreak = Math.max(longestStreak, runStreak); }
+      else runStreak = 0;
+    }
+
+    const totalWeeks = weekIdx + 1;
+    return { cells, totalXP, activeDays, currentStreak, longestStreak, maxDaily, totalWeeks };
+  }, [workouts]);
+
+  const [selected, setSelected] = useState(null);
+
+  const colorForXP = (xp) => {
+    if (xp === 0) return "transparent";
+    const intensity = Math.min(1, xp / Math.max(1, data.maxDaily));
+    const alpha = 0.25 + intensity * 0.75;
+    const a = Math.round(alpha * 255).toString(16).padStart(2, "0");
+    return `${ACCENT}${a}`;
+  };
+
+  // Day-of-week labels: show M, W, F to keep it sparse and readable
+  const dowLabel = (i) => (i === 1 ? "M" : i === 3 ? "W" : i === 5 ? "F" : "");
+
+  // Month labels at top: emit when the month changes between consecutive weeks
+  const monthLabels = (() => {
+    const result = []; // { weekIdx, label }
+    let lastMonth = -1;
+    for (const c of data.cells) {
+      if (c.dow === 0 || c.weekIdx === 0) {
+        const m = c.date.getMonth();
+        if (m !== lastMonth) {
+          result.push({ weekIdx: c.weekIdx, label: c.date.toLocaleString("en", { month: "short" }).toUpperCase() });
+          lastMonth = m;
+        }
+      }
+    }
+    return result;
+  })();
+
+  const dayWorkouts = selected
+    ? (workouts || []).filter(w => {
+        const d = new Date(w.date || 0);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() === selected.key;
+      })
+    : [];
+
+  const Stat = ({ label, value, color = ACCENT }) => (
+    <div style={{ background: BG3, border: `1px solid ${color}22`, borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginTop: 2 }}>{label}</div>
+    </div>
+  );
+
+  const CELL = 13, GAP = 2;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
+        width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+        maxHeight: "90vh", overflowY: "auto", position: "relative",
+        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>TRAINING HEATMAP</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>last {WEEKS} weeks</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Stats row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 18 }}>
+          <Stat label="ACTIVE" value={data.activeDays} />
+          <Stat label="CURRENT" value={data.currentStreak} color={GOLD} />
+          <Stat label="LONGEST" value={data.longestStreak} color={GOLD} />
+          <Stat label="TOTAL XP" value={data.totalXP.toLocaleString()} />
+        </div>
+
+        {/* Month labels */}
+        <div style={{ position: "relative", height: 14, marginBottom: 4, marginLeft: 14 }}>
+          {monthLabels.map(({ weekIdx, label }, i) => (
+            <span key={i} style={{
+              position: "absolute", left: weekIdx * (CELL + GAP),
+              fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1,
+            }}>{label}</span>
+          ))}
+        </div>
+
+        {/* Grid */}
+        <div style={{ display: "flex", gap: GAP, marginBottom: 12 }}>
+          {/* Day labels */}
+          <div style={{ display: "grid", gridTemplateRows: `repeat(7, ${CELL}px)`, gap: GAP, width: 12 }}>
+            {[0, 1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} style={{
+                fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED,
+                display: "flex", alignItems: "center",
+              }}>{dowLabel(i)}</div>
+            ))}
+          </div>
+
+          {/* Cells */}
+          <div style={{
+            display: "grid",
+            gridTemplateRows: `repeat(7, ${CELL}px)`,
+            gridAutoColumns: `${CELL}px`,
+            gap: GAP,
+          }}>
+            {data.cells.map(c => {
+              const isSelected = selected?.key === c.key;
+              return (
+                <button key={c.key}
+                  onClick={() => setSelected(isSelected ? null : c)}
+                  style={{
+                    gridRow: c.dow + 1,
+                    gridColumn: c.weekIdx + 1,
+                    background: colorForXP(c.xp),
+                    border: isSelected
+                      ? `1.5px solid ${GOLD}`
+                      : c.xp > 0 ? `1px solid ${ACCENT}66` : `1px solid ${ACCENT}1a`,
+                    borderRadius: 2, cursor: "pointer", padding: 0,
+                    transition: "transform .1s",
+                    transform: isSelected ? "scale(1.15)" : "none",
+                  }}
+                  title={`${c.date.toLocaleDateString()} · ${c.xp} XP`}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginBottom: 16 }}>
+          <span>LESS</span>
+          {[0, 0.25, 0.5, 0.75, 1].map(t => {
+            const a = Math.round((t === 0 ? 0 : 0.25 + t * 0.75) * 255).toString(16).padStart(2, "0");
+            return <span key={t} style={{
+              width: 10, height: 10,
+              background: t === 0 ? "transparent" : `${ACCENT}${a}`,
+              border: `1px solid ${ACCENT}${t === 0 ? "1a" : "66"}`,
+              borderRadius: 2,
+            }} />;
+          })}
+          <span>MORE</span>
+        </div>
+
+        {/* Selected day detail */}
+        {selected && (
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, letterSpacing: 2 }}>
+                {selected.date.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}
+              </span>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                +{selected.xp} XP
+              </span>
+            </div>
+            {dayWorkouts.length === 0 ? (
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>No workouts logged this day.</div>
+            ) : dayWorkouts.map((w, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "5px 0",
+                borderBottom: i < dayWorkouts.length - 1 ? `1px solid ${ACCENT}11` : "none",
+              }}>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, marginRight: 8 }}>
+                  {w.exercise?.name || w.exerciseName || "Training"}
+                </span>
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, flexShrink: 0 }}>+{w.xp} XP</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, toast }) {
   const st = store.profiles[store.activeId];
   const rank = getRank(st.overallLevel);
@@ -6250,6 +6478,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const specialStats = ["cardio", "calisthenics"];
   const [selectedMuscle, setSelectedMuscle] = useState(null);
   const [prHistoryOpen, setPrHistoryOpen]   = useState(false);
+  const [heatmapOpen, setHeatmapOpen]       = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -6438,11 +6667,11 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
-        {/* PR HISTORY entry point */}
+        {/* Progression entry points */}
         <button onClick={() => setPrHistoryOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 8,
-          padding: "12px 14px", marginBottom: 16, cursor: "pointer",
+          padding: "12px 14px", marginBottom: 8, cursor: "pointer",
           fontFamily: "'Rajdhani',sans-serif",
         }}>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -6453,6 +6682,31 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           </span>
           <span style={{ fontSize: 10, color: GOLD, opacity: 0.6 }}>
             {Object.keys(st.prs || {}).length} TRACKED →
+          </span>
+        </button>
+
+        <button onClick={() => setHeatmapOpen(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: `${ACCENT}10`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
+          padding: "12px 14px", marginBottom: 16, cursor: "pointer",
+          fontFamily: "'Rajdhani',sans-serif",
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <rect x="2" y="2"  width="4" height="4" fill={ACCENT} opacity="0.3"/>
+              <rect x="8" y="2"  width="4" height="4" fill={ACCENT} opacity="0.7"/>
+              <rect x="14" y="2" width="4" height="4" fill={ACCENT}/>
+              <rect x="2" y="8"  width="4" height="4" fill={ACCENT} opacity="0.6"/>
+              <rect x="8" y="8"  width="4" height="4" fill={ACCENT} opacity="0.4"/>
+              <rect x="14" y="8" width="4" height="4" fill={ACCENT} opacity="0.85"/>
+              <rect x="2" y="14" width="4" height="4" fill={ACCENT} opacity="0.5"/>
+              <rect x="8" y="14" width="4" height="4" fill={ACCENT}/>
+              <rect x="14" y="14" width="4" height="4" fill={ACCENT} opacity="0.25"/>
+            </svg>
+            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 2, fontWeight: 700 }}>TRAINING HEATMAP</span>
+          </span>
+          <span style={{ fontSize: 10, color: ACCENT, opacity: 0.6 }}>
+            13 WEEKS →
           </span>
         </button>
 
@@ -6479,6 +6733,12 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           workouts={st.workouts}
           prs={st.prs}
           onClose={() => setPrHistoryOpen(false)}
+        />
+      )}
+      {heatmapOpen && (
+        <HeatmapModal
+          workouts={st.workouts}
+          onClose={() => setHeatmapOpen(false)}
         />
       )}
     </div>
