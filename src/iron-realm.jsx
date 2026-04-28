@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as authService from "./services/auth";
 import * as syncService from "./services/sync";
+import * as friendsService from "./services/friends";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
 const APP_VERSION = "1.7.0-dev";
@@ -4964,8 +4965,16 @@ function Toasts({ toasts }) {
 
 // ─── NAV BAR ──────────────────────────────────────────────────────────────────
 
-function NavBar({ screen, setScreen, overallLevel, settings }) {
+function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 }) {
   const NAV_ICONS = {
+    friends: (c) => (
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+        <circle cx="7.5" cy="6" r="2.5" stroke={c} strokeWidth="1.5"/>
+        <path d="M2 17c0-3.04 2.46-5.5 5.5-5.5S13 13.96 13 17" stroke={c} strokeWidth="1.5"/>
+        <circle cx="14" cy="6.5" r="2" stroke={c} strokeWidth="1.3" opacity="0.7"/>
+        <path d="M13.5 11.6c1.9.4 3.5 2.1 3.5 4.4" stroke={c} strokeWidth="1.3" opacity="0.7"/>
+      </svg>
+    ),
     menu: (c) => (
       <svg width="28" height="28" viewBox="0 0 20 20" fill="none">
         <polygon points="10,2 18,7 18,13 10,18 2,13 2,7" stroke={c} strokeWidth="1.5" fill="none"/>
@@ -5010,6 +5019,7 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
     { id: "character", label: themeLabel(settings, "hunter", "Hunter") },
     { id: "program",   label: "Program" },
     { id: "menu",      label: "Home" },
+    { id: "friends",   label: "Realm", badge: pendingCount },
     { id: "schedule",  label: themeLabel(settings, "schedule", "Schedule") },
     { id: "database",  label: themeLabel(settings, "database", "Database") },
   ];
@@ -5030,7 +5040,7 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
         background: `linear-gradient(90deg, transparent, ${ACCENT}88 25%, ${ACCENT} 50%, ${ACCENT}88 75%, transparent)`,
       }} />
 
-      {TABS.map(({ id, label }) => {
+      {TABS.map(({ id, label, badge }) => {
         const active = screen === id;
         const c = active ? ACCENT : MUTED;
         const isHome = id === "menu";
@@ -5044,6 +5054,7 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
               alignItems: "center", justifyContent: "center",
               gap: 4,
               padding: "10px 0 12px",
+              position: "relative",
               background: isHome && active
                 ? `linear-gradient(180deg, ${ACCENT}18, transparent)`
                 : "none",
@@ -5055,6 +5066,15 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
               transition: "all .2s",
               filter: active ? `drop-shadow(0 0 6px ${ACCENT})` : "none",
             }}>
+            {badge > 0 && (
+              <span style={{
+                position: "absolute", top: 6, right: "18%",
+                background: RED, color: "#fff", borderRadius: "50%",
+                width: 14, height: 14, fontSize: 8,
+                fontFamily: "'Orbitron',sans-serif",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{badge}</span>
+            )}
             {NAV_ICONS[id](c)}
             <span style={{
               fontFamily: "'Orbitron',sans-serif",
@@ -6227,6 +6247,489 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 }
 
 
+// ─── SCREEN: FRIENDS / REALM ──────────────────────────────────────────────────
+
+function FriendsScreen({ account, settings, toast }) {
+  const isAdmin   = Boolean(account?.remoteProfile?.is_admin);
+  const myUserId  = account?.session?.user?.id;
+
+  const [tab, setTab]                   = useState("leaderboard"); // "leaderboard" | "hunters"
+  const [sortBy, setSortBy]             = useState("weekly_xp");
+  const [board, setBoard]               = useState([]);
+  const [loadingBoard, setLoadingBoard] = useState(false);
+  const [incoming, setIncoming]         = useState([]);
+  const [outgoing, setOutgoing]         = useState([]);
+  const [profileMap, setProfileMap]     = useState({});
+  const [searchQ, setSearchQ]           = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching]       = useState(false);
+  const [viewProfile, setViewProfile]   = useState(null);
+  const [viewHidden, setViewHidden]     = useState(null); // admin: is admin hidden from this user?
+  const [opBusy, setOpBusy]             = useState({}); // { [id]: bool }
+
+  const setBusy = (id, val) => setOpBusy(p => ({ ...p, [id]: val }));
+
+  const loadBoard = async () => {
+    if (!myUserId) return;
+    setLoadingBoard(true);
+    try { setBoard(await friendsService.fetchLeaderboard(sortBy)); }
+    catch (e) { toast(e.message, RED); }
+    finally { setLoadingBoard(false); }
+  };
+
+  const loadRequests = async () => {
+    if (!myUserId) return;
+    try {
+      const r = await friendsService.fetchRequests(myUserId);
+      setIncoming(r.incoming); setOutgoing(r.outgoing); setProfileMap(r.profileMap);
+    } catch {}
+  };
+
+  useEffect(() => { if (myUserId) { loadBoard(); loadRequests(); } }, [myUserId, sortBy]);
+
+  // Debounced username search
+  useEffect(() => {
+    if (searchQ.length < 2) { setSearchResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try { setSearchResults((await friendsService.searchUsers(searchQ)).filter(u => u.user_id !== myUserId)); }
+      catch {}
+      finally { setSearching(false); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchQ, myUserId]);
+
+  const openProfile = async (userId) => {
+    const p = await friendsService.getFriendProfile(userId).catch(() => null);
+    setViewProfile(p);
+    if (isAdmin && p) {
+      const hidden = await friendsService.getHiddenStatus(userId, myUserId).catch(() => true);
+      setViewHidden(hidden);
+    }
+  };
+
+  const handleSendRequest = async (toUserId) => {
+    setBusy(toUserId, true);
+    try {
+      await friendsService.sendFriendRequest(toUserId);
+      toast("Friend request sent", GREEN);
+      setOutgoing(prev => [...prev, { id: Date.now(), from_user: myUserId, to_user: toUserId }]);
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(toUserId, false); }
+  };
+
+  const handleAccept = async (reqId) => {
+    setBusy(reqId, true);
+    try {
+      await friendsService.acceptRequest(reqId);
+      toast("Friend request accepted", GREEN);
+      setIncoming(prev => prev.filter(r => r.id !== reqId));
+      loadBoard();
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(reqId, false); }
+  };
+
+  const handleReject = async (reqId) => {
+    setBusy(reqId, true);
+    try {
+      await friendsService.rejectRequest(reqId);
+      setIncoming(prev => prev.filter(r => r.id !== reqId));
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(reqId, false); }
+  };
+
+  const handleCancel = async (reqId) => {
+    setBusy(reqId, true);
+    try {
+      await friendsService.cancelRequest(reqId);
+      setOutgoing(prev => prev.filter(r => r.id !== reqId));
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(reqId, false); }
+  };
+
+  const handleToggleHidden = async () => {
+    if (!viewProfile || !isAdmin) return;
+    const newHidden = !viewHidden;
+    try {
+      await friendsService.setFriendHidden(viewProfile.user_id, myUserId, newHidden);
+      setViewHidden(newHidden);
+      toast(newHidden ? "Hidden from their friends list" : `Revealed to @${viewProfile.username}`, ACCENT);
+    } catch (e) { toast(e.message, RED); }
+  };
+
+  const rankColor = (lbl) => {
+    if (lbl === "S") return "#FFD700";
+    if (lbl === "A") return "#9B59B6";
+    if (lbl === "B") return "#4a9eff";
+    if (lbl === "C") return "#4ecb71";
+    if (lbl === "D") return "#f59e0b";
+    return "#e05555";
+  };
+
+  const outgoingIds = new Set(outgoing.map(r => r.to_user));
+  const friendIds   = new Set(board.map(r => r.friend_id));
+
+  const panelStyle = {
+    background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+    border: `1px solid ${ACCENT}33`, borderTop: `2px solid ${ACCENT}`,
+    width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+    maxHeight: "90vh", overflowY: "auto",
+    clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+  };
+
+  // ── Not signed in ──
+  if (!account?.session) {
+    return (
+      <div style={{ minHeight: "100vh", background: BG, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px 120px" }}>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900, color: ACCENT, letterSpacing: 4, marginBottom: 12 }}>REALM</div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED, textAlign: "center", lineHeight: 1.6 }}>
+          Sign in to view your leaderboard, compete with friends,<br/>and send friend requests.
+        </div>
+        <div style={{ marginTop: 20, fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2 }}>
+          SIGN IN VIA HOME → GEAR ICON → ACCOUNT
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
+
+      {/* Header */}
+      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px 0" }}>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>
+          {isAdmin ? "[ REALM — ADMIN VIEW ]" : "[ REALM ]"}
+        </div>
+
+        {/* Sub-tabs */}
+        <div style={{ display: "flex", gap: 0 }}>
+          {[["leaderboard", "LEADERBOARD"], ["hunters", "HUNTERS"]].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              flex: 1, padding: "10px 0", background: "none", border: "none",
+              borderBottom: tab === id ? `2px solid ${ACCENT}` : `2px solid ${ACCENT}22`,
+              cursor: "pointer", position: "relative",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
+              letterSpacing: 2, color: tab === id ? ACCENT : MUTED,
+            }}>
+              {label}
+              {id === "hunters" && incoming.length > 0 && (
+                <span style={{
+                  position: "absolute", top: 4, right: 12,
+                  background: RED, color: "#fff", borderRadius: "50%",
+                  width: 16, height: 16, fontSize: 9, fontFamily: "'Orbitron',sans-serif",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>{incoming.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── LEADERBOARD TAB ── */}
+      {tab === "leaderboard" && (
+        <div style={{ padding: "16px 16px 0" }}>
+
+          {/* Sort buttons */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {[["weekly_xp", "WEEKLY"], ["overall_xp", "TOTAL XP"], ["overall_level", "LEVEL"]].map(([key, lbl]) => (
+              <button key={key} onClick={() => setSortBy(key)} style={{
+                flex: 1, padding: "7px 4px", border: "none", cursor: "pointer",
+                fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+                background: sortBy === key ? `${ACCENT}22` : BG3,
+                color: sortBy === key ? ACCENT : MUTED,
+                borderBottom: `2px solid ${sortBy === key ? ACCENT : "transparent"}`,
+              }}>{lbl}</button>
+            ))}
+          </div>
+
+          {loadingBoard && (
+            <div style={{ textAlign: "center", padding: 40, fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: MUTED }}>LOADING...</div>
+          )}
+
+          {!loadingBoard && board.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40, fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
+              {isAdmin ? "No users have signed up yet." : "Add friends to see them on the leaderboard."}
+            </div>
+          )}
+
+          {board.map((row, i) => {
+            const rc = rankColor(row.rank_label);
+            const isMe = row.friend_id === myUserId;
+            return (
+              <div key={row.friend_id} onClick={() => openProfile(row.friend_id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  background: isMe ? `${ACCENT}11` : BG2,
+                  border: `1px solid ${isMe ? ACCENT + "55" : ACCENT + "1a"}`,
+                  borderRadius: 10, padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+                  transition: "all .15s",
+                }}>
+                {/* Position */}
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: i < 3 ? GOLD : MUTED, fontWeight: 700, minWidth: 22, textAlign: "center" }}>
+                  {i === 0 ? "◆" : i === 1 ? "◇" : i === 2 ? "△" : `#${i + 1}`}
+                </div>
+
+                {/* Rank badge */}
+                <div style={{
+                  width: 32, height: 32, borderRadius: 6, flexShrink: 0,
+                  background: `${rc}22`, border: `1.5px solid ${rc}88`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 900, color: rc,
+                }}>{row.rank_label || "E"}</div>
+
+                {/* Name + level */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: isMe ? ACCENT : TEXT, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    @{row.username}{isMe ? " ◈" : ""}
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+                    LVL {row.overall_level} · {row.total_workouts} sessions
+                  </div>
+                </div>
+
+                {/* XP column */}
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                    {sortBy === "overall_level"
+                      ? `LVL ${row.overall_level}`
+                      : sortBy === "overall_xp"
+                        ? `${(row.overall_xp || 0).toLocaleString()}`
+                        : `${(row.weekly_xp || 0).toLocaleString()}`}
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>
+                    {sortBy === "weekly_xp" ? "WEEKLY XP" : sortBy === "overall_xp" ? "TOTAL XP" : "XP"}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── HUNTERS TAB ── */}
+      {tab === "hunters" && (
+        <div style={{ padding: "16px 16px 0" }}>
+
+          {/* Search */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>{"// FIND HUNTER"}</div>
+            <input
+              value={searchQ}
+              onChange={e => setSearchQ(e.target.value)}
+              placeholder="search by username..."
+              autoCapitalize="none" autoCorrect="off" spellCheck="false"
+              style={{
+                width: "100%", background: BG3, border: `1px solid ${ACCENT}44`,
+                color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
+                padding: "10px 14px", borderRadius: 8, outline: "none", boxSizing: "border-box",
+              }}
+            />
+
+            {searching && <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, marginTop: 8 }}>SCANNING...</div>}
+
+            {searchResults.map(u => {
+              const isPending  = outgoingIds.has(u.user_id);
+              const isFriend   = friendIds.has(u.user_id);
+              const rc = rankColor(u.rank_label || "E");
+              return (
+                <div key={u.user_id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: BG2, border: `1px solid ${ACCENT}22`,
+                  borderRadius: 8, padding: "10px 12px", marginTop: 8,
+                }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 5, flexShrink: 0,
+                    background: `${rc}22`, border: `1.5px solid ${rc}66`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 900, color: rc,
+                  }}>{u.rank_label || "E"}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{u.username}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>LVL {u.overall_level}</div>
+                  </div>
+                  {isFriend ? (
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GREEN, letterSpacing: 1 }}>FRIEND</div>
+                  ) : isPending ? (
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>PENDING</div>
+                  ) : (
+                    <button disabled={opBusy[u.user_id]} onClick={() => handleSendRequest(u.user_id)} style={{
+                      background: `${ACCENT}22`, border: `1px solid ${ACCENT}66`,
+                      color: ACCENT, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                      padding: "6px 10px", cursor: "pointer", letterSpacing: 1,
+                    }}>ADD</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Incoming requests */}
+          {incoming.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GREEN, letterSpacing: 3, marginBottom: 8 }}>{"// INCOMING REQUESTS"}</div>
+              {incoming.map(r => {
+                const p = profileMap[r.from_user];
+                return (
+                  <div key={r.id} style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    background: `${GREEN}0a`, border: `1px solid ${GREEN}33`,
+                    borderRadius: 8, padding: "10px 12px", marginBottom: 8,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>LVL {p?.overall_level || "?"} · wants to be friends</div>
+                    </div>
+                    <button disabled={opBusy[r.id]} onClick={() => handleAccept(r.id)} style={{
+                      background: `${GREEN}22`, border: `1px solid ${GREEN}66`,
+                      color: GREEN, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                      padding: "6px 10px", cursor: "pointer", marginRight: 4,
+                    }}>ACCEPT</button>
+                    <button disabled={opBusy[r.id]} onClick={() => handleReject(r.id)} style={{
+                      background: `${RED}11`, border: `1px solid ${RED}44`,
+                      color: RED, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                      padding: "6px 10px", cursor: "pointer",
+                    }}>REJECT</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Outgoing requests */}
+          {outgoing.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 8 }}>{"// SENT REQUESTS"}</div>
+              {outgoing.map(r => {
+                const p = profileMap[r.to_user];
+                return (
+                  <div key={r.id} style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    background: BG2, border: `1px solid ${ACCENT}1a`,
+                    borderRadius: 8, padding: "10px 12px", marginBottom: 8,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>Request pending</div>
+                    </div>
+                    <button disabled={opBusy[r.id]} onClick={() => handleCancel(r.id)} style={{
+                      background: "none", border: `1px solid ${MUTED}44`,
+                      color: MUTED, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                      padding: "6px 10px", cursor: "pointer",
+                    }}>CANCEL</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {incoming.length === 0 && outgoing.length === 0 && searchQ.length < 2 && (
+            <div style={{ textAlign: "center", padding: "24px 0", fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
+              Search for a username above to add friends.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PROFILE VIEWER MODAL ── */}
+      {viewProfile && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+          onClick={() => setViewProfile(null)}>
+          <div onClick={e => e.stopPropagation()} className="slide-up" style={panelStyle}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 8,
+                  background: `${rankColor(viewProfile.rank_label)}22`,
+                  border: `2px solid ${rankColor(viewProfile.rank_label)}88`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 20, fontWeight: 900,
+                  color: rankColor(viewProfile.rank_label),
+                }}>{viewProfile.rank_label || "E"}</div>
+                <div>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: ACCENT }}>@{viewProfile.username}</div>
+                  {viewProfile.display_name && (
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginTop: 2 }}>{viewProfile.display_name}</div>
+                  )}
+                </div>
+              </div>
+              <button onClick={() => setViewProfile(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Level + XP */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2 }}>LVL {viewProfile.overall_level}</span>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{(viewProfile.overall_xp || 0).toLocaleString()} XP</span>
+              </div>
+              <div style={{ height: 4, background: `${ACCENT}22`, borderRadius: 2 }}>
+                <div style={{ height: "100%", background: ACCENT, borderRadius: 2, width: `${Math.min(100, ((viewProfile.overall_xp || 0) % 1000) / 10)}%` }} />
+              </div>
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+              {[
+                ["SESSIONS", viewProfile.total_workouts],
+                ["WEEKLY XP", (viewProfile.weekly_xp || 0).toLocaleString()],
+                ["TOTAL XP", (viewProfile.overall_xp || 0).toLocaleString()],
+              ].map(([label, val]) => (
+                <div key={label} style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 8px", textAlign: "center" }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700, color: GOLD }}>{val}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* PRs */}
+            {viewProfile.prs && Object.keys(viewProfile.prs).length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 10 }}>{"// PERSONAL RECORDS"}</div>
+                {Object.entries(viewProfile.prs)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 8)
+                  .map(([ex, e1rm]) => (
+                    <div key={ex} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${ACCENT}11` }}>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT }}>{ex}</span>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: GOLD }}>{Math.round(e1rm)} lbs</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {/* Admin-only section */}
+            {isAdmin && (
+              <div style={{ background: `${RED}08`, border: `1px solid ${RED}33`, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: RED, letterSpacing: 3, marginBottom: 10 }}>{"// ADMIN CONTROLS"}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>Share PRs</span>
+                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: viewProfile.share_prs ? GREEN : MUTED }}>{viewProfile.share_prs ? "ON" : "OFF"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>Joined</span>
+                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED }}>{viewProfile.created_at ? new Date(viewProfile.created_at).toLocaleDateString() : "—"}</span>
+                </div>
+                <button onClick={handleToggleHidden} style={{
+                  width: "100%", padding: "10px", cursor: "pointer",
+                  background: viewHidden ? `${GREEN}22` : `${RED}22`,
+                  border: `1px solid ${viewHidden ? GREEN : RED}66`,
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1,
+                  color: viewHidden ? GREEN : RED,
+                }}>
+                  {viewHidden ? `REVEAL TO @${viewProfile.username}` : `HIDE FROM @${viewProfile.username}`}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function IronRealm() {
   const [store, setStore] = useState(() => {
     try {
@@ -6295,6 +6798,7 @@ export default function IronRealm() {
   const [session, setSession]             = useState(null);
   const [remoteProfile, setRemoteProfile] = useState(null);
   const [authBusy, setAuthBusy]           = useState(false);
+  const [pendingCount, setPendingCount]   = useState(0);
   const [authError, setAuthError]         = useState(null);
 
   const st = store.profiles[store.activeId];
@@ -6402,6 +6906,7 @@ export default function IronRealm() {
       setSession(newSession);
       const row = user ? await syncService.getProfileRow(user.id) : null;
       setRemoteProfile(row);
+      if (user) friendsService.countIncoming(user.id).then(setPendingCount).catch(() => {});
       toast(row ? `Signed in as @${row.username}` : "Signed in", GREEN);
       return true;
     } catch (e) {
@@ -6418,6 +6923,7 @@ export default function IronRealm() {
       await authService.signOut();
       setSession(null);
       setRemoteProfile(null);
+      setPendingCount(0);
       toast("Signed out", MUTED);
     } finally {
       setAuthBusy(false);
@@ -6648,7 +7154,8 @@ export default function IronRealm() {
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
       {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} toast={toast} />}
       {screen === "program"   && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
-      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} />
+      {screen === "friends"   && <FriendsScreen account={account} settings={settings} toast={toast} />}
+      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} pendingCount={pendingCount} />
       </div>
     </>
   );

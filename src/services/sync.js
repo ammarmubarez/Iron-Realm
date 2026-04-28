@@ -61,17 +61,27 @@ export async function pushSnapshot({ userId, snapshot }) {
 // Pure function — no I/O. Safe to call frequently.
 export function buildSnapshotFromLocal(localProfile, settings = {}) {
   const workouts = localProfile.workouts || [];
+  const level = localProfile.overallLevel || 1;
   return {
     display_name:   localProfile.name || null,
     monarch_theme:  settings.monarchTheme || null,
-    rank_label:     null, // optional client-side computation, fill later
-    overall_level:  localProfile.overallLevel || 1,
+    rank_label:     _rankLetter(level),
+    overall_level:  level,
     overall_xp:     localProfile.overallXP || 0,
     weekly_xp:      sumWeeklyXP(workouts),
     total_workouts: workouts.length,
     prs:            localProfile.prs || {},
     share_prs:      settings.sharePrs !== false,
   };
+}
+
+function _rankLetter(level) {
+  if (level >= 30) return "S";
+  if (level >= 20) return "A";
+  if (level >= 12) return "B";
+  if (level >= 7)  return "C";
+  if (level >= 4)  return "D";
+  return "E";
 }
 
 function sumWeeklyXP(workouts) {
