@@ -6653,13 +6653,18 @@ function FriendsScreen({ account, toast }) {
           {searchResults.map(u => {
             const isPending  = outgoingIds.has(u.user_id);
             const isFriend   = friendIds.has(u.user_id);
+            const canView    = isFriend || isAdmin;
             const rc = _rankColor(u.rank_label || "E");
             return (
-              <div key={u.user_id} onClick={() => openProfile(u.user_id)} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                background: BG2, border: `1px solid ${ACCENT}22`,
-                borderRadius: 8, padding: "10px 12px", marginTop: 8, cursor: "pointer",
-              }}>
+              <div key={u.user_id}
+                onClick={canView ? () => openProfile(u.user_id) : undefined}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: BG2, border: `1px solid ${ACCENT}22`,
+                  borderRadius: 8, padding: "10px 12px", marginTop: 8,
+                  cursor: canView ? "pointer" : "default",
+                  opacity: canView ? 1 : 0.85,
+                }}>
                 <div style={{
                   width: 28, height: 28, borderRadius: 5, flexShrink: 0,
                   background: `${rc}22`, border: `1.5px solid ${rc}66`,
@@ -6668,7 +6673,9 @@ function FriendsScreen({ account, toast }) {
                 }}>{u.rank_label || "E"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{u.username}</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>LVL {u.overall_level}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                    LVL {u.overall_level}{!canView ? " · profile locked" : ""}
+                  </div>
                 </div>
                 {isFriend ? (
                   <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GREEN, letterSpacing: 1 }}>FRIEND</div>
