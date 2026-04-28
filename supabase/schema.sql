@@ -23,6 +23,7 @@ create table if not exists public.profiles (
   total_workouts int  not null default 0,
   prs            jsonb not null default '{}'::jsonb,
   share_prs      boolean not null default true,
+  suspended      boolean not null default false,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
@@ -148,7 +149,15 @@ select
       then p.prs
     else '{}'::jsonb
   end as prs,
-  p.updated_at
+  p.updated_at,
+  p.suspended
 from public.friendships f
 join public.profiles p on p.user_id = f.friend_id
-where f.hidden = false;
+where f.hidden = false
+  and (
+    p.suspended = false
+    or exists (
+      select 1 from public.profiles
+      where user_id = auth.uid() and is_admin = true
+    )
+  );

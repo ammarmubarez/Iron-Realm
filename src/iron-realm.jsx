@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import * as authService from "./services/auth";
 import * as syncService from "./services/sync";
 import * as friendsService from "./services/friends";
+import * as adminService from "./services/admin";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
 const APP_VERSION = "1.7.0-dev";
@@ -5024,13 +5025,11 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
   };
 
   const TABS = [
-    { id: "leaderboard", label: "Board" },
-    { id: "character",   label: themeLabel(settings, "hunter", "Hunter") },
-    { id: "program",     label: "Program" },
-    { id: "menu",        label: "Home" },
-    { id: "schedule",    label: themeLabel(settings, "schedule", "Schedule") },
-    { id: "database",    label: themeLabel(settings, "database", "Database") },
-    { id: "friends",     label: "Friends", badge: pendingCount },
+    { id: "character", label: themeLabel(settings, "hunter", "Hunter") },
+    { id: "program",   label: "Program" },
+    { id: "menu",      label: "Home" },
+    { id: "schedule",  label: themeLabel(settings, "schedule", "Schedule") },
+    { id: "database",  label: themeLabel(settings, "database", "Database") },
   ];
 
   return (
@@ -5422,7 +5421,7 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error }) {
 // ─── SCREEN: MENU (HOME) ──────────────────────────────────────────────────────
 
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
-                     account, onSignIn, onSignUp, onSignOut }) {
+                     account, onSignIn, onSignUp, onSignOut, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -5680,7 +5679,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         </div>
 
         {/* Quick actions */}}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <button className="btn-primary" onClick={() => setScreen("schedule")}
             style={{ padding: "16px", fontSize: 14, letterSpacing: 2 }}>
             <span style={{ fontSize: 11 }}>{_isShadow ? "BEGIN THE HUNT" : _isBeast ? "UNLEASH" : _isArchitect ? "INITIATE PROTOCOL" : "START TRAINING"}</span>
@@ -5691,6 +5690,45 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: GOLD, fontWeight: 700, letterSpacing: 2
           }}>
             <span style={{ fontSize: 11 }}>MY STATS</span>
+          </button>
+        </div>
+
+        {/* Social actions */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+          <button onClick={() => setScreen("leaderboard")} style={{
+            background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            padding: "12px", cursor: "pointer", transition: "all .2s",
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+              <rect x="2.5" y="11" width="3.8" height="6" fill="currentColor" opacity="0.6"/>
+              <rect x="8.1"  y="6"  width="3.8" height="11" fill="currentColor"/>
+              <rect x="13.7" y="9"  width="3.8" height="8" fill="currentColor" opacity="0.85"/>
+            </svg>
+            <span style={{ fontSize: 11 }}>LEADERBOARD</span>
+          </button>
+          <button onClick={() => setScreen("friends")} style={{
+            background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            padding: "12px", cursor: "pointer", position: "relative", transition: "all .2s",
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+              <circle cx="7.5" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M2 17c0-3.04 2.46-5.5 5.5-5.5S13 13.96 13 17" stroke="currentColor" strokeWidth="1.5"/>
+              <circle cx="14" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.3" opacity="0.7"/>
+              <path d="M13.5 11.6c1.9.4 3.5 2.1 3.5 4.4" stroke="currentColor" strokeWidth="1.3" opacity="0.7"/>
+            </svg>
+            <span style={{ fontSize: 11 }}>FRIENDS</span>
+            {pendingCount > 0 && (
+              <span style={{
+                position: "absolute", top: 6, right: 8,
+                background: RED, color: "#fff", borderRadius: "50%",
+                width: 18, height: 18, fontSize: 10, fontFamily: "'Orbitron',sans-serif",
+                display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
+              }}>{pendingCount}</span>
+            )}
           </button>
         </div>
 
@@ -6267,9 +6305,72 @@ function _rankColor(lbl) {
   return "#e05555";
 }
 
-function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHidden }) {
+function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHidden, onRefresh, toast }) {
+  const [busy, setBusy] = useState(false);
   if (!profile) return null;
   const rc = _rankColor(profile.rank_label);
+
+  const confirmPrompt = (msg) => typeof window !== "undefined" && window.confirm(msg);
+
+  const wrap = async (label, fn, successMsg, color = ACCENT) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      toast?.(successMsg, color);
+      onRefresh?.();
+    } catch (e) { toast?.(`${label} failed: ${e.message || e}`, RED); }
+    finally { setBusy(false); }
+  };
+
+  const togglePrs = () => wrap(
+    "Toggle PRs",
+    () => adminService.setSharePrs(profile.user_id, !profile.share_prs),
+    `Share PRs ${!profile.share_prs ? "enabled" : "disabled"} for @${profile.username}`,
+  );
+
+  const toggleSuspend = () => {
+    const nextVal = !profile.suspended;
+    if (nextVal && !confirmPrompt(`Suspend @${profile.username}? They'll be hidden from leaderboards until you reverse this.`)) return;
+    wrap(
+      "Suspend",
+      () => adminService.setSuspended(profile.user_id, nextVal),
+      `@${profile.username} ${nextVal ? "suspended" : "unsuspended"}`,
+      nextVal ? RED : GREEN,
+    );
+  };
+
+  const toggleAdmin = () => {
+    const nextVal = !profile.is_admin;
+    if (!confirmPrompt(`${nextVal ? "GRANT" : "REVOKE"} admin to @${profile.username}? Admin can moderate other accounts.`)) return;
+    wrap(
+      "Admin toggle",
+      () => adminService.setIsAdmin(profile.user_id, nextVal),
+      `@${profile.username} ${nextVal ? "promoted to admin" : "admin revoked"}`,
+      nextVal ? GOLD : MUTED,
+    );
+  };
+
+  const resetStats = () => {
+    if (!confirmPrompt(`Reset all XP, level, and PRs for @${profile.username}? Their workout history stays on their device.`)) return;
+    wrap(
+      "Reset stats",
+      () => adminService.resetUserStats(profile.user_id),
+      `Stats reset for @${profile.username}`,
+      RED,
+    );
+  };
+
+  const sendPasswordReset = () => {
+    if (!confirmPrompt(`Send password-reset email to @${profile.username}? They'll get a recovery link in their inbox.`)) return;
+    wrap(
+      "Password reset",
+      () => adminService.sendPasswordResetForUser(profile.user_id),
+      `Reset email sent to @${profile.username}`,
+      GREEN,
+    );
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
@@ -6341,20 +6442,50 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
         {isAdmin && (
           <div style={{ background: `${RED}08`, border: `1px solid ${RED}33`, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: RED, letterSpacing: 3, marginBottom: 10 }}>{"// ADMIN CONTROLS"}</div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>Share PRs</span>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: profile.share_prs ? GREEN : MUTED }}>{profile.share_prs ? "ON" : "OFF"}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+
+            {/* Toggleable rows */}
+            {[
+              ["Share PRs",  profile.share_prs, togglePrs,    profile.share_prs ? "ON"    : "OFF",    profile.share_prs ? GREEN : MUTED],
+              ["Suspended",  profile.suspended, toggleSuspend, profile.suspended ? "YES"  : "NO",     profile.suspended ? RED   : MUTED],
+              ["Admin",      profile.is_admin,  toggleAdmin,   profile.is_admin  ? "YES"  : "NO",     profile.is_admin  ? GOLD  : MUTED],
+            ].map(([label, _val, onTap, valLabel, valColor]) => (
+              <button key={label} disabled={busy} onClick={onTap} style={{
+                width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                background: "none", border: "none", padding: "8px 0", cursor: busy ? "default" : "pointer",
+                borderBottom: `1px solid ${ACCENT}11`,
+              }}>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>{label}</span>
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: valColor, letterSpacing: 1 }}>
+                  {valLabel} <span style={{ opacity: 0.5, fontSize: 8 }}>↻</span>
+                </span>
+              </button>
+            ))}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", marginBottom: 10 }}>
               <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>Joined</span>
               <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED }}>{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"}</span>
             </div>
-            <button onClick={onToggleHidden} style={{
-              width: "100%", padding: "10px", cursor: "pointer",
-              background: viewHidden ? `${GREEN}22` : `${RED}22`,
-              border: `1px solid ${viewHidden ? GREEN : RED}66`,
+
+            {/* Action buttons */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+              <button disabled={busy} onClick={sendPasswordReset} style={{
+                padding: "9px", cursor: busy ? "default" : "pointer",
+                background: `${GREEN}11`, border: `1px solid ${GREEN}55`, color: GREEN,
+                fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+              }}>RESET PW</button>
+              <button disabled={busy} onClick={resetStats} style={{
+                padding: "9px", cursor: busy ? "default" : "pointer",
+                background: `${RED}11`, border: `1px solid ${RED}55`, color: RED,
+                fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+              }}>WIPE STATS</button>
+            </div>
+
+            <button disabled={busy} onClick={onToggleHidden} style={{
+              width: "100%", padding: "10px", cursor: busy ? "default" : "pointer",
+              background: viewHidden ? `${GREEN}22` : `${ACCENT}22`,
+              border: `1px solid ${viewHidden ? GREEN : ACCENT}66`,
               fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1,
-              color: viewHidden ? GREEN : RED,
+              color: viewHidden ? GREEN : ACCENT,
             }}>
               {viewHidden ? `REVEAL TO @${profile.username}` : `HIDE FROM @${profile.username}`}
             </button>
@@ -6505,6 +6636,11 @@ function LeaderboardScreen({ account, toast }) {
         viewHidden={viewHidden}
         onClose={() => setViewProfile(null)}
         onToggleHidden={handleToggleHidden}
+        toast={toast}
+        onRefresh={async () => {
+          if (viewProfile) await openProfile(viewProfile.user_id);
+          friendsService.fetchLeaderboard(sortBy).then(setBoard).catch(() => {});
+        }}
       />
     </div>
   );
@@ -6763,6 +6899,11 @@ function FriendsScreen({ account, toast }) {
         viewHidden={viewHidden}
         onClose={() => setViewProfile(null)}
         onToggleHidden={handleToggleHidden}
+        toast={toast}
+        onRefresh={async () => {
+          if (viewProfile) await openProfile(viewProfile.user_id);
+          loadFriendIds();
+        }}
       />
     </div>
   );
@@ -7187,7 +7328,7 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
