@@ -5452,7 +5452,7 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error }) {
 // ─── SCREEN: MENU (HOME) ──────────────────────────────────────────────────────
 
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
-                     account, onSignIn, onSignUp, onSignOut, pendingCount = 0 }) {
+                     account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -5840,6 +5840,42 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </button>
               )}
             </div>
+
+            {/* Privacy — only shown when signed in */}
+            {account.session && account.remoteProfile && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+                  letterSpacing: 3, marginBottom: 10 }}>{"// PRIVACY"}</div>
+                {(() => {
+                  const sharePrs = account.remoteProfile.share_prs !== false;
+                  return (
+                    <div onClick={onToggleSharePrs} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "12px 14px", cursor: "pointer",
+                      background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8
+                    }}>
+                      <div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
+                          Share Personal Records
+                        </div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                          Friends can see your PRs on the leaderboard
+                        </div>
+                      </div>
+                      <div style={{ width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+                        background: sharePrs ? ACCENT : MUTED + "44",
+                        border: `1px solid ${sharePrs ? ACCENT + "88" : MUTED + "44"}`,
+                        position: "relative", transition: "all .2s" }}>
+                        <div style={{ position: "absolute", top: 3, left: sharePrs ? 21 : 3,
+                          width: 14, height: 14, borderRadius: "50%",
+                          background: sharePrs ? "#fff" : MUTED, transition: "left .2s",
+                          boxShadow: sharePrs ? `0 0 6px ${ACCENT}` : "none" }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* Monarch Themes */}
             <div style={{ marginBottom: 20 }}>
@@ -7563,6 +7599,18 @@ export default function IronRealm() {
     }
   }, [toast]);
 
+  const handleToggleSharePrs = useCallback(async () => {
+    if (!session?.user || !remoteProfile) return;
+    const next = remoteProfile.share_prs === false ? true : false;
+    try {
+      await adminService.setSharePrs(session.user.id, next);
+      setRemoteProfile(r => ({ ...r, share_prs: next }));
+      toast(next ? "PRs now visible to friends" : "PRs hidden from friends", next ? GREEN : MUTED);
+    } catch (e) {
+      toast(e.message || "Failed to update privacy", RED);
+    }
+  }, [session, remoteProfile, toast]);
+
   const account = {
     session, remoteProfile, busy: authBusy, error: authError,
     supabaseConfigured,
@@ -7781,7 +7829,7 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
