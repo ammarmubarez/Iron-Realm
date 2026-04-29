@@ -4,6 +4,7 @@ import * as authService from "./services/auth";
 import * as syncService from "./services/sync";
 import * as friendsService from "./services/friends";
 import * as adminService from "./services/admin";
+import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
 const APP_VERSION = "1.7.0-dev";
@@ -5128,6 +5129,71 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
   );
 }
 
+// ─── SCREEN: WELCOME ──────────────────────────────────────────────────────────
+// First-launch chooser. Three paths:
+//   • Create account → opens AuthPanel in signup mode, then onboarding for body stats
+//   • Sign in       → opens AuthPanel in signin mode, then attempts to restore
+//                     full state from cloud Storage (skipping onboarding if present)
+//   • Continue as guest → goes straight to the existing onboarding flow
+//
+// If Supabase isn't configured for this build, only "Continue as guest" is
+// available and the cloud-related copy is hidden.
+
+function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest }) {
+  const button = (label, sub, onClick, primary) => (
+    <button onClick={onClick} style={{
+      width: "100%", padding: "16px 18px", textAlign: "left", cursor: "pointer",
+      background: primary ? `${ACCENT}1a` : BG3,
+      border: `1px solid ${primary ? ACCENT : ACCENT2 + "55"}`,
+      borderRadius: 10, marginBottom: 10,
+      transition: "all .15s",
+    }}>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
+        color: primary ? ACCENT : TEXT, letterSpacing: 2 }}>{label}</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
+        color: MUTED, marginTop: 4, lineHeight: 1.4 }}>{sub}</div>
+    </button>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: BG, display: "flex",
+      flexDirection: "column", justifyContent: "center", padding: "40px 24px" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", width: "100%" }}>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900,
+          color: ACCENT, letterSpacing: 6, textAlign: "center", marginBottom: 8 }}>
+          IRON REALM
+        </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
+          color: MUTED, textAlign: "center", marginBottom: 32, letterSpacing: 1 }}>
+          Awaken the Hunter within.
+        </div>
+
+        {supabaseConfigured && (
+          <>
+            {button("CREATE ACCOUNT",
+              "New Hunter. Sync progress across devices and join the leaderboard.",
+              onCreateAccount, true)}
+            {button("SIGN IN",
+              "Returning Hunter. Restore your full progress from the cloud.",
+              onSignIn, false)}
+          </>
+        )}
+        {button("CONTINUE AS GUEST",
+          supabaseConfigured
+            ? "Train locally. You can create an account later from Settings."
+            : "Train locally. (Online features are not configured for this build.)",
+          onGuest, !supabaseConfigured)}
+
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
+          color: MUTED, textAlign: "center", marginTop: 24, lineHeight: 1.5 }}>
+          Your data stays on this device.{supabaseConfigured ? " Signing in encrypts and stores a backup so you can recover on a new device." : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ─── SCREEN: ONBOARD ──────────────────────────────────────────────────────────
 
 function OnboardScreen({ onComplete }) {
@@ -5335,8 +5401,8 @@ function OnboardScreen({ onComplete }) {
 // Sign-in / create-account modal. Mounted from the Settings modal when the
 // user picks "Sign in / create account".
 
-function AuthPanel({ onClose, onSignIn, onSignUp, busy, error }) {
-  const [mode, setMode]         = useState("signin"); // "signin" | "signup"
+function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "signin" }) {
+  const [mode, setMode]         = useState(initialMode); // "signin" | "signup"
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -7627,6 +7693,8 @@ export default function IronRealm() {
   const [authBusy, setAuthBusy]           = useState(false);
   const [pendingCount, setPendingCount]   = useState(0);
   const [authError, setAuthError]         = useState(null);
+  // First-launch routing: "welcome" | "auth-signin" | "auth-signup" | "onboard"
+  const [welcomeStage, setWelcomeStage]   = useState("welcome");
 
   const st = store.profiles[store.activeId];
   const settings = store.settings || INIT_STORE.settings;
@@ -7701,6 +7769,20 @@ export default function IronRealm() {
     return () => { if (pushTimerRef.current) clearTimeout(pushTimerRef.current); };
   }, [st, settings, session, remoteProfile]);
 
+  // ── Auth: full-state push (debounced, gzip'd) for cross-device restore ──
+  // Slower debounce (10s) — this uploads the entire local store, so we batch
+  // multiple edits together. Failures are silent; a snapshot push is the
+  // user-visible sync path, this is best-effort backup.
+  const fullStatePushTimerRef = useRef(null);
+  useEffect(() => {
+    if (!supabaseConfigured || !session?.user) return;
+    if (fullStatePushTimerRef.current) clearTimeout(fullStatePushTimerRef.current);
+    fullStatePushTimerRef.current = setTimeout(() => {
+      cloudStateService.pushFullState(session.user.id, store).catch(() => {});
+    }, 10000);
+    return () => { if (fullStatePushTimerRef.current) clearTimeout(fullStatePushTimerRef.current); };
+  }, [store, session]);
+
   // ── Auth handlers ──
   const handleSignUp = useCallback(async ({ email, password, username }) => {
     setAuthBusy(true); setAuthError(null);
@@ -7734,6 +7816,20 @@ export default function IronRealm() {
       const row = user ? await syncService.getProfileRow(user.id) : null;
       setRemoteProfile(row);
       if (user) friendsService.countIncoming(user.id).then(setPendingCount).catch(() => {});
+
+      // Cross-device restore: only auto-replace local state when this device
+      // has nothing of its own yet (active profile not onboarded). For users
+      // already mid-progress on this device, the debounced push keeps cloud
+      // state up to date without overwriting their work.
+      const activeProfile = store.profiles[store.activeId];
+      if (user && activeProfile && !activeProfile.onboarded) {
+        const restored = await cloudStateService.pullFullState(user.id).catch(() => null);
+        if (restored && restored.profiles && restored.activeId) {
+          setStore(restored);
+          toast("Progress restored from cloud", GREEN);
+        }
+      }
+
       toast(row ? `Signed in as @${row.username}` : "Signed in", GREEN);
       return true;
     } catch (e) {
@@ -7742,7 +7838,7 @@ export default function IronRealm() {
     } finally {
       setAuthBusy(false);
     }
-  }, [toast]);
+  }, [toast, store]);
 
   const handleSignOut = useCallback(async () => {
     setAuthBusy(true);
@@ -7985,11 +8081,42 @@ export default function IronRealm() {
   };
 
   if (!st.onboarded) {
+    let firstLaunchView;
+    if (welcomeStage === "welcome") {
+      firstLaunchView = (
+        <WelcomeScreen
+          supabaseConfigured={supabaseConfigured}
+          onCreateAccount={() => setWelcomeStage("auth-signup")}
+          onSignIn={() => setWelcomeStage("auth-signin")}
+          onGuest={() => setWelcomeStage("onboard")}
+        />
+      );
+    } else if (welcomeStage === "auth-signin" || welcomeStage === "auth-signup") {
+      firstLaunchView = (
+        <AuthPanel
+          initialMode={welcomeStage === "auth-signup" ? "signup" : "signin"}
+          onClose={() => setWelcomeStage("welcome")}
+          onSignIn={async (creds) => {
+            const ok = await handleSignIn(creds);
+            if (ok) setWelcomeStage("onboard"); // restored stores will already flip onboarded=true and skip the OnboardScreen below
+          }}
+          onSignUp={async (creds) => {
+            const ok = await handleSignUp(creds);
+            if (ok) setWelcomeStage("onboard");
+          }}
+          busy={authBusy}
+          error={authError}
+        />
+      );
+    } else {
+      firstLaunchView = <OnboardScreen onComplete={handleOnboard} />;
+    }
+
     return (
       <>
         <style>{CSS}</style>
         <style>{dynCSS}</style>
-        <OnboardScreen onComplete={handleOnboard} />
+        {firstLaunchView}
         <Toasts toasts={toasts} />
       </>
     );
