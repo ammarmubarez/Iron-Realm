@@ -5452,10 +5452,26 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error }) {
 // ─── SCREEN: MENU (HOME) ──────────────────────────────────────────────────────
 
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
-                     account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, pendingCount = 0 }) {
+                     account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+
+  const currentDisplayName = account.remoteProfile?.display_name || "";
+  useEffect(() => {
+    setDisplayNameDraft(currentDisplayName);
+  }, [currentDisplayName]);
+
+  const dnDirty = displayNameDraft.trim() !== currentDisplayName.trim();
+  const saveDisplayName = async () => {
+    if (!onUpdateDisplayName || savingDisplayName) return;
+    setSavingDisplayName(true);
+    const ok = await onUpdateDisplayName(displayNameDraft.trim());
+    setSavingDisplayName(false);
+    if (!ok) setDisplayNameDraft(currentDisplayName);
+  };
   const today = new Date().toLocaleDateString("en", { weekday: "long", month: "short", day: "numeric" });
   const _isArchitect = settings?.monarchTheme === "architect";
   const _isShadow    = settings?.monarchTheme === "shadow";
@@ -5813,7 +5829,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </div>
               ) : account.session ? (
                 <div style={{ background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "12px 14px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div>
                       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 1 }}>
                         @{account.remoteProfile?.username || "..."}
@@ -5828,6 +5844,43 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                       fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: RED, fontWeight: 700, letterSpacing: 2,
                       opacity: account.busy ? 0.5 : 1,
                     }}>SIGN OUT</button>
+                  </div>
+
+                  {/* Display name editor */}
+                  <div>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 2, marginBottom: 5 }}>
+                      DISPLAY NAME
+                    </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                      <input
+                        type="text"
+                        value={displayNameDraft}
+                        maxLength={30}
+                        placeholder="Shown on your profile"
+                        onChange={e => setDisplayNameDraft(e.target.value)}
+                        style={{
+                          flex: 1, background: BG, border: `1px solid ${ACCENT}33`, borderRadius: 6,
+                          padding: "8px 10px", color: TEXT,
+                          fontFamily: "'Rajdhani',sans-serif", fontSize: 12, outline: "none",
+                        }}
+                      />
+                      <button
+                        onClick={saveDisplayName}
+                        disabled={!dnDirty || savingDisplayName}
+                        style={{
+                          background: dnDirty ? `${ACCENT}22` : "transparent",
+                          border: `1px solid ${dnDirty ? ACCENT : MUTED}55`,
+                          borderRadius: 6, padding: "8px 12px",
+                          cursor: dnDirty && !savingDisplayName ? "pointer" : "default",
+                          fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 2,
+                          color: dnDirty ? ACCENT : MUTED, opacity: savingDisplayName ? 0.5 : 1,
+                        }}>
+                        {savingDisplayName ? "..." : "SAVE"}
+                      </button>
+                    </div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 5 }}>
+                      {displayNameDraft.length}/30 · leave blank to show only @{account.remoteProfile?.username}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -7716,6 +7769,20 @@ export default function IronRealm() {
     }
   }, [session, remoteProfile, toast]);
 
+  const handleUpdateDisplayName = useCallback(async (rawName) => {
+    if (!session?.user || !remoteProfile) return false;
+    const next = (rawName || "").trim().slice(0, 30) || null;
+    try {
+      await adminService.updateProfileField(session.user.id, { display_name: next });
+      setRemoteProfile(r => ({ ...r, display_name: next }));
+      toast(next ? `Display name updated` : "Display name cleared", GREEN);
+      return true;
+    } catch (e) {
+      toast(e.message || "Failed to update display name", RED);
+      return false;
+    }
+  }, [session, remoteProfile, toast]);
+
   const account = {
     session, remoteProfile, busy: authBusy, error: authError,
     supabaseConfigured,
@@ -7934,7 +8001,7 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
