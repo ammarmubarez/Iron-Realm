@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.5";
+const APP_VERSION = "1.7.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -723,7 +723,6 @@ const EXERCISE_DB = {
     { name: "Hip Thrust",                   diff: "intermediate", type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings","medial-hamstrings"] },
     { name: "Barbell Hip Thrust",           diff: "intermediate", type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings","medial-hamstrings"] },
     { name: "Glute Bridge",                 diff: "beginner",     type: "calisthenics", primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","medial-hamstrings"] },
-    { name: "Weighted Glute Bridge",        diff: "beginner",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","medial-hamstrings"] },
     { name: "Single-Leg Glute Bridge",      diff: "intermediate", type: "calisthenics", primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings"] },
     { name: "Sumo Deadlift",                diff: "advanced",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","inner-thigh","lowerback","medial-hamstrings"] },
     { name: "Bulgarian Split Squat",        diff: "advanced",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","outer-quadricep","rectus-femoris","lateral-hamstrings"] },
@@ -1615,11 +1614,12 @@ function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
   const durationHours = (reps * 3 + 90) / 3600; // 1 set
   const baseXP = met * weightKg * durationHours;
 
-  // Calisthenics: no stored 1RM needed, use bodyweight
+  // Calisthenics: bodyweight + any added weight (plate, vest, etc.)
   if (exercise.type === "calisthenics") {
     const caliMet = MET_VALUES.calisthenics[exercise.diff] || 5.5;
     const caliDur = (reps * 4 + 90) / 3600;
-    return Math.round(caliMet * weightKg * caliDur);
+    const totalKg = (bodyWeightLbs + (setWeightLbs || 0)) * 0.453592;
+    return Math.round(caliMet * totalKg * caliDur);
   }
 
   const newE1RM  = epley1RM(setWeightLbs, reps);
@@ -4086,9 +4086,14 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   const [logModal, setLogModal] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [randoMode, setRandoMode] = useState(false);
-  const [randoMuscles, setRandoMuscles] = useState([]);
-  const [randoPlan, setRandoPlan] = useState(null);
-  const [randoDiff, setRandoDiff] = useState("all");
+  const _savedRando = (() => { try { return JSON.parse(localStorage.getItem("ir_rando_plan") || "{}"); } catch { return {}; } })();
+  const [randoMuscles, setRandoMuscles] = useState(_savedRando.muscles || []);
+  const [randoPlan, setRandoPlan] = useState(_savedRando.plan || null);
+  const [randoDiff, setRandoDiff] = useState(_savedRando.diff || "all");
+
+  useEffect(() => {
+    try { localStorage.setItem("ir_rando_plan", JSON.stringify({ muscles: randoMuscles, plan: randoPlan, diff: randoDiff })); } catch {}
+  }, [randoMuscles, randoPlan, randoDiff]);
 
   const [nutInput, setNutInput] = useState({ cal: "", protein: "" });
 
