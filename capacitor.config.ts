@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Iron Realm',
   webDir: 'build',
   server: {
-    url: 'https://dainty-kashata-37f16a.netlify.app',
+    url: 'https://ammarmubarez.github.io/Gym-Leveling',
     androidScheme: 'https'
   },
   android: {

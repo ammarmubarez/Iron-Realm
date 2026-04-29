@@ -2,6 +2,7 @@
   "name": "Iron Realm",
   "version": "1.5.0",
   "private": true,
+  "homepage": "https://ammarmubarez.github.io/Gym-Leveling",
   "dependencies": {
     "@capacitor/android": "^8.3.1",
     "@capacitor/cli": "^8.3.1",
