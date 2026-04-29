@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.6";
+const APP_VERSION = "1.6.7";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -3073,7 +3073,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const isCali   = exercise.type === "calisthenics";
   const isSpeed  = isCardio && exercise.cardioMode === "speed";
 
-  const defaultSet = { reps: "", weight: isCali ? String(wtVal(Math.round(weightLbs||170))) : "" };
+  const defaultSet = { reps: "", weight: "" };
   const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
   const updateSet = (i, field, val) => setSetRows(s => s.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const addSet    = () => setSetRows(s => [...s, { ...defaultSet }]);
@@ -3100,9 +3100,9 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
     ? (parsedMins > 0 ? calcXP(exercise, 1, parsedMins, weightLbs, isSpeed ? { speedMph: parsedSpeed } : {}) : 0)
     : validSets.reduce((sum, r) => {
         const reps = parseFloat(r.reps) || 0;
-        const w    = parseFloat(r.weight) || (isCali ? weightLbs : 0);
+        const w    = parseFloat(r.weight) || 0;
         if (reps <= 0) return sum;
-        return sum + calcSetXP(exercise, reps, w || weightLbs, weightLbs, storedE1RM);
+        return sum + calcSetXP(exercise, reps, w, weightLbs, storedE1RM);
       }, 0);
 
   const sessionBestE1RM = isCali || isCardio ? null : validSets.reduce((best, r) => {
@@ -3250,10 +3250,10 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             }} />}
             {setRows.length > 0 && (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: isCali ? "28px 1fr 24px" : "28px 80px 1fr 24px", gap: 6, marginBottom: 4, marginTop: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 4, marginTop: 16 }}>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, textAlign: "center" }}>#</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>REPS</div>
-                  {!isCali && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>WEIGHT ({wtLabel().toUpperCase()})</div>}
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isCali ? `ADDED WT (${wtLabel().toUpperCase()})` : `WEIGHT (${wtLabel().toUpperCase()})`}</div>
                   <div />
                 </div>
                 {setRows.map((row, i) => {
@@ -3261,18 +3261,16 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                   const prReps   = lastRow && parseFloat(row.reps)   > parseFloat(lastRow.reps);
                   const prWeight = lastRow && parseFloat(row.weight) > parseFloat(lastRow.weight);
                   return (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: isCali ? "28px 1fr 24px" : "28px 80px 1fr 24px", gap: 6, marginBottom: 5, alignItems: "center" }}>
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 5, alignItems: "center" }}>
                       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: parseFloat(row.reps) > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
                       <input className="input-field" type="number" value={row.reps}
                         onChange={e => updateSet(i, "reps", e.target.value)}
                         placeholder={lastRow ? lastRow.reps + " last" : "10"}
                         style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
-                      {!isCali && (
-                        <input className="input-field" type="number" value={row.weight}
-                          onChange={e => updateSet(i, "weight", e.target.value)}
-                          placeholder={lastRow ? lastRow.weight + " last" : "135"}
-                          style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
-                      )}
+                      <input className="input-field" type="number" value={row.weight}
+                        onChange={e => updateSet(i, "weight", e.target.value)}
+                        placeholder={isCali ? "0 (BW only)" : (lastRow ? lastRow.weight + " last" : "135")}
+                        style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
                       <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: MUTED, fontSize: 15, cursor: "pointer", lineHeight: 1 }}>×</button>
                     </div>
                   );
@@ -3337,7 +3335,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             const setsDetail = validSets.map(r => ({
               reps: parseFloat(r.reps) || 0,
               // Always store in lbs internally; convert from kg if needed
-              weight: wtValBack(parseFloat(r.weight) || (isCali ? wtVal(weightLbs) : 0)),
+              weight: wtValBack(parseFloat(r.weight) || 0),
             }));
             const avgWeight = setsDetail.reduce((s, r) => s + r.weight, 0) / setsDetail.length;
             const avgReps   = setsDetail.reduce((s, r) => s + r.reps, 0) / setsDetail.length;
