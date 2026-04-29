@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.7";
+const APP_VERSION = "1.6.8";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -5279,6 +5279,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help"
+  const [importError, setImportError] = useState(null);
   const today = new Date().toLocaleDateString("en", { weekday: "long", month: "short", day: "numeric" });
   const _isArchitect = settings?.monarchTheme === "architect";
   const _isShadow    = settings?.monarchTheme === "shadow";
@@ -5750,6 +5751,59 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                   <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT }}>{v}</span>
                 </div>
               ))}
+            </div>
+
+            {/* Data backup */}
+            <div style={{ background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 10 }}>{"// DATA BACKUP"}</div>
+              <button onClick={() => {
+                try {
+                  const data = localStorage.getItem("iron_realm_store_v1") || "{}";
+                  const blob = new Blob([data], { type: "application/json" });
+                  const url  = URL.createObjectURL(blob);
+                  const a    = document.createElement("a");
+                  a.href = url;
+                  a.download = `iron-realm-backup-${new Date().toISOString().slice(0,10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast("Backup saved!", ACCENT);
+                } catch { toast("Export failed", RED); }
+              }} style={{
+                width: "100%", marginBottom: 8, padding: "11px",
+                background: `${ACCENT}15`, border: `1px solid ${ACCENT}55`,
+                borderRadius: 6, cursor: "pointer",
+                fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
+                color: ACCENT, letterSpacing: 2
+              }}>⬇ EXPORT DATA</button>
+              <label style={{
+                display: "block", width: "100%", padding: "11px",
+                background: `${GOLD}15`, border: `1px solid ${GOLD}55`,
+                borderRadius: 6, cursor: "pointer", textAlign: "center",
+                fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
+                color: GOLD, letterSpacing: 2, boxSizing: "border-box"
+              }}>
+                ⬆ IMPORT DATA
+                <input type="file" accept=".json" style={{ display: "none" }} onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    try {
+                      const parsed = JSON.parse(ev.target.result);
+                      if (!parsed.profiles) throw new Error("Invalid backup file");
+                      localStorage.setItem("iron_realm_store_v1", JSON.stringify(parsed));
+                      toast("Data restored! Reloading…", GOLD);
+                      setTimeout(() => window.location.reload(), 1200);
+                    } catch { setImportError("Invalid backup file. Make sure you're using an Iron Realm export."); }
+                  };
+                  reader.readAsText(file);
+                  e.target.value = "";
+                }} />
+              </label>
+              {importError && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: RED, marginTop: 6 }}>{importError}</div>}
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 8, lineHeight: 1.4 }}>
+                Export saves all profiles, workouts, and progress as a JSON file. Import restores from a previous export.
+              </div>
             </div>
           </div>
         </div>
