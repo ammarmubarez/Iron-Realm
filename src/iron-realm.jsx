@@ -6794,18 +6794,73 @@ function _rankColor(lbl) {
   return "#e05555";
 }
 
+const AUDIT_ACTION_LABELS = {
+  toggle_share_prs:    "Toggled PR sharing",
+  suspend:             "Suspended",
+  unsuspend:           "Unsuspended",
+  grant_admin:         "Granted admin",
+  revoke_admin:        "Revoked admin",
+  wipe_stats:          "Wiped stats",
+  send_password_reset: "Sent password reset",
+  hide_friend:         "Hid from friends",
+  reveal_friend:       "Revealed to friends",
+};
+
+function _auditLabel(a) {
+  return AUDIT_ACTION_LABELS[a] || a.replace(/_/g, " ");
+}
+
+function _auditTimeAgo(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHidden, onRefresh, toast }) {
   const [busy, setBusy] = useState(false);
+  const [auditOpen,    setAuditOpen]    = useState(false);
+  const [auditEntries, setAuditEntries] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
   if (!profile) return null;
   const rc = _rankColor(profile.rank_label);
 
   const confirmPrompt = (msg) => typeof window !== "undefined" && window.confirm(msg);
 
-  const wrap = async (label, fn, successMsg, color = ACCENT) => {
+  const loadAuditLog = useCallback(async () => {
+    if (!isAdmin || !profile?.user_id) return;
+    setAuditLoading(true);
+    try {
+      const rows = await adminService.fetchAuditLog(profile.user_id, 25);
+      setAuditEntries(rows);
+    } catch (e) {
+      toast?.(`Audit log unavailable: ${e.message || e}`, RED);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [isAdmin, profile?.user_id, toast]);
+
+  const toggleAuditOpen = () => {
+    const next = !auditOpen;
+    setAuditOpen(next);
+    if (next) loadAuditLog();
+  };
+
+  const wrap = async (label, fn, successMsg, color = ACCENT, audit = null) => {
     if (busy) return;
     setBusy(true);
     try {
       await fn();
+      if (audit) {
+        await adminService.logAdminAction(profile.user_id, audit.action, audit.metadata || {});
+        if (auditOpen) loadAuditLog();
+      }
       toast?.(successMsg, color);
       onRefresh?.();
     } catch (e) { toast?.(`${label} failed: ${e.message || e}`, RED); }
@@ -6816,6 +6871,8 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
     "Toggle PRs",
     () => adminService.setSharePrs(profile.user_id, !profile.share_prs),
     `Share PRs ${!profile.share_prs ? "enabled" : "disabled"} for @${profile.username}`,
+    ACCENT,
+    { action: "toggle_share_prs", metadata: { value: !profile.share_prs } },
   );
 
   const toggleSuspend = () => {
@@ -6826,6 +6883,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
       () => adminService.setSuspended(profile.user_id, nextVal),
       `@${profile.username} ${nextVal ? "suspended" : "unsuspended"}`,
       nextVal ? RED : GREEN,
+      { action: nextVal ? "suspend" : "unsuspend" },
     );
   };
 
@@ -6837,6 +6895,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
       () => adminService.setIsAdmin(profile.user_id, nextVal),
       `@${profile.username} ${nextVal ? "promoted to admin" : "admin revoked"}`,
       nextVal ? GOLD : MUTED,
+      { action: nextVal ? "grant_admin" : "revoke_admin" },
     );
   };
 
@@ -6847,6 +6906,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
       () => adminService.resetUserStats(profile.user_id),
       `Stats reset for @${profile.username}`,
       RED,
+      { action: "wipe_stats" },
     );
   };
 
@@ -6857,6 +6917,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
       () => adminService.sendPasswordResetForUser(profile.user_id),
       `Reset email sent to @${profile.username}`,
       GREEN,
+      { action: "send_password_reset" },
     );
   };
 
@@ -6978,6 +7039,48 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
             }}>
               {viewHidden ? `REVEAL TO @${profile.username}` : `HIDE FROM @${profile.username}`}
             </button>
+
+            {/* Audit log — collapsible */}
+            <button onClick={toggleAuditOpen} style={{
+              width: "100%", marginTop: 10, padding: "8px 10px", cursor: "pointer",
+              background: "none", border: `1px solid ${MUTED}33`,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 2,
+            }}>
+              <span>{auditOpen ? "▾ AUDIT LOG" : "▸ AUDIT LOG"}</span>
+              <span style={{ opacity: 0.6 }}>{auditEntries.length > 0 ? `${auditEntries.length}` : ""}</span>
+            </button>
+
+            {auditOpen && (
+              <div style={{ marginTop: 8, background: BG, border: `1px solid ${MUTED}22`, borderRadius: 6, padding: "8px 10px", maxHeight: 220, overflowY: "auto" }}>
+                {auditLoading ? (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", padding: "10px 0" }}>
+                    Loading…
+                  </div>
+                ) : auditEntries.length === 0 ? (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", padding: "10px 0" }}>
+                    No actions recorded.
+                  </div>
+                ) : auditEntries.map(entry => (
+                  <div key={entry.id} style={{ padding: "6px 0", borderBottom: `1px solid ${MUTED}11` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, fontWeight: 600 }}>
+                        {_auditLabel(entry.action)}
+                      </span>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, whiteSpace: "nowrap" }}>
+                        {_auditTimeAgo(entry.created_at)}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2 }}>
+                      by @{entry.admin_username || "unknown"}
+                      {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+                        <span style={{ opacity: 0.7 }}> · {JSON.stringify(entry.metadata)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -7033,6 +7136,7 @@ function LeaderboardScreen({ account, toast }) {
     const newHidden = !viewHidden;
     try {
       await friendsService.setFriendHidden(viewProfile.user_id, myUserId, newHidden);
+      adminService.logAdminAction(viewProfile.user_id, newHidden ? "hide_friend" : "reveal_friend");
       setViewHidden(newHidden);
       toast(newHidden ? "Hidden from their friends list" : `Revealed to @${viewProfile.username}`, ACCENT);
     } catch (e) { toast(e.message, RED); }
@@ -7200,6 +7304,7 @@ function FriendsScreen({ account, toast }) {
     const newHidden = !viewHidden;
     try {
       await friendsService.setFriendHidden(viewProfile.user_id, myUserId, newHidden);
+      adminService.logAdminAction(viewProfile.user_id, newHidden ? "hide_friend" : "reveal_friend");
       setViewHidden(newHidden);
       toast(newHidden ? "Hidden from their friends list" : `Revealed to @${viewProfile.username}`, ACCENT);
     } catch (e) { toast(e.message, RED); }

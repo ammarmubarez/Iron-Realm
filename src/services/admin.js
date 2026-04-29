@@ -46,3 +46,34 @@ export async function sendPasswordResetForUser(targetUserId, redirectTo = null) 
   if (error) throw error;
   return email;
 }
+
+// ── Audit log ────────────────────────────────────────────────────────────────
+// log_admin_action runs SECURITY DEFINER and re-checks the caller's admin
+// flag — non-admins get a "Not authorized" exception. Errors are swallowed
+// because the underlying moderation action has already succeeded; a failed
+// log shouldn't surface as a user-visible failure.
+
+export async function logAdminAction(targetUserId, action, metadata = {}) {
+  if (!isConfigured) return null;
+  try {
+    const { data, error } = await supabase.rpc("log_admin_action", {
+      p_target_user_id: targetUserId,
+      p_action:         action,
+      p_metadata:       metadata,
+    });
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAuditLog(targetUserId = null, limit = 50) {
+  if (!isConfigured) return [];
+  const { data, error } = await supabase.rpc("fetch_audit_log", {
+    p_target_user_id: targetUserId,
+    p_limit:          limit,
+  });
+  if (error) throw error;
+  return data || [];
+}
