@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Iron Realm',
   webDir: 'build',
   server: {
-    url: 'https://ammarmubarez.github.io/Gym-Leveling',
+    url: 'https://ammarmubarez.github.io/Iron-Realm',
     androidScheme: 'https'
   },
   android: {
