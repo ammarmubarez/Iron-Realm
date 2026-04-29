@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.4";
+const APP_VERSION = "1.6.5";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -722,7 +722,8 @@ const EXERCISE_DB = {
   glutes: [
     { name: "Hip Thrust",                   diff: "intermediate", type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings","medial-hamstrings"] },
     { name: "Barbell Hip Thrust",           diff: "intermediate", type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings","medial-hamstrings"] },
-    { name: "Glute Bridge",                 diff: "beginner",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","medial-hamstrings"] },
+    { name: "Glute Bridge",                 diff: "beginner",     type: "calisthenics", primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","medial-hamstrings"] },
+    { name: "Weighted Glute Bridge",        diff: "beginner",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","medial-hamstrings"] },
     { name: "Single-Leg Glute Bridge",      diff: "intermediate", type: "calisthenics", primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings"] },
     { name: "Sumo Deadlift",                diff: "advanced",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","inner-thigh","lowerback","medial-hamstrings"] },
     { name: "Bulgarian Split Squat",        diff: "advanced",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","outer-quadricep","rectus-femoris","lateral-hamstrings"] },
@@ -1175,7 +1176,7 @@ const FEMALE_PROGRAMS = [
         { muscle:"bicep", name:"Hammer Curl", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
       ]},
       { label: "Lower Hypertrophy", rest: false, exercises: [
-        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"strength", sets:4, repsLabel:"15 reps" },
+        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"calisthenics", sets:4, repsLabel:"15 reps" },
         { muscle:"legs", name:"Leg Press", diff:"intermediate", type:"strength", sets:4, repsLabel:"12 reps" },
         { muscle:"glutes", name:"Cable Kickbacks", diff:"beginner", type:"strength", sets:3, repsLabel:"15 each" },
         { muscle:"legs", name:"Leg Curl", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
@@ -1251,7 +1252,7 @@ const FEMALE_PROGRAMS = [
         { muscle:"bicep", name:"Hammer Curl", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
       ]},
       { label: "Glutes B", rest: false, exercises: [
-        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"strength", sets:5, repsLabel:"15 reps" },
+        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"calisthenics", sets:5, repsLabel:"15 reps" },
         { muscle:"glutes", name:"Bulgarian Split Squat", diff:"advanced", type:"strength", sets:3, repsLabel:"10 each" },
         { muscle:"glutes", name:"Sumo Deadlift", diff:"advanced", type:"strength", sets:3, repsLabel:"8 reps" },
         { muscle:"glutes", name:"Donkey Kicks", diff:"beginner", type:"calisthenics", sets:3, repsLabel:"20 each" },
@@ -1294,7 +1295,7 @@ const FEMALE_PROGRAMS = [
         { muscle:"legs", name:"Leg Press", diff:"intermediate", type:"strength", sets:4, repsLabel:"12 reps" },
         { muscle:"chest", name:"Push-ups", diff:"beginner", type:"calisthenics", sets:3, repsLabel:"failure" },
         { muscle:"back", name:"Dumbbell Row", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
-        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"strength", sets:4, repsLabel:"15 reps" },
+        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"calisthenics", sets:4, repsLabel:"15 reps" },
         { muscle:"core", name:"Russian Twists", diff:"beginner", type:"calisthenics", sets:3, repsLabel:"20 reps" },
       ]},
       { label: "Rest", rest: true, exercises: [] },
