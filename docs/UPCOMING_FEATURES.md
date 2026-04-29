@@ -14,14 +14,15 @@ they ship.
 **Target date:**
 
 ### Features
-- Supabase backend (auth, profile sync, friends, leaderboard)
-- Admin moderation: suspended flag, password-reset email, wipe stats, toggle admin/share_prs, reveal/hide
-- Friends-only profile visibility (RLS-enforced)
-- PR History modal with progression sparklines
-- Workout Heatmap (13-week grid, daily XP intensity, streaks, day-detail drill-down)
+- ~~Supabase backend (auth, profile sync, friends, leaderboard)~~
+- ~~Admin moderation: suspended flag, password-reset email, wipe stats, toggle admin/share_prs, reveal/hide~~
+- ~~Friends-only profile visibility (RLS-enforced)~~
+- ~~PR History modal with progression sparklines~~
+- ~~Workout Heatmap (13-week grid, daily XP intensity, streaks, day-detail drill-down)~~
+- ~~User-controlled `share_prs` privacy toggle in Settings~~
 
 ### Improvements
--
+- ~~`homepage` field set for GitHub Pages deploy (`/iron-realm` base path)~~
 
 ### Bug fixes
 -
@@ -80,7 +81,8 @@ they ship.
 
 Ideas that haven't been assigned to a release yet.
 
--
+- Admin audit log — record moderation actions to a DB table for accountability
+- Hard-delete account via Supabase Edge Function (requires service_role key server-side)
 
 ---
 
