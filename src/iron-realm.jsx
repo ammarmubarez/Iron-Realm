@@ -7089,13 +7089,14 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
           {[
             ["SESSIONS", profile.total_workouts],
-            ["WEEKLY XP", (profile.weekly_xp || 0).toLocaleString()],
+            ["WEEKLY",   (profile.weekly_xp || 0).toLocaleString()],
             ["TOTAL XP", (profile.overall_xp || 0).toLocaleString()],
+            ["FRIENDS",  (profile.friend_count ?? "—")],
           ].map(([label, val]) => (
-            <div key={label} style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 8px", textAlign: "center" }}>
+            <div key={label} style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700, color: GOLD }}>{val}</div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{label}</div>
             </div>
