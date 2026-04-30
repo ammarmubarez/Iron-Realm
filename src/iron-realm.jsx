@@ -6871,6 +6871,47 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
         </div>
 
+        {(() => {
+          const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
+          if (imbalances.length === 0) return null;
+          return (
+            <div style={{ background: `${GOLD}08`, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 4, marginBottom: 10 }}>
+                [ FOCUS RECOMMENDATIONS ]
+              </div>
+              {imbalances.map((imb, i) => {
+                const suggestions = suggestExercisesFor(imb.target, 3);
+                return (
+                  <div key={i} style={{ marginBottom: i === imbalances.length - 1 ? 0 : 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700, letterSpacing: 1 }}>
+                        {imb.pair[0]} ▸ {imb.pair[1]}
+                      </span>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED }}>
+                        {imb.ratio === Infinity ? "∞" : `${imb.ratio.toFixed(1)}×`}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, lineHeight: 1.4, marginBottom: suggestions.length ? 6 : 0 }}>
+                      {imb.message}
+                    </div>
+                    {suggestions.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {suggestions.map(ex => (
+                          <span key={ex.name} style={{
+                            fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
+                            background: BG3, border: `1px solid ${GOLD}22`, borderRadius: 4,
+                            padding: "3px 8px",
+                          }}>{ex.name}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
         <StatTree
           tree={STAT_TREE}
@@ -6949,6 +6990,72 @@ function _activityColor(iso) {
   if (h < 24)  return GREEN;
   if (h < 168) return GOLD;   // < 7d
   return MUTED;
+}
+
+// ─── IMBALANCE DETECTOR ───────────────────────────────────────────────────────
+// Walks pairs of antagonist muscle groups and returns flags where one side
+// significantly outweighs the other. Each check has a minimum-XP gate so
+// new accounts with mostly-zero stats don't get spammed with false alarms.
+
+function detectImbalances(stats, subStats) {
+  const get    = (k) => stats?.[k] || 0;
+  const getSub = (k) => subStats?.[k] || 0;
+  const sumSub = (...keys) => keys.reduce((s, k) => s + getSub(k), 0);
+
+  const checks = [
+    {
+      label: ["Chest", "Back"],
+      a: get("chest"), b: get("back"),
+      minXp: 200, threshold: 1.5,
+      tipForward: "Posterior chain is lagging. Add rows or pull-ups.",
+      tipReverse: "Pressing volume is behind. Add bench or push-ups.",
+      targetForward: "back", targetReverse: "chest",
+    },
+    {
+      label: ["Triceps", "Biceps"],
+      a: get("tricep"), b: get("bicep"),
+      minXp: 100, threshold: 1.3,
+      tipForward: "Biceps are pulling ahead — triceps make up 2/3 of your arm. Add dips, pushdowns, or skull crushers.",
+      tipReverse: "Biceps lagging behind triceps. Add curls.",
+      targetForward: "tricep", targetReverse: "bicep",
+    },
+    {
+      label: ["Front Delts", "Rear Delts"],
+      a: getSub("anterior-deltoid"), b: getSub("posterior-deltoid"),
+      minXp: 100, threshold: 2.0,
+      tipForward: "Rear delts neglected — common in pressing-heavy programs. Add face pulls or reverse flyes.",
+      targetForward: "shoulders",
+    },
+    {
+      label: ["Quads", "Hamstrings"],
+      a: sumSub("outer-quadricep", "rectus-femoris", "inner-quadricep"),
+      b: sumSub("lateral-hamstrings", "medial-hamstrings"),
+      minXp: 200, threshold: 2.0,
+      tipForward: "Hamstrings underdeveloped. Add Romanian deadlifts or hamstring curls.",
+      targetForward: "legs",
+    },
+  ];
+
+  const out = [];
+  for (const c of checks) {
+    if (Math.max(c.a, c.b) < c.minXp) continue;
+    const aDom = c.b > 0 ? c.a / c.b : Infinity;  // a outweighs b
+    const bDom = c.a > 0 ? c.b / c.a : Infinity;  // b outweighs a
+    if (aDom >= c.threshold) {
+      // a is dominant → suggest exercises that target b
+      out.push({ pair: [c.label[0], c.label[1]], ratio: aDom, message: c.tipForward, target: c.targetForward });
+    } else if (c.tipReverse && bDom >= c.threshold) {
+      out.push({ pair: [c.label[1], c.label[0]], ratio: bDom, message: c.tipReverse, target: c.targetReverse });
+    }
+  }
+  return out;
+}
+
+function suggestExercisesFor(target, n = 3) {
+  const list = EXERCISE_DB?.[target];
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const strengthFirst = [...list].sort((a, b) => (a.type === "strength" ? -1 : 1) - (b.type === "strength" ? -1 : 1));
+  return strengthFirst.slice(0, n);
 }
 
 function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHidden, onRefresh, toast }) {
