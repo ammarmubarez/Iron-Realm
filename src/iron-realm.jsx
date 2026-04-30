@@ -1467,6 +1467,7 @@ const newProfile = (id, name = "Hunter") => ({
   prs: {},              // { exerciseName: estimated1RM }
   lastWeightUpdate: null,
   weightLog: [],
+  bookmarkedExercises: [],   // array of exercise names pinned to top of database
   createdAt: Date.now(),
 });
 
@@ -3695,10 +3696,12 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   );
 }
 
-function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toast }) {
+function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookmark, settings, toast }) {
   const [selMuscle, setSelMuscle] = useState("chest");
   const [searchQ, setSearchQ] = useState("");
   const [customMode, setCustomMode] = useState(false);
+  const [bookmarksOnly, setBookmarksOnly] = useState(false);
+  const bookmarkedSet = new Set(st.bookmarkedExercises || []);
 
   const [randoMode, setRandoMode] = useState(false);
   const [randoMuscles, setRandoMuscles] = useState([]);
@@ -3745,13 +3748,20 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
   };
 
   // Always show browseable exercises — plan is shown as a separate banner above
-  const allExercises = isSearching
+  const allExercises = (isSearching || bookmarksOnly)
     ? [...Object.entries(EXERCISE_DB).flatMap(([, exs]) => exs), ...allCustom]
     : getExercisesForMuscle(selMuscle);
   const filtered = (isSearching
     ? allExercises.filter(e => e.name.toLowerCase().includes(searchQ.toLowerCase()))
-    : allExercises
-  ).slice().sort((a, b) => a.name.localeCompare(b.name));
+    : (bookmarksOnly
+      ? allExercises.filter(e => bookmarkedSet.has(e.name))
+      : allExercises)
+  ).slice().sort((a, b) => {
+    // Bookmarked first (when not filtered to bookmarks-only), then alphabetical
+    const aB = bookmarkedSet.has(a.name), bB = bookmarkedSet.has(b.name);
+    if (!bookmarksOnly && aB !== bB) return aB ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
 
   const handleSaveCustom = () => {
     if (!cName.trim()) { toast("Enter a name", RED); return; }
@@ -3778,6 +3788,14 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
       {/* Muscle filter — major groups only, pill style */}
       {!isSearching && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+          <button onClick={() => setBookmarksOnly(b => !b)} style={{
+            background: bookmarksOnly ? `${GOLD}22` : BG2,
+            border: `1px solid ${bookmarksOnly ? GOLD : GOLD + "33"}`,
+            borderRadius: 20, padding: "5px 11px", cursor: "pointer",
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700,
+            color: bookmarksOnly ? GOLD : MUTED, transition: "all .15s",
+            boxShadow: bookmarksOnly ? `0 0 8px ${GOLD}33` : "none",
+          }}>★ {bookmarkedSet.size > 0 ? `${bookmarkedSet.size}` : ""}</button>
           {[
             { key: "chest",     name: "Chest" },
             { key: "back",      name: "Back" },
@@ -3790,9 +3808,9 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
             { key: "cardio",    name: "Cardio" },
           ].map(({ key, name }) => {
             const meta = MUSCLE_META[key] || MUSCLE_META.chest;
-            const sel = selMuscle === key;
+            const sel = !bookmarksOnly && selMuscle === key;
             return (
-              <button key={key} onClick={() => { setSelMuscle(key); setSearchQ(""); }} style={{
+              <button key={key} onClick={() => { setSelMuscle(key); setSearchQ(""); setBookmarksOnly(false); }} style={{
                 background: sel ? `${meta.color}22` : BG2,
                 border: `1px solid ${sel ? meta.color : ACCENT2 + "33"}`,
                 borderRadius: 20, padding: "5px 11px", cursor: "pointer",
@@ -3868,11 +3886,19 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
           const diffColor = { beginner: GREEN, intermediate: ACCENT, advanced: GOLD, elite: RED }[ex.diff];
           const typeColor = { strength: ACCENT, calisthenics: "#aa44ff", cardio: RED }[ex.type] || ACCENT;
           const subs = ex.svgTargets ? ex.svgTargets.map(t => MUSCLE_META[t]?.name).filter(Boolean) : [];
+          const isBookmarked = bookmarkedSet.has(ex.name);
           return (
             <div key={i} style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 15, fontWeight: 700, color: TEXT }}>{ex.name}</div>
-                <div style={{ display: "flex", gap: 5 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                  <button onClick={() => onToggleBookmark?.(ex.name)} title={isBookmarked ? "Remove bookmark" : "Bookmark"} style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    fontSize: 14, lineHeight: 1, padding: 0, color: isBookmarked ? GOLD : MUTED,
+                    flexShrink: 0,
+                  }}>{isBookmarked ? "★" : "☆"}</button>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 15, fontWeight: 700, color: TEXT }}>{ex.name}</div>
+                </div>
+                <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: diffColor, background: `${diffColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: 1 }}>{ex.diff?.toUpperCase()}</span>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: typeColor, background: `${typeColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: 1 }}>{ex.type?.toUpperCase()}</span>
                 </div>
@@ -8207,6 +8233,14 @@ export default function IronRealm() {
     toast(`${exercise.name} saved`, GREEN);
   };
 
+  const handleToggleBookmark = (exerciseName) => {
+    updateActive(p => {
+      const list = p.bookmarkedExercises || [];
+      const has = list.includes(exerciseName);
+      return { ...p, bookmarkedExercises: has ? list.filter(n => n !== exerciseName) : [...list, exerciseName] };
+    });
+  };
+
   const handleSaveCustomProgram = (prog, deleteId = null) => {
     updateActive(p => {
       const existing = p.customPrograms || [];
@@ -8266,7 +8300,7 @@ export default function IronRealm() {
       {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
-      {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
+      {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
       {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} toast={toast} />}
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
