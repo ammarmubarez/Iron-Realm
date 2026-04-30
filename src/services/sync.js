@@ -59,11 +59,15 @@ export async function pushSnapshot({ userId, snapshot }) {
 
 // Reduce the local profile + settings to the public mirror shape.
 // Pure function — no I/O. Safe to call frequently.
+//
+// Only emits fields derived from local state. User-editable cloud fields
+// (display_name, share_prs, banner_color) are NOT emitted here — those
+// have dedicated update paths so the periodic snapshot push doesn't
+// stomp on values the user just set.
 export function buildSnapshotFromLocal(localProfile, settings = {}) {
   const workouts = localProfile.workouts || [];
   const level = localProfile.overallLevel || 1;
   return {
-    display_name:   localProfile.name || null,
     monarch_theme:  settings.monarchTheme || null,
     rank_label:     _rankLetter(level),
     overall_level:  level,
@@ -71,7 +75,6 @@ export function buildSnapshotFromLocal(localProfile, settings = {}) {
     weekly_xp:      sumWeeklyXP(workouts),
     total_workouts: workouts.length,
     prs:            localProfile.prs || {},
-    share_prs:      settings.sharePrs !== false,
   };
 }
 

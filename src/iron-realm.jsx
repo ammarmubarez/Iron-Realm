@@ -5543,8 +5543,21 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
 
 // ─── SCREEN: MENU (HOME) ──────────────────────────────────────────────────────
 
+const BANNER_PALETTE = [
+  { hex: null,       name: "Default" },
+  { hex: "#00d4ff",  name: "Cyan" },
+  { hex: "#ffd700",  name: "Gold" },
+  { hex: "#a855f7",  name: "Royal" },
+  { hex: "#e85d4a",  name: "Crimson" },
+  { hex: "#22c55e",  name: "Emerald" },
+  { hex: "#ec4899",  name: "Magenta" },
+  { hex: "#f59e0b",  name: "Amber" },
+  { hex: "#6e44ff",  name: "Shadow" },
+];
+
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
-                     account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName, pendingCount = 0 }) {
+                     account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
+                     onUpdateBannerColor, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -5985,6 +5998,36 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </button>
               )}
             </div>
+
+            {/* Profile — banner color picker (signed in only) */}
+            {account.session && account.remoteProfile && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+                  letterSpacing: 3, marginBottom: 10 }}>{"// PROFILE BANNER"}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {BANNER_PALETTE.map(({ hex, name }) => {
+                    const sel = (account.remoteProfile.banner_color || null) === hex;
+                    return (
+                      <button
+                        key={name}
+                        onClick={() => onUpdateBannerColor?.(hex)}
+                        title={name}
+                        style={{
+                          width: 36, height: 36, borderRadius: 10, cursor: "pointer",
+                          background: hex || `linear-gradient(135deg, ${MUTED}33, ${BG3})`,
+                          border: `2px solid ${sel ? "#fff" : (hex || MUTED) + "55"}`,
+                          boxShadow: sel ? `0 0 10px ${hex || MUTED}` : "none",
+                          padding: 0,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6 }}>
+                  Tints your card on friends' leaderboards.
+                </div>
+              </div>
+            )}
 
             {/* Privacy — only shown when signed in */}
             {account.session && account.remoteProfile && (
@@ -7187,12 +7230,12 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
-        border: `1px solid ${ACCENT}33`, borderTop: `2px solid ${ACCENT}`,
+        border: `1px solid ${(profile.banner_color || ACCENT)}33`, borderTop: `2px solid ${profile.banner_color || ACCENT}`,
         width: "100%", maxWidth: 480, padding: "24px 20px 40px",
         maxHeight: "90vh", overflowY: "auto", position: "relative",
         clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
       }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${(profile.banner_color || ACCENT)}cc, transparent)` }} />
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -7454,12 +7497,14 @@ function LeaderboardScreen({ account, toast }) {
         {board.map((row, i) => {
           const rc = _rankColor(row.rank_label);
           const isMe = row.friend_id === myUserId;
+          const banner = row.banner_color || ACCENT;
           return (
             <div key={row.friend_id} onClick={() => openProfile(row.friend_id)}
               style={{
                 display: "flex", alignItems: "center", gap: 12,
-                background: isMe ? `${ACCENT}11` : BG2,
-                border: `1px solid ${isMe ? ACCENT + "55" : ACCENT + "1a"}`,
+                background: isMe ? `${banner}11` : BG2,
+                border: `1px solid ${isMe ? banner + "55" : banner + "1a"}`,
+                borderLeft: `3px solid ${banner}`,
                 borderRadius: 10, padding: "12px 14px", marginBottom: 8, cursor: "pointer",
               }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: i < 3 ? GOLD : MUTED, fontWeight: 700, minWidth: 22, textAlign: "center" }}>
@@ -8040,6 +8085,20 @@ export default function IronRealm() {
     }
   }, [session, remoteProfile, toast]);
 
+  const handleUpdateBannerColor = useCallback(async (hex) => {
+    if (!session?.user || !remoteProfile) return false;
+    const next = hex && /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : null;
+    try {
+      await adminService.updateProfileField(session.user.id, { banner_color: next });
+      setRemoteProfile(r => ({ ...r, banner_color: next }));
+      toast(next ? "Banner color updated" : "Banner color cleared", next || ACCENT);
+      return true;
+    } catch (e) {
+      toast(e.message || "Failed to update banner color", RED);
+      return false;
+    }
+  }, [session, remoteProfile, toast]);
+
   const account = {
     session, remoteProfile, busy: authBusy, error: authError,
     supabaseConfigured,
@@ -8297,7 +8356,7 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
