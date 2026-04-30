@@ -6929,7 +6929,8 @@ function _auditLabel(a) {
   return AUDIT_ACTION_LABELS[a] || a.replace(/_/g, " ");
 }
 
-function _auditTimeAgo(iso) {
+function _timeAgo(iso) {
+  if (!iso) return "—";
   const ms = Date.now() - new Date(iso).getTime();
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s ago`;
@@ -6940,6 +6941,14 @@ function _auditTimeAgo(iso) {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+function _activityColor(iso) {
+  if (!iso) return MUTED;
+  const h = (Date.now() - new Date(iso).getTime()) / 3600000;
+  if (h < 24)  return GREEN;
+  if (h < 168) return GOLD;   // < 7d
+  return MUTED;
 }
 
 function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHidden, onRefresh, toast }) {
@@ -7080,7 +7089,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
           {[
             ["SESSIONS", profile.total_workouts],
             ["WEEKLY XP", (profile.weekly_xp || 0).toLocaleString()],
@@ -7091,6 +7100,17 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{label}</div>
             </div>
           ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: "50%",
+            background: _activityColor(profile.updated_at),
+            boxShadow: `0 0 4px ${_activityColor(profile.updated_at)}`,
+          }} />
+          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+            Last active {_timeAgo(profile.updated_at)}
+          </span>
         </div>
 
         {profile.prs && Object.keys(profile.prs).length > 0 && (
@@ -7187,7 +7207,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
                         {_auditLabel(entry.action)}
                       </span>
                       <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, whiteSpace: "nowrap" }}>
-                        {_auditTimeAgo(entry.created_at)}
+                        {_timeAgo(entry.created_at)}
                       </span>
                     </div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2 }}>
@@ -7318,11 +7338,18 @@ function LeaderboardScreen({ account, toast }) {
                 fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 900, color: rc,
               }}>{row.rank_label || "E"}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: isMe ? ACCENT : TEXT, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  @{row.username}{isMe ? " ◈" : ""}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div title={`Active ${_timeAgo(row.updated_at)}`} style={{
+                    width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                    background: _activityColor(row.updated_at),
+                    boxShadow: `0 0 4px ${_activityColor(row.updated_at)}`,
+                  }} />
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: isMe ? ACCENT : TEXT, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    @{row.username}{isMe ? " ◈" : ""}
+                  </div>
                 </div>
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
-                  LVL {row.overall_level} · {row.total_workouts} sessions
+                  LVL {row.overall_level} · {row.total_workouts} sessions · {_timeAgo(row.updated_at)}
                 </div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
