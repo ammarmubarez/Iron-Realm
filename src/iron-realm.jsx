@@ -3400,6 +3400,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const [sessionLog, setSessionLog] = useState([]);
   const [editModal, setEditModal] = useState(null);
   const [selDay, setSelDay] = useState(0); // 0=today
+  const [currentSupersetGroup, setCurrentSupersetGroup] = useState(null);
   const allBrowseExercises = [
     ...(EXERCISE_DB[selMuscle] || []),
     ...(st.customExercises||[]).filter(e => e.primary === selMuscle)
@@ -3495,16 +3496,23 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {byDay[selDay].map((w, i) => {
                 const muscleMeta = MUSCLE_META[w.muscle] || MUSCLE_META[w.exercise?.primary] || MUSCLE_META.chest;
+                const dayList = byDay[selDay];
+                const inGroup = !!w.supersetGroup;
+                const groupAbove = inGroup && dayList[i - 1]?.supersetGroup === w.supersetGroup;
                 return (
                   <div key={i} style={{
                     background: BG2, border: `1px solid ${muscleMeta.color}33`,
-                    borderLeft: `3px solid ${muscleMeta.color}`,
-                    borderRadius: 10, padding: "12px 14px"
+                    borderLeft: `3px solid ${inGroup ? GOLD : muscleMeta.color}`,
+                    borderRadius: 10, padding: "12px 14px",
+                    marginTop: groupAbove ? -4 : 0,
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
                       <div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
-                          fontWeight: 700, color: TEXT }}>{w.exerciseName}</div>
+                          fontWeight: 700, color: TEXT, display: "flex", alignItems: "center", gap: 6 }}>
+                          {inGroup && <span style={{ fontSize: 10, color: GOLD, opacity: 0.8 }}>↔</span>}
+                          {w.exerciseName}
+                        </div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: muscleMeta.color }}>
                           {muscleMeta.name}
                         </div>
@@ -3565,15 +3573,30 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px" }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
                 color: GOLD, letterSpacing: 3, marginBottom: 8 }}>{"// THIS SESSION"}</div>
-              {sessionLog.map((l, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between",
-                  fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
-                  color: TEXT, paddingBottom: 4, marginBottom: 4,
-                  borderBottom: `1px solid ${ACCENT2}22` }}>
-                  <span>{l.name}</span>
-                  <span style={{ color: GOLD }}>+{l.xp} XP</span>
-                </div>
-              ))}
+              {sessionLog.map((l, i) => {
+                const prev = sessionLog[i - 1];
+                const next = sessionLog[i + 1];
+                const inGroup    = !!l.supersetGroup;
+                const groupAbove = inGroup && prev?.supersetGroup === l.supersetGroup;
+                const groupBelow = inGroup && next?.supersetGroup === l.supersetGroup;
+                return (
+                  <div key={i} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT,
+                    padding: "4px 0 4px 8px", marginBottom: 4,
+                    borderBottom: `1px solid ${ACCENT2}22`,
+                    borderLeft: inGroup ? `2px solid ${GOLD}` : "2px solid transparent",
+                    borderTopLeftRadius: groupAbove ? 0 : 4,
+                    borderBottomLeftRadius: groupBelow ? 0 : 4,
+                  }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {inGroup && <span style={{ fontSize: 9, color: GOLD, opacity: 0.7 }}>↔</span>}
+                      {l.name}
+                    </span>
+                    <span style={{ color: GOLD }}>+{l.xp} XP</span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -3582,6 +3605,24 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
       {/* ── BROWSE + LOG TAB ── */}
       {tab === "browse" && (
         <div style={{ padding: "14px 16px 0" }}>
+          {/* Superset toggle */}
+          <button
+            onClick={() => setCurrentSupersetGroup(g => g ? null : `ss_${Date.now()}`)}
+            style={{
+              width: "100%", padding: "10px 12px", marginBottom: 10, cursor: "pointer",
+              background: currentSupersetGroup ? `${GOLD}1a` : BG2,
+              border: `1px solid ${currentSupersetGroup ? GOLD : ACCENT2 + "33"}`,
+              borderRadius: 8, textAlign: "left",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+              color: currentSupersetGroup ? GOLD : MUTED, letterSpacing: 2,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+            <span>↔ {currentSupersetGroup ? "SUPERSET ACTIVE" : "START SUPERSET"}</span>
+            <span style={{ fontSize: 9, opacity: 0.7 }}>
+              {currentSupersetGroup ? "TAP TO END" : "GROUP NEXT EXERCISES"}
+            </span>
+          </button>
+
           {/* Search bar */}
           <input className="input-field"
             value={browseSearch}
@@ -3678,13 +3719,15 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
           profile={st}
           onConfirm={data => {
             const modal = logModal || editModal;
+            const supersetGroup = currentSupersetGroup || null;
             const entry = { exerciseName: modal.exercise.name, muscle: modal.muscle,
               exercise: modal.exercise, sets: data.sets, reps: data.reps,
               weight: data.weight, sets_detail: data.sets_detail,
-              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, date: Date.now() };
+              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals,
+              supersetGroup, date: Date.now() };
             if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
             onLogExercise(entry);
-            setSessionLog(s => [...s, { name: modal.exercise.name, xp: data.xp }]);
+            setSessionLog(s => [...s, { name: modal.exercise.name, xp: data.xp, supersetGroup }]);
             setLogModal(null); setEditModal(null);
             setTab("log"); setSelDay(todayDayIdx);
             toast(`${modal.exercise.name} logged! +${data.xp} XP`, GOLD);
