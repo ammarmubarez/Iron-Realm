@@ -5606,6 +5606,21 @@ const COSMETIC_TITLES = [
   { id: "ritual_100", name: "Sovereign",      criteria: "100-day ritual streak", threshold: 100 },
 ];
 
+// Aspects: permanent specialization unlocked at level 30. Cosmetic-only —
+// no XP modification. The chosen aspect's color tints leaderboard cards.
+const ASPECTS = [
+  { id: "beast",     name: "Beast",     color: "#e85d4a", glyph: "⚔",
+    description: "The path of raw force. Every rep is a hunt." },
+  { id: "shadow",    name: "Shadow",    color: "#a855f7", glyph: "✺",
+    description: "The path of relentless persistence. The work compounds in silence." },
+  { id: "architect", name: "Architect", color: "#00d4ff", glyph: "◆",
+    description: "The path of structured discipline. Plan, execute, repeat." },
+  { id: "sovereign", name: "Sovereign", color: "#ffd700", glyph: "♛",
+    description: "The path of mastery. Lead by your record, not your words." },
+];
+
+const AWAKENING_LEVEL = 30;
+
 function _dateKey(d) {
   const dt = new Date(d);
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
@@ -6845,6 +6860,78 @@ function HeatmapModal({ workouts, onClose }) {
 }
 
 
+// ─── AWAKENING MODAL ──────────────────────────────────────────────────────────
+// Triggered the first time the user crosses the awakening level. Forces a
+// permanent aspect choice — no XP rewards, just a cosmetic identity that
+// tints their leaderboard card.
+
+function AwakeningModal({ onChoose }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 400,
+      background: "rgba(3,6,15,0.95)", backdropFilter: "blur(16px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "24px",
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 480, padding: "32px 22px",
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`,
+        borderRadius: 14, position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
+          background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
+
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD,
+            letterSpacing: 6, marginBottom: 6 }}>// AWAKENING</div>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900,
+            color: GOLD, letterSpacing: 3, marginBottom: 8,
+            textShadow: `0 0 20px ${GOLD}66` }}>
+            CHOOSE YOUR PATH
+          </div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
+            color: MUTED, lineHeight: 1.5 }}>
+            Level {AWAKENING_LEVEL} reached. Pick the aspect that defines you.<br/>
+            <span style={{ color: GOLD }}>This choice is permanent.</span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {ASPECTS.map(a => (
+            <button key={a.id} onClick={() => onChoose(a.id)} style={{
+              padding: "14px 16px", textAlign: "left", cursor: "pointer",
+              background: `${a.color}10`, border: `1.5px solid ${a.color}66`,
+              borderRadius: 10, transition: "all .15s",
+              display: "flex", alignItems: "center", gap: 14,
+            }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                background: `radial-gradient(circle, ${a.color}55, ${a.color}11)`,
+                border: `2px solid ${a.color}88`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 22, color: a.color,
+                boxShadow: `0 0 14px ${a.color}44`,
+              }}>{a.glyph}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13,
+                  fontWeight: 700, color: a.color, letterSpacing: 2 }}>
+                  PATH OF THE {a.name.toUpperCase()}
+                </div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
+                  color: MUTED, marginTop: 3, lineHeight: 1.4 }}>
+                  {a.description}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ─── VOLUME CHART ─────────────────────────────────────────────────────────────
 // Inline 12-week tonnage line chart for the Hunter screen. Stored weights are
 // in lbs; we convert to display unit at render time via wtVal/wtLabel.
@@ -7536,6 +7623,12 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
                   {profile.equipped_title}
                 </div>
               )}
+              {profile.equipped_aspect && (
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 2,
+                  color: ASPECTS.find(a => a.name === profile.equipped_aspect)?.color || MUTED, marginTop: 2 }}>
+                  ⟡ PATH OF THE {profile.equipped_aspect.toUpperCase()}
+                </div>
+              )}
               {profile.display_name && (
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginTop: 2 }}>{profile.display_name}</div>
               )}
@@ -7819,6 +7912,12 @@ function LeaderboardScreen({ account, toast }) {
                 {row.equipped_title && (
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, fontStyle: "italic", marginTop: 1 }}>
                     {row.equipped_title}
+                  </div>
+                )}
+                {row.equipped_aspect && (
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 2,
+                    color: ASPECTS.find(a => a.name === row.equipped_aspect)?.color || MUTED, marginTop: 1 }}>
+                    ⟡ PATH OF THE {row.equipped_aspect.toUpperCase()}
                   </div>
                 )}
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
@@ -8195,6 +8294,7 @@ export default function IronRealm() {
   const [authError, setAuthError]         = useState(null);
   // First-launch routing: "welcome" | "auth-signin" | "auth-signup" | "onboard"
   const [welcomeStage, setWelcomeStage]   = useState("welcome");
+  const [awakeningPending, setAwakeningPending] = useState(false);
 
   const st = store.profiles[store.activeId];
   const settings = store.settings || INIT_STORE.settings;
@@ -8256,6 +8356,14 @@ export default function IronRealm() {
     });
     return () => { cancelled = true; unsubscribe(); };
   }, []);
+
+  // ── Awakening trigger: surface the aspect picker when crossing level threshold ──
+  useEffect(() => {
+    if (!st) return;
+    if ((st.overallLevel || 1) >= AWAKENING_LEVEL && !st.cosmetics?.aspect && !awakeningPending) {
+      setAwakeningPending(true);
+    }
+  }, [st?.overallLevel, st?.cosmetics?.aspect, awakeningPending]);
 
   // ── Auth: snapshot push (debounced) when local stats change ──
   const pushTimerRef = useRef(null);
@@ -8637,6 +8745,22 @@ export default function IronRealm() {
     }
   };
 
+  const handleChooseAspect = (aspectId) => {
+    const aspect = ASPECTS.find(a => a.id === aspectId);
+    if (!aspect) return;
+    updateActive(p => ({
+      ...p,
+      cosmetics: { ...(p.cosmetics || {}), aspect: aspectId },
+    }));
+    setAwakeningPending(false);
+    toast(`Path of the ${aspect.name} chosen`, aspect.color);
+    if (session?.user) {
+      adminService.updateProfileField(session.user.id, { equipped_aspect: aspect.name })
+        .then(() => setRemoteProfile(r => r ? { ...r, equipped_aspect: aspect.name } : r))
+        .catch(() => {});
+    }
+  };
+
   const handleSaveCustomProgram = (prog, deleteId = null) => {
     updateActive(p => {
       const existing = p.customPrograms || [];
@@ -8693,6 +8817,7 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
+      {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
       {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
