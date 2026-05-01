@@ -1468,6 +1468,8 @@ const newProfile = (id, name = "Hunter") => ({
   lastWeightUpdate: null,
   weightLog: [],
   bookmarkedExercises: [],   // array of exercise names pinned to top of database
+  dailyRituals: { completionLog: {} }, // { 'YYYY-MM-DD': ['pushups','stretch',...] }
+  cosmetics:    { unlockedTitles: [], equippedTitle: null },
   createdAt: Date.now(),
 });
 
@@ -5586,6 +5588,55 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
 
 // ─── SCREEN: MENU (HOME) ──────────────────────────────────────────────────────
 
+// ─── DAILY RITUALS + COSMETICS ───────────────────────────────────────────────
+// Three small daily activities that maintain a streak. No XP — completing
+// them unlocks profile titles at 7/30/100 day milestones. Cosmetics are
+// scoped to the local profile for now; a future commit syncs equipped_title
+// to Supabase so it shows on leaderboards.
+
+const DAILY_RITUALS = [
+  { id: "pushups", label: "10 push-ups" },
+  { id: "stretch", label: "5 min stretch" },
+  { id: "water",   label: "8 glasses of water" },
+];
+
+const COSMETIC_TITLES = [
+  { id: "ritual_7",   name: "Daily Hunter",   criteria: "7-day ritual streak",   threshold: 7 },
+  { id: "ritual_30",  name: "Iron Apostle",   criteria: "30-day ritual streak",  threshold: 30 },
+  { id: "ritual_100", name: "Sovereign",      criteria: "100-day ritual streak", threshold: 100 },
+];
+
+function _dateKey(d) {
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+
+function _isRitualDayComplete(completionLog, dayKey) {
+  const done = new Set(completionLog?.[dayKey] || []);
+  return DAILY_RITUALS.every(r => done.has(r.id));
+}
+
+function _computeRitualStreak(completionLog) {
+  // Walk back from today; today's incompleteness doesn't break streak yet.
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  let streak = 0;
+  if (!_isRitualDayComplete(completionLog, _dateKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  while (_isRitualDayComplete(completionLog, _dateKey(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+function _newlyEarnedTitles(streak, alreadyUnlocked = []) {
+  const owned = new Set(alreadyUnlocked);
+  return COSMETIC_TITLES.filter(t => streak >= t.threshold && !owned.has(t.id));
+}
+
+
 const BANNER_PALETTE = [
   { hex: null,       name: "Default" },
   { hex: "#00d4ff",  name: "Cyan" },
@@ -5600,7 +5651,7 @@ const BANNER_PALETTE = [
 
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
                      account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
-                     onUpdateBannerColor, pendingCount = 0 }) {
+                     onUpdateBannerColor, onToggleRitual, onEquipTitle, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -5926,6 +5977,86 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             )}
           </button>
         </div>
+
+        {/* Daily Rituals */}
+        {(() => {
+          const completionLog = st.dailyRituals?.completionLog || {};
+          const todayKey = _dateKey(new Date());
+          const doneToday = new Set(completionLog[todayKey] || []);
+          const streak = _computeRitualStreak(completionLog);
+          const allDone = DAILY_RITUALS.every(r => doneToday.has(r.id));
+          return (
+            <div style={{ background: `${GOLD}0a`, border: `1px solid ${GOLD}33`,
+              borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3 }}>
+                  {"// DAILY RITUALS"}
+                </div>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: streak > 0 ? GOLD : MUTED, letterSpacing: 1 }}>
+                  {streak > 0 ? `${streak}🔥 day streak` : "no streak"}
+                </div>
+              </div>
+              {DAILY_RITUALS.map(r => {
+                const done = doneToday.has(r.id);
+                return (
+                  <div key={r.id} onClick={() => onToggleRitual?.(r.id)} style={{
+                    display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
+                    padding: "8px 4px", borderBottom: `1px solid ${ACCENT2}11`,
+                  }}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                      background: done ? GOLD : "transparent",
+                      border: `1.5px solid ${done ? GOLD : MUTED}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: BG, fontSize: 12, fontWeight: 900,
+                    }}>{done ? "✓" : ""}</div>
+                    <span style={{
+                      fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
+                      color: done ? MUTED : TEXT,
+                      textDecoration: done ? "line-through" : "none",
+                      flex: 1,
+                    }}>{r.label}</span>
+                  </div>
+                );
+              })}
+              {allDone && (
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, marginTop: 8, textAlign: "center" }}>
+                  ✦ Day complete. Streak holds.
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Equipped title selector — only show if user has unlocked any */}
+        {(st.cosmetics?.unlockedTitles?.length || 0) > 0 && (
+          <div style={{ background: BG2, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>
+              {"// EQUIPPED TITLE"}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <button onClick={() => onEquipTitle?.(null)} style={{
+                padding: "5px 10px", cursor: "pointer",
+                background: !st.cosmetics?.equippedTitle ? `${MUTED}33` : "transparent",
+                border: `1px solid ${MUTED}55`, borderRadius: 5,
+                fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 1,
+              }}>None</button>
+              {(st.cosmetics?.unlockedTitles || []).map(tid => {
+                const t = COSMETIC_TITLES.find(x => x.id === tid);
+                if (!t) return null;
+                const equipped = st.cosmetics?.equippedTitle === tid;
+                return (
+                  <button key={tid} onClick={() => onEquipTitle?.(tid)} style={{
+                    padding: "5px 10px", cursor: "pointer",
+                    background: equipped ? `${GOLD}22` : "transparent",
+                    border: `1px solid ${equipped ? GOLD : GOLD + "33"}`, borderRadius: 5,
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: equipped ? GOLD : MUTED, letterSpacing: 1,
+                  }}>{t.name}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Recent workouts */}
         <div style={{ marginBottom: 8 }}>
@@ -8453,6 +8584,42 @@ export default function IronRealm() {
     });
   };
 
+  const handleToggleRitual = (ritualId) => {
+    updateActive(p => {
+      const today = _dateKey(new Date());
+      const log   = { ...(p.dailyRituals?.completionLog || {}) };
+      const todayList = new Set(log[today] || []);
+      if (todayList.has(ritualId)) todayList.delete(ritualId);
+      else todayList.add(ritualId);
+      log[today] = [...todayList];
+
+      // Compute streak with the updated log, then unlock any newly-earned titles
+      const streak = _computeRitualStreak(log);
+      const owned  = p.cosmetics?.unlockedTitles || [];
+      const newlyEarned = _newlyEarnedTitles(streak, owned);
+      if (newlyEarned.length > 0) {
+        newlyEarned.forEach(t => setTimeout(() => toast(`Title unlocked: ${t.name}`, GOLD), 200));
+      }
+
+      return {
+        ...p,
+        dailyRituals: { ...(p.dailyRituals || {}), completionLog: log },
+        cosmetics: {
+          ...(p.cosmetics || {}),
+          unlockedTitles: [...owned, ...newlyEarned.map(t => t.id)],
+          equippedTitle: p.cosmetics?.equippedTitle || newlyEarned[0]?.id || null,
+        },
+      };
+    });
+  };
+
+  const handleEquipTitle = (titleId) => {
+    updateActive(p => ({
+      ...p,
+      cosmetics: { ...(p.cosmetics || {}), equippedTitle: titleId || null },
+    }));
+  };
+
   const handleSaveCustomProgram = (prog, deleteId = null) => {
     updateActive(p => {
       const existing = p.customPrograms || [];
@@ -8509,7 +8676,7 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
