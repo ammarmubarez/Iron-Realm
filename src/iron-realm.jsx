@@ -6671,6 +6671,114 @@ function HeatmapModal({ workouts, onClose }) {
 }
 
 
+// ─── VOLUME CHART ─────────────────────────────────────────────────────────────
+// Inline 12-week tonnage line chart for the Hunter screen. Stored weights are
+// in lbs; we convert to display unit at render time via wtVal/wtLabel.
+
+function _workoutTonnage(w) {
+  if (Array.isArray(w?.sets_detail) && w.sets_detail.length > 0) {
+    return w.sets_detail.reduce((s, set) => s + (Number(set.weight) || 0) * (Number(set.reps) || 0), 0);
+  }
+  const weight = Number(w?.weight) || 0;
+  const reps   = Number(w?.reps)   || 0;
+  const sets   = Number(w?.sets)   || 1;
+  return weight * reps * sets;
+}
+
+function _weeklyTonnage(workouts, weeks = 12) {
+  const now = Date.now();
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  const buckets = Array(weeks).fill(0);
+  for (const w of workouts || []) {
+    if (!w?.date) continue;
+    const ageWeeks = Math.floor((now - w.date) / weekMs);
+    if (ageWeeks < 0 || ageWeeks >= weeks) continue;
+    buckets[weeks - 1 - ageWeeks] += _workoutTonnage(w);
+  }
+  return buckets;
+}
+
+function VolumeChart({ workouts }) {
+  const data = useMemo(() => _weeklyTonnage(workouts, 12), [workouts]);
+  const peak = Math.max(...data, 1);
+  const total = data.reduce((s, v) => s + v, 0);
+  const active = data.filter(v => v > 0).length;
+  const avg = active > 0 ? total / active : 0;
+  const current = data[data.length - 1];
+  const prev = data[data.length - 2] || 0;
+  const trendUp = current > prev;
+  const trendPct = prev > 0 ? Math.round(((current - prev) / prev) * 100) : null;
+
+  // Empty state
+  if (total === 0) {
+    return (
+      <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16, textAlign: "center" }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 6 }}>
+          [ VOLUME TREND ]
+        </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>
+          Log a strength workout to start tracking weekly tonnage.
+        </div>
+      </div>
+    );
+  }
+
+  // SVG geometry — viewBox for crisp scaling
+  const W = 280, H = 70;
+  const stepX = W / (data.length - 1);
+  const points = data.map((v, i) => {
+    const x = i * stepX;
+    const y = H - (v / peak) * (H - 6) - 3;
+    return [x, y];
+  });
+  const linePath = points.map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`)).join(" ");
+  const fillPath = `${linePath} L${W},${H} L0,${H} Z`;
+
+  return (
+    <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
+          [ VOLUME TREND — 12 WEEKS ]
+        </div>
+        {trendPct !== null && (
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: trendUp ? GREEN : RED, letterSpacing: 1 }}>
+            {trendUp ? "▲" : "▼"} {Math.abs(trendPct)}%
+          </div>
+        )}
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: 70, display: "block" }}>
+        <defs>
+          <linearGradient id="volFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stopColor={ACCENT} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={ACCENT} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={fillPath} fill="url(#volFill)" />
+        <path d={linePath} fill="none" stroke={ACCENT} strokeWidth="1.5" />
+        {points.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={i === points.length - 1 ? 3 : 1.5}
+            fill={i === points.length - 1 ? GOLD : ACCENT} />
+        ))}
+      </svg>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 10 }}>
+        {[
+          ["THIS WEEK", `${Math.round(wtVal(current)).toLocaleString()} ${wtLabel()}`],
+          ["AVG / WK",  `${Math.round(wtVal(avg)).toLocaleString()} ${wtLabel()}`],
+          ["PEAK",      `${Math.round(wtVal(peak)).toLocaleString()} ${wtLabel()}`],
+        ].map(([label, val]) => (
+          <div key={label} style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: GOLD }}>{val}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginTop: 2 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, toast }) {
   const st = store.profiles[store.activeId];
   const rank = getRank(st.overallLevel);
@@ -6939,6 +7047,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
           {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
         </div>
+
+        <VolumeChart workouts={st.workouts || []} />
 
         {(() => {
           const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
