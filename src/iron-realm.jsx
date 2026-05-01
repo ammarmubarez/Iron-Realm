@@ -7531,6 +7531,11 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
             }}>{profile.rank_label || "E"}</div>
             <div>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: ACCENT }}>@{profile.username}</div>
+              {profile.equipped_title && (
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, fontStyle: "italic", marginTop: 2 }}>
+                  {profile.equipped_title}
+                </div>
+              )}
               {profile.display_name && (
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginTop: 2 }}>{profile.display_name}</div>
               )}
@@ -7811,6 +7816,11 @@ function LeaderboardScreen({ account, toast }) {
                     @{row.username}{isMe ? " ◈" : ""}
                   </div>
                 </div>
+                {row.equipped_title && (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, fontStyle: "italic", marginTop: 1 }}>
+                    {row.equipped_title}
+                  </div>
+                )}
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
                   LVL {row.overall_level} · {row.total_workouts} sessions · {_timeAgo(row.updated_at)}
                 </div>
@@ -8618,6 +8628,13 @@ export default function IronRealm() {
       ...p,
       cosmetics: { ...(p.cosmetics || {}), equippedTitle: titleId || null },
     }));
+    // Push the resolved title name to cloud so friends see it on leaderboards
+    if (session?.user) {
+      const titleName = titleId ? (COSMETIC_TITLES.find(t => t.id === titleId)?.name || null) : null;
+      adminService.updateProfileField(session.user.id, { equipped_title: titleName })
+        .then(() => setRemoteProfile(r => r ? { ...r, equipped_title: titleName } : r))
+        .catch(() => {});
+    }
   };
 
   const handleSaveCustomProgram = (prog, deleteId = null) => {
