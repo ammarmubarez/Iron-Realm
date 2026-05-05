@@ -2,7 +2,7 @@
   "name": "Iron Realm",
   "short_name": "Iron Realm",
   "description": "RPG Gym Tracker — level up your body",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#03060f",
   "theme_color": "#00d4ff",
