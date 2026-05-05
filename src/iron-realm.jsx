@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.8";
+const APP_VERSION = "1.6.9";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -5017,13 +5017,15 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
 
   return (
     <div style={{
-      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
+      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
       background: `linear-gradient(180deg, ${DARK1}ee, ${BG2}ff)`,
       backdropFilter: "blur(16px)",
+      WebkitBackdropFilter: "blur(16px)",
       borderTop: `1px solid ${ACCENT}44`,
       boxShadow: `0 -4px 24px ${ACCENT}18`,
       display: "flex", alignItems: "stretch",
-      paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)",
+      paddingBottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+      WebkitTransform: "translateZ(0)",
     }}>
       {/* Top accent line */}
       <div style={{
@@ -6429,8 +6431,8 @@ export default function IronRealm() {
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
       {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} toast={toast} />}
       {screen === "program"   && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
-      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} />
       </div>
+      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} />
     </>
   );
 }
