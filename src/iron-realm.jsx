@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.11";
+const APP_VERSION = "1.6.12";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -3144,11 +3144,11 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
         width: "100%", maxWidth: 480,
         boxShadow: `0 -8px 40px ${meta.color}22`, position: "relative",
-        maxHeight: "90vh", display: "flex", flexDirection: "column"
+        maxHeight: "calc(90vh - env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column"
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${meta.color}, transparent)` }} />
-        <div style={{ flex: 1, overflowY: "auto", padding: "24px 20px 8px" }}>
+        <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 8px" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
@@ -3327,7 +3327,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         )}
 
         </div>{/* end scrollable content */}
-        <div style={{ padding: "8px 20px 24px", borderTop: `1px solid ${meta.color}22` }}>
+        <div style={{ padding: "8px 20px calc(24px + env(safe-area-inset-bottom, 0px))", borderTop: `1px solid ${meta.color}22` }}>
         <button className="btn-gold" onClick={() => {
           if (!canLog) return;
           if (isCardio) {
@@ -5581,8 +5581,9 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
-            width: "100%", maxWidth: 480, padding: "24px 20px 40px",
-            maxHeight: "85vh", overflowY: "auto",
+            width: "100%", maxWidth: 480, padding: "24px 20px calc(40px + env(safe-area-inset-bottom, 0px))",
+            maxHeight: "calc(85vh - env(safe-area-inset-bottom, 0px))", overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
@@ -5822,8 +5823,9 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
-            width: "100%", maxWidth: 480, padding: "24px 20px 40px",
-            maxHeight: "85vh", overflowY: "auto",
+            width: "100%", maxWidth: 480, padding: "24px 20px calc(40px + env(safe-area-inset-bottom, 0px))",
+            maxHeight: "calc(85vh - env(safe-area-inset-bottom, 0px))", overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
