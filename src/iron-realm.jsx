@@ -1,7 +1,13 @@
 /* eslint-disable */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import * as authService from "./services/auth";
+import * as syncService from "./services/sync";
+import * as friendsService from "./services/friends";
+import * as adminService from "./services/admin";
+import * as cloudStateService from "./services/cloudState";
+import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.6.17";
+const APP_VERSION = "1.7.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -1461,6 +1467,9 @@ const newProfile = (id, name = "Hunter") => ({
   prs: {},              // { exerciseName: estimated1RM }
   lastWeightUpdate: null,
   weightLog: [],
+  bookmarkedExercises: [],   // array of exercise names pinned to top of database
+  dailyRituals: { completionLog: {} }, // { 'YYYY-MM-DD': ['pushups','stretch',...] }
+  cosmetics:    { unlockedTitles: [], equippedTitle: null },
   createdAt: Date.now(),
 });
 
@@ -1605,6 +1614,37 @@ function prBonus(newE1RM, storedE1RM) {
   if (improvement >= 0.10) return 1.30;
   if (improvement >= 0.05) return 1.20;
   return 1.10;
+}
+
+// Build a chronological history of PR-setting events, exercise by exercise.
+// Walks workouts oldest-first, tracks the running max e1RM per exercise,
+// and emits an event whenever a workout sets a new high.
+function getPRTimeline(workouts) {
+  const sorted = [...(workouts || [])].sort((a, b) => (a.date || 0) - (b.date || 0));
+  const timeline = {};
+  const running  = {};
+  for (const w of sorted) {
+    const ex = w.exercise || {};
+    if (ex.type === "cardio") continue;
+    const name = ex.name || w.exerciseName;
+    if (!name) continue;
+    const e1rm = Number.isFinite(w.newE1RM) && w.newE1RM > 0
+      ? w.newE1RM
+      : (w.weight && w.reps ? epley1RM(w.weight, w.reps) : 0);
+    if (!e1rm) continue;
+    const prev = running[name] || 0;
+    if (e1rm > prev) {
+      running[name] = e1rm;
+      (timeline[name] = timeline[name] || []).push({
+        date:   w.date,
+        e1rm:   Math.round(e1rm),
+        weight: w.weight,
+        reps:   w.reps,
+        type:   ex.type,
+      });
+    }
+  }
+  return timeline;
 }
 
 // XP for a single strength set with all modifiers applied
@@ -3365,6 +3405,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const [sessionLog, setSessionLog] = useState([]);
   const [editModal, setEditModal] = useState(null);
   const [selDay, setSelDay] = useState(0); // 0=today
+  const [currentSupersetGroup, setCurrentSupersetGroup] = useState(null);
   const allBrowseExercises = [
     ...(EXERCISE_DB[selMuscle] || []),
     ...(st.customExercises||[]).filter(e => e.primary === selMuscle)
@@ -3460,16 +3501,23 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {byDay[selDay].map((w, i) => {
                 const muscleMeta = MUSCLE_META[w.muscle] || MUSCLE_META[w.exercise?.primary] || MUSCLE_META.chest;
+                const dayList = byDay[selDay];
+                const inGroup = !!w.supersetGroup;
+                const groupAbove = inGroup && dayList[i - 1]?.supersetGroup === w.supersetGroup;
                 return (
                   <div key={i} style={{
                     background: BG2, border: `1px solid ${muscleMeta.color}33`,
-                    borderLeft: `3px solid ${muscleMeta.color}`,
-                    borderRadius: 10, padding: "12px 14px"
+                    borderLeft: `3px solid ${inGroup ? GOLD : muscleMeta.color}`,
+                    borderRadius: 10, padding: "12px 14px",
+                    marginTop: groupAbove ? -4 : 0,
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
                       <div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
-                          fontWeight: 700, color: TEXT }}>{w.exerciseName}</div>
+                          fontWeight: 700, color: TEXT, display: "flex", alignItems: "center", gap: 6 }}>
+                          {inGroup && <span style={{ fontSize: 10, color: GOLD, opacity: 0.8 }}>↔</span>}
+                          {w.exerciseName}
+                        </div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: muscleMeta.color }}>
                           {muscleMeta.name}
                         </div>
@@ -3530,15 +3578,30 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px" }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
                 color: GOLD, letterSpacing: 3, marginBottom: 8 }}>{"// THIS SESSION"}</div>
-              {sessionLog.map((l, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between",
-                  fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
-                  color: TEXT, paddingBottom: 4, marginBottom: 4,
-                  borderBottom: `1px solid ${ACCENT2}22` }}>
-                  <span>{l.name}</span>
-                  <span style={{ color: GOLD }}>+{l.xp} XP</span>
-                </div>
-              ))}
+              {sessionLog.map((l, i) => {
+                const prev = sessionLog[i - 1];
+                const next = sessionLog[i + 1];
+                const inGroup    = !!l.supersetGroup;
+                const groupAbove = inGroup && prev?.supersetGroup === l.supersetGroup;
+                const groupBelow = inGroup && next?.supersetGroup === l.supersetGroup;
+                return (
+                  <div key={i} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT,
+                    padding: "4px 0 4px 8px", marginBottom: 4,
+                    borderBottom: `1px solid ${ACCENT2}22`,
+                    borderLeft: inGroup ? `2px solid ${GOLD}` : "2px solid transparent",
+                    borderTopLeftRadius: groupAbove ? 0 : 4,
+                    borderBottomLeftRadius: groupBelow ? 0 : 4,
+                  }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {inGroup && <span style={{ fontSize: 9, color: GOLD, opacity: 0.7 }}>↔</span>}
+                      {l.name}
+                    </span>
+                    <span style={{ color: GOLD }}>+{l.xp} XP</span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -3547,6 +3610,24 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
       {/* ── BROWSE + LOG TAB ── */}
       {tab === "browse" && (
         <div style={{ padding: "14px 16px 0" }}>
+          {/* Superset toggle */}
+          <button
+            onClick={() => setCurrentSupersetGroup(g => g ? null : `ss_${Date.now()}`)}
+            style={{
+              width: "100%", padding: "10px 12px", marginBottom: 10, cursor: "pointer",
+              background: currentSupersetGroup ? `${GOLD}1a` : BG2,
+              border: `1px solid ${currentSupersetGroup ? GOLD : ACCENT2 + "33"}`,
+              borderRadius: 8, textAlign: "left",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+              color: currentSupersetGroup ? GOLD : MUTED, letterSpacing: 2,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+            <span>↔ {currentSupersetGroup ? "SUPERSET ACTIVE" : "START SUPERSET"}</span>
+            <span style={{ fontSize: 9, opacity: 0.7 }}>
+              {currentSupersetGroup ? "TAP TO END" : "GROUP NEXT EXERCISES"}
+            </span>
+          </button>
+
           {/* Search bar */}
           <input className="input-field"
             value={browseSearch}
@@ -3643,13 +3724,15 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
           profile={st}
           onConfirm={data => {
             const modal = logModal || editModal;
+            const supersetGroup = currentSupersetGroup || null;
             const entry = { exerciseName: modal.exercise.name, muscle: modal.muscle,
               exercise: modal.exercise, sets: data.sets, reps: data.reps,
               weight: data.weight, sets_detail: data.sets_detail,
-              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, date: Date.now() };
+              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals,
+              supersetGroup, date: Date.now() };
             if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
             onLogExercise(entry);
-            setSessionLog(s => [...s, { name: modal.exercise.name, xp: data.xp }]);
+            setSessionLog(s => [...s, { name: modal.exercise.name, xp: data.xp, supersetGroup }]);
             setLogModal(null); setEditModal(null);
             setTab("log"); setSelDay(todayDayIdx);
             toast(`${modal.exercise.name} logged! +${data.xp} XP`, GOLD);
@@ -3661,10 +3744,12 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   );
 }
 
-function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toast }) {
+function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookmark, settings, toast }) {
   const [selMuscle, setSelMuscle] = useState("chest");
   const [searchQ, setSearchQ] = useState("");
   const [customMode, setCustomMode] = useState(false);
+  const [bookmarksOnly, setBookmarksOnly] = useState(false);
+  const bookmarkedSet = new Set(st.bookmarkedExercises || []);
 
   const [randoMode, setRandoMode] = useState(false);
   const [randoMuscles, setRandoMuscles] = useState([]);
@@ -3711,13 +3796,20 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
   };
 
   // Always show browseable exercises — plan is shown as a separate banner above
-  const allExercises = isSearching
+  const allExercises = (isSearching || bookmarksOnly)
     ? [...Object.entries(EXERCISE_DB).flatMap(([, exs]) => exs), ...allCustom]
     : getExercisesForMuscle(selMuscle);
   const filtered = (isSearching
     ? allExercises.filter(e => e.name.toLowerCase().includes(searchQ.toLowerCase()))
-    : allExercises
-  ).slice().sort((a, b) => a.name.localeCompare(b.name));
+    : (bookmarksOnly
+      ? allExercises.filter(e => bookmarkedSet.has(e.name))
+      : allExercises)
+  ).slice().sort((a, b) => {
+    // Bookmarked first (when not filtered to bookmarks-only), then alphabetical
+    const aB = bookmarkedSet.has(a.name), bB = bookmarkedSet.has(b.name);
+    if (!bookmarksOnly && aB !== bB) return aB ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
 
   const handleSaveCustom = () => {
     if (!cName.trim()) { toast("Enter a name", RED); return; }
@@ -3744,6 +3836,14 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
       {/* Muscle filter — major groups only, pill style */}
       {!isSearching && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+          <button onClick={() => setBookmarksOnly(b => !b)} style={{
+            background: bookmarksOnly ? `${GOLD}22` : BG2,
+            border: `1px solid ${bookmarksOnly ? GOLD : GOLD + "33"}`,
+            borderRadius: 20, padding: "5px 11px", cursor: "pointer",
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700,
+            color: bookmarksOnly ? GOLD : MUTED, transition: "all .15s",
+            boxShadow: bookmarksOnly ? `0 0 8px ${GOLD}33` : "none",
+          }}>★ {bookmarkedSet.size > 0 ? `${bookmarkedSet.size}` : ""}</button>
           {[
             { key: "chest",     name: "Chest" },
             { key: "back",      name: "Back" },
@@ -3756,9 +3856,9 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
             { key: "cardio",    name: "Cardio" },
           ].map(({ key, name }) => {
             const meta = MUSCLE_META[key] || MUSCLE_META.chest;
-            const sel = selMuscle === key;
+            const sel = !bookmarksOnly && selMuscle === key;
             return (
-              <button key={key} onClick={() => { setSelMuscle(key); setSearchQ(""); }} style={{
+              <button key={key} onClick={() => { setSelMuscle(key); setSearchQ(""); setBookmarksOnly(false); }} style={{
                 background: sel ? `${meta.color}22` : BG2,
                 border: `1px solid ${sel ? meta.color : ACCENT2 + "33"}`,
                 borderRadius: 20, padding: "5px 11px", cursor: "pointer",
@@ -3834,11 +3934,19 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
           const diffColor = { beginner: GREEN, intermediate: ACCENT, advanced: GOLD, elite: RED }[ex.diff];
           const typeColor = { strength: ACCENT, calisthenics: "#aa44ff", cardio: RED }[ex.type] || ACCENT;
           const subs = ex.svgTargets ? ex.svgTargets.map(t => MUSCLE_META[t]?.name).filter(Boolean) : [];
+          const isBookmarked = bookmarkedSet.has(ex.name);
           return (
             <div key={i} style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 15, fontWeight: 700, color: TEXT }}>{ex.name}</div>
-                <div style={{ display: "flex", gap: 5 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                  <button onClick={() => onToggleBookmark?.(ex.name)} title={isBookmarked ? "Remove bookmark" : "Bookmark"} style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    fontSize: 14, lineHeight: 1, padding: 0, color: isBookmarked ? GOLD : MUTED,
+                    flexShrink: 0,
+                  }}>{isBookmarked ? "★" : "☆"}</button>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 15, fontWeight: 700, color: TEXT }}>{ex.name}</div>
+                </div>
+                <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: diffColor, background: `${diffColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: 1 }}>{ex.diff?.toUpperCase()}</span>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: typeColor, background: `${typeColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: 1 }}>{ex.type?.toUpperCase()}</span>
                 </div>
@@ -4972,8 +5080,24 @@ function Toasts({ toasts }) {
 
 // ─── NAV BAR ──────────────────────────────────────────────────────────────────
 
-function NavBar({ screen, setScreen, overallLevel, settings }) {
+function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 }) {
   const NAV_ICONS = {
+    leaderboard: (c) => (
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+        <rect x="2.5" y="11" width="3.8" height="6" fill={c} opacity="0.6"/>
+        <rect x="8.1"  y="6"  width="3.8" height="11" fill={c}/>
+        <rect x="13.7" y="9"  width="3.8" height="8" fill={c} opacity="0.85"/>
+        <polygon points="10,2 10.7,3.4 12.2,3.6 11.1,4.7 11.4,6.2 10,5.5 8.6,6.2 8.9,4.7 7.8,3.6 9.3,3.4" fill={c}/>
+      </svg>
+    ),
+    friends: (c) => (
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+        <circle cx="7.5" cy="6" r="2.5" stroke={c} strokeWidth="1.5"/>
+        <path d="M2 17c0-3.04 2.46-5.5 5.5-5.5S13 13.96 13 17" stroke={c} strokeWidth="1.5"/>
+        <circle cx="14" cy="6.5" r="2" stroke={c} strokeWidth="1.3" opacity="0.7"/>
+        <path d="M13.5 11.6c1.9.4 3.5 2.1 3.5 4.4" stroke={c} strokeWidth="1.3" opacity="0.7"/>
+      </svg>
+    ),
     menu: (c) => (
       <svg width="28" height="28" viewBox="0 0 20 20" fill="none">
         <polygon points="10,2 18,7 18,13 10,18 2,13 2,7" stroke={c} strokeWidth="1.5" fill="none"/>
@@ -5040,7 +5164,7 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
         background: `linear-gradient(90deg, transparent, ${ACCENT}88 25%, ${ACCENT} 50%, ${ACCENT}88 75%, transparent)`,
       }} />
 
-      {TABS.map(({ id, label }) => {
+      {TABS.map(({ id, label, badge }) => {
         const active = screen === id;
         const c = active ? ACCENT : MUTED;
         const isHome = id === "menu";
@@ -5054,6 +5178,7 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
               alignItems: "center", justifyContent: "center",
               gap: 4,
               padding: "10px 0 12px",
+              position: "relative",
               background: isHome && active
                 ? `linear-gradient(180deg, ${ACCENT}18, transparent)`
                 : "none",
@@ -5065,6 +5190,15 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
               transition: "all .2s",
               filter: active ? `drop-shadow(0 0 6px ${ACCENT})` : "none",
             }}>
+            {badge > 0 && (
+              <span style={{
+                position: "absolute", top: 6, right: "18%",
+                background: RED, color: "#fff", borderRadius: "50%",
+                width: 14, height: 14, fontSize: 8,
+                fontFamily: "'Orbitron',sans-serif",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{badge}</span>
+            )}
             {NAV_ICONS[id](c)}
             <span style={{
               fontFamily: "'Orbitron',sans-serif",
@@ -5078,6 +5212,71 @@ function NavBar({ screen, setScreen, overallLevel, settings }) {
     </div>
   );
 }
+
+// ─── SCREEN: WELCOME ──────────────────────────────────────────────────────────
+// First-launch chooser. Three paths:
+//   • Create account → opens AuthPanel in signup mode, then onboarding for body stats
+//   • Sign in       → opens AuthPanel in signin mode, then attempts to restore
+//                     full state from cloud Storage (skipping onboarding if present)
+//   • Continue as guest → goes straight to the existing onboarding flow
+//
+// If Supabase isn't configured for this build, only "Continue as guest" is
+// available and the cloud-related copy is hidden.
+
+function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest }) {
+  const button = (label, sub, onClick, primary) => (
+    <button onClick={onClick} style={{
+      width: "100%", padding: "16px 18px", textAlign: "left", cursor: "pointer",
+      background: primary ? `${ACCENT}1a` : BG3,
+      border: `1px solid ${primary ? ACCENT : ACCENT2 + "55"}`,
+      borderRadius: 10, marginBottom: 10,
+      transition: "all .15s",
+    }}>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
+        color: primary ? ACCENT : TEXT, letterSpacing: 2 }}>{label}</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
+        color: MUTED, marginTop: 4, lineHeight: 1.4 }}>{sub}</div>
+    </button>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: BG, display: "flex",
+      flexDirection: "column", justifyContent: "center", padding: "40px 24px" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", width: "100%" }}>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900,
+          color: ACCENT, letterSpacing: 6, textAlign: "center", marginBottom: 8 }}>
+          IRON REALM
+        </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
+          color: MUTED, textAlign: "center", marginBottom: 32, letterSpacing: 1 }}>
+          Awaken the Hunter within.
+        </div>
+
+        {supabaseConfigured && (
+          <>
+            {button("CREATE ACCOUNT",
+              "New Hunter. Sync progress across devices and join the leaderboard.",
+              onCreateAccount, true)}
+            {button("SIGN IN",
+              "Returning Hunter. Restore your full progress from the cloud.",
+              onSignIn, false)}
+          </>
+        )}
+        {button("CONTINUE AS GUEST",
+          supabaseConfigured
+            ? "Train locally. You can create an account later from Settings."
+            : "Train locally. (Online features are not configured for this build.)",
+          onGuest, !supabaseConfigured)}
+
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
+          color: MUTED, textAlign: "center", marginTop: 24, lineHeight: 1.5 }}>
+          Your data stays on this device.{supabaseConfigured ? " Signing in encrypts and stores a backup so you can recover on a new device." : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // ─── SCREEN: ONBOARD ──────────────────────────────────────────────────────────
 
@@ -5282,13 +5481,225 @@ function OnboardScreen({ onComplete }) {
   );
 }
 
+// ─── AUTH PANEL ───────────────────────────────────────────────────────────────
+// Sign-in / create-account modal. Mounted from the Settings modal when the
+// user picks "Sign in / create account".
+
+function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "signin" }) {
+  const [mode, setMode]         = useState(initialMode); // "signin" | "signup"
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [localErr, setLocalErr] = useState(null);
+
+  const submit = async () => {
+    setLocalErr(null);
+    if (!email || !password) { setLocalErr("Email and password are required."); return; }
+    if (mode === "signup") {
+      if (password.length < 8) { setLocalErr("Password must be at least 8 characters."); return; }
+      if (!username) { setLocalErr("Pick a username."); return; }
+      await onSignUp({ email, password, username });
+    } else {
+      await onSignIn({ email, password });
+    }
+  };
+
+  const message = localErr || error;
+  const fieldStyle = {
+    width: "100%", padding: "10px 12px", marginTop: 4,
+    background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 6,
+    color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
+    outline: "none", boxSizing: "border-box",
+  };
+  const labelStyle = {
+    fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+    letterSpacing: 2, fontWeight: 700,
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 310, background: "rgba(3,6,15,0.95)",
+      backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
+        width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+        maxHeight: "85vh", overflowY: "auto",
+        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
+          background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>
+            {mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+        </div>
+
+        {/* Mode toggle */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
+          {["signin", "signup"].map(m => (
+            <button key={m} onClick={() => { setMode(m); setLocalErr(null); }} style={{
+              flex: 1, padding: "8px 10px", cursor: "pointer",
+              background: mode === m ? `${ACCENT}22` : BG3,
+              border: `1px solid ${mode === m ? ACCENT : MUTED + "44"}`,
+              borderRadius: 6,
+              fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
+              letterSpacing: 2, color: mode === m ? ACCENT : MUTED,
+            }}>
+              {m === "signin" ? "SIGN IN" : "CREATE ACCOUNT"}
+            </button>
+          ))}
+        </div>
+
+        {/* Form */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {mode === "signup" && (
+            <label style={{ display: "block" }}>
+              <span style={labelStyle}>USERNAME</span>
+              <input type="text" value={username} autoCapitalize="none" autoCorrect="off"
+                onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                placeholder="lowercase, 3–20 chars" maxLength={20} style={fieldStyle} />
+            </label>
+          )}
+          <label style={{ display: "block" }}>
+            <span style={labelStyle}>EMAIL</span>
+            <input type="email" value={email} autoCapitalize="none" autoCorrect="off"
+              onChange={e => setEmail(e.target.value)} style={fieldStyle} />
+          </label>
+          <label style={{ display: "block" }}>
+            <span style={labelStyle}>PASSWORD</span>
+            <input type="password" value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder={mode === "signup" ? "8+ characters" : ""}
+              style={fieldStyle} />
+          </label>
+
+          {message && (
+            <div style={{ background: `${RED}11`, border: `1px solid ${RED}55`, borderRadius: 6,
+              padding: "10px 12px", fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: RED }}>
+              {message}
+            </div>
+          )}
+
+          <button onClick={submit} disabled={busy} className="btn-primary" style={{
+            padding: "14px", fontSize: 12, letterSpacing: 2, marginTop: 4,
+            opacity: busy ? 0.5 : 1, cursor: busy ? "wait" : "pointer",
+          }}>
+            {busy ? "..." : mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}
+          </button>
+
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", marginTop: 6 }}>
+            Your local profile stays on this device. Signing in only shares a public summary with friends.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ─── SCREEN: MENU (HOME) ──────────────────────────────────────────────────────
 
-function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast }) {
+// ─── DAILY RITUALS + COSMETICS ───────────────────────────────────────────────
+// Three small daily activities that maintain a streak. No XP — completing
+// them unlocks profile titles at 7/30/100 day milestones. Cosmetics are
+// scoped to the local profile for now; a future commit syncs equipped_title
+// to Supabase so it shows on leaderboards.
+
+const DAILY_RITUALS = [
+  { id: "pushups", label: "10 push-ups" },
+  { id: "stretch", label: "5 min stretch" },
+  { id: "water",   label: "8 glasses of water" },
+];
+
+const COSMETIC_TITLES = [
+  { id: "ritual_7",   name: "Daily Hunter",   criteria: "7-day ritual streak",   threshold: 7 },
+  { id: "ritual_30",  name: "Iron Apostle",   criteria: "30-day ritual streak",  threshold: 30 },
+  { id: "ritual_100", name: "Sovereign",      criteria: "100-day ritual streak", threshold: 100 },
+];
+
+// Aspects: permanent specialization unlocked at level 30. Cosmetic-only —
+// no XP modification. The chosen aspect's color tints leaderboard cards.
+const ASPECTS = [
+  { id: "beast",     name: "Beast",     color: "#e85d4a", glyph: "⚔",
+    description: "The path of raw force. Every rep is a hunt." },
+  { id: "shadow",    name: "Shadow",    color: "#a855f7", glyph: "✺",
+    description: "The path of relentless persistence. The work compounds in silence." },
+  { id: "architect", name: "Architect", color: "#00d4ff", glyph: "◆",
+    description: "The path of structured discipline. Plan, execute, repeat." },
+  { id: "sovereign", name: "Sovereign", color: "#ffd700", glyph: "♛",
+    description: "The path of mastery. Lead by your record, not your words." },
+];
+
+const AWAKENING_LEVEL = 30;
+
+function _dateKey(d) {
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+
+function _isRitualDayComplete(completionLog, dayKey) {
+  const done = new Set(completionLog?.[dayKey] || []);
+  return DAILY_RITUALS.every(r => done.has(r.id));
+}
+
+function _computeRitualStreak(completionLog) {
+  // Walk back from today; today's incompleteness doesn't break streak yet.
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  let streak = 0;
+  if (!_isRitualDayComplete(completionLog, _dateKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  while (_isRitualDayComplete(completionLog, _dateKey(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+function _newlyEarnedTitles(streak, alreadyUnlocked = []) {
+  const owned = new Set(alreadyUnlocked);
+  return COSMETIC_TITLES.filter(t => streak >= t.threshold && !owned.has(t.id));
+}
+
+
+const BANNER_PALETTE = [
+  { hex: null,       name: "Default" },
+  { hex: "#00d4ff",  name: "Cyan" },
+  { hex: "#ffd700",  name: "Gold" },
+  { hex: "#a855f7",  name: "Royal" },
+  { hex: "#e85d4a",  name: "Crimson" },
+  { hex: "#22c55e",  name: "Emerald" },
+  { hex: "#ec4899",  name: "Magenta" },
+  { hex: "#f59e0b",  name: "Amber" },
+  { hex: "#6e44ff",  name: "Shadow" },
+];
+
+function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
+                     account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
+                     onUpdateBannerColor, onToggleRitual, onEquipTitle, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
-  const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help"
+  const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
   const [importError, setImportError] = useState(null);
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+
+  const currentDisplayName = account.remoteProfile?.display_name || "";
+  useEffect(() => {
+    setDisplayNameDraft(currentDisplayName);
+  }, [currentDisplayName]);
+
+  const dnDirty = displayNameDraft.trim() !== currentDisplayName.trim();
+  const saveDisplayName = async () => {
+    if (!onUpdateDisplayName || savingDisplayName) return;
+    setSavingDisplayName(true);
+    const ok = await onUpdateDisplayName(displayNameDraft.trim());
+    setSavingDisplayName(false);
+    if (!ok) setDisplayNameDraft(currentDisplayName);
+  };
   const today = new Date().toLocaleDateString("en", { weekday: "long", month: "short", day: "numeric" });
   const _isArchitect = settings?.monarchTheme === "architect";
   const _isShadow    = settings?.monarchTheme === "shadow";
@@ -5543,7 +5954,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         </div>
 
         {/* Quick actions */}}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <button className="btn-primary" onClick={() => setScreen("schedule")}
             style={{ padding: "16px", fontSize: 14, letterSpacing: 2 }}>
             <span style={{ fontSize: 11 }}>{_isShadow ? "BEGIN THE HUNT" : _isBeast ? "UNLEASH" : _isArchitect ? "INITIATE PROTOCOL" : "START TRAINING"}</span>
@@ -5556,6 +5967,125 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <span style={{ fontSize: 11 }}>MY STATS</span>
           </button>
         </div>
+
+        {/* Social actions */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+          <button onClick={() => setScreen("leaderboard")} style={{
+            background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            padding: "12px", cursor: "pointer", transition: "all .2s",
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+              <rect x="2.5" y="11" width="3.8" height="6" fill="currentColor" opacity="0.6"/>
+              <rect x="8.1"  y="6"  width="3.8" height="11" fill="currentColor"/>
+              <rect x="13.7" y="9"  width="3.8" height="8" fill="currentColor" opacity="0.85"/>
+            </svg>
+            <span style={{ fontSize: 11 }}>LEADERBOARD</span>
+          </button>
+          <button onClick={() => setScreen("friends")} style={{
+            background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            padding: "12px", cursor: "pointer", position: "relative", transition: "all .2s",
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+              <circle cx="7.5" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M2 17c0-3.04 2.46-5.5 5.5-5.5S13 13.96 13 17" stroke="currentColor" strokeWidth="1.5"/>
+              <circle cx="14" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.3" opacity="0.7"/>
+              <path d="M13.5 11.6c1.9.4 3.5 2.1 3.5 4.4" stroke="currentColor" strokeWidth="1.3" opacity="0.7"/>
+            </svg>
+            <span style={{ fontSize: 11 }}>FRIENDS</span>
+            {pendingCount > 0 && (
+              <span style={{
+                position: "absolute", top: 6, right: 8,
+                background: RED, color: "#fff", borderRadius: "50%",
+                width: 18, height: 18, fontSize: 10, fontFamily: "'Orbitron',sans-serif",
+                display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
+              }}>{pendingCount}</span>
+            )}
+          </button>
+        </div>
+
+        {/* Daily Rituals */}
+        {(() => {
+          const completionLog = st.dailyRituals?.completionLog || {};
+          const todayKey = _dateKey(new Date());
+          const doneToday = new Set(completionLog[todayKey] || []);
+          const streak = _computeRitualStreak(completionLog);
+          const allDone = DAILY_RITUALS.every(r => doneToday.has(r.id));
+          return (
+            <div style={{ background: `${GOLD}0a`, border: `1px solid ${GOLD}33`,
+              borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3 }}>
+                  {"// DAILY RITUALS"}
+                </div>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: streak > 0 ? GOLD : MUTED, letterSpacing: 1 }}>
+                  {streak > 0 ? `${streak}🔥 day streak` : "no streak"}
+                </div>
+              </div>
+              {DAILY_RITUALS.map(r => {
+                const done = doneToday.has(r.id);
+                return (
+                  <div key={r.id} onClick={() => onToggleRitual?.(r.id)} style={{
+                    display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
+                    padding: "8px 4px", borderBottom: `1px solid ${ACCENT2}11`,
+                  }}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                      background: done ? GOLD : "transparent",
+                      border: `1.5px solid ${done ? GOLD : MUTED}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: BG, fontSize: 12, fontWeight: 900,
+                    }}>{done ? "✓" : ""}</div>
+                    <span style={{
+                      fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
+                      color: done ? MUTED : TEXT,
+                      textDecoration: done ? "line-through" : "none",
+                      flex: 1,
+                    }}>{r.label}</span>
+                  </div>
+                );
+              })}
+              {allDone && (
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, marginTop: 8, textAlign: "center" }}>
+                  ✦ Day complete. Streak holds.
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Equipped title selector — only show if user has unlocked any */}
+        {(st.cosmetics?.unlockedTitles?.length || 0) > 0 && (
+          <div style={{ background: BG2, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>
+              {"// EQUIPPED TITLE"}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <button onClick={() => onEquipTitle?.(null)} style={{
+                padding: "5px 10px", cursor: "pointer",
+                background: !st.cosmetics?.equippedTitle ? `${MUTED}33` : "transparent",
+                border: `1px solid ${MUTED}55`, borderRadius: 5,
+                fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 1,
+              }}>None</button>
+              {(st.cosmetics?.unlockedTitles || []).map(tid => {
+                const t = COSMETIC_TITLES.find(x => x.id === tid);
+                if (!t) return null;
+                const equipped = st.cosmetics?.equippedTitle === tid;
+                return (
+                  <button key={tid} onClick={() => onEquipTitle?.(tid)} style={{
+                    padding: "5px 10px", cursor: "pointer",
+                    background: equipped ? `${GOLD}22` : "transparent",
+                    border: `1px solid ${equipped ? GOLD : GOLD + "33"}`, borderRadius: 5,
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: equipped ? GOLD : MUTED, letterSpacing: 1,
+                  }}>{t.name}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Recent workouts */}
         <div style={{ marginBottom: 8 }}>
@@ -5598,6 +6128,148 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>SETTINGS</div>
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
             </div>
+
+            {/* Account */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+                letterSpacing: 3, marginBottom: 10 }}>{"// ACCOUNT"}</div>
+              {!account.supabaseConfigured ? (
+                <div style={{ background: BG3, border: `1px solid ${MUTED}33`, borderRadius: 8,
+                  padding: "12px 14px", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
+                  Online features (friends, leaderboard) are disabled — backend credentials are not configured for this build.
+                </div>
+              ) : account.session ? (
+                <div style={{ background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 1 }}>
+                        @{account.remoteProfile?.username || "..."}
+                      </div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                        {account.session.user?.email}
+                      </div>
+                    </div>
+                    <button onClick={onSignOut} disabled={account.busy} style={{
+                      background: `${RED}11`, border: `1px solid ${RED}55`, borderRadius: 6,
+                      padding: "8px 14px", cursor: account.busy ? "wait" : "pointer",
+                      fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: RED, fontWeight: 700, letterSpacing: 2,
+                      opacity: account.busy ? 0.5 : 1,
+                    }}>SIGN OUT</button>
+                  </div>
+
+                  {/* Display name editor */}
+                  <div>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 2, marginBottom: 5 }}>
+                      DISPLAY NAME
+                    </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                      <input
+                        type="text"
+                        value={displayNameDraft}
+                        maxLength={30}
+                        placeholder="Shown on your profile"
+                        onChange={e => setDisplayNameDraft(e.target.value)}
+                        style={{
+                          flex: 1, background: BG, border: `1px solid ${ACCENT}33`, borderRadius: 6,
+                          padding: "8px 10px", color: TEXT,
+                          fontFamily: "'Rajdhani',sans-serif", fontSize: 12, outline: "none",
+                        }}
+                      />
+                      <button
+                        onClick={saveDisplayName}
+                        disabled={!dnDirty || savingDisplayName}
+                        style={{
+                          background: dnDirty ? `${ACCENT}22` : "transparent",
+                          border: `1px solid ${dnDirty ? ACCENT : MUTED}55`,
+                          borderRadius: 6, padding: "8px 12px",
+                          cursor: dnDirty && !savingDisplayName ? "pointer" : "default",
+                          fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 2,
+                          color: dnDirty ? ACCENT : MUTED, opacity: savingDisplayName ? 0.5 : 1,
+                        }}>
+                        {savingDisplayName ? "..." : "SAVE"}
+                      </button>
+                    </div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 5 }}>
+                      {displayNameDraft.length}/30 · leave blank to show only @{account.remoteProfile?.username}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setSettingsOpen("account")} style={{
+                  width: "100%", padding: "12px 14px", cursor: "pointer", textAlign: "left",
+                  background: `${ACCENT}11`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+                }}>
+                  SIGN IN / CREATE ACCOUNT
+                </button>
+              )}
+            </div>
+
+            {/* Profile — banner color picker (signed in only) */}
+            {account.session && account.remoteProfile && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+                  letterSpacing: 3, marginBottom: 10 }}>{"// PROFILE BANNER"}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {BANNER_PALETTE.map(({ hex, name }) => {
+                    const sel = (account.remoteProfile.banner_color || null) === hex;
+                    return (
+                      <button
+                        key={name}
+                        onClick={() => onUpdateBannerColor?.(hex)}
+                        title={name}
+                        style={{
+                          width: 36, height: 36, borderRadius: 10, cursor: "pointer",
+                          background: hex || `linear-gradient(135deg, ${MUTED}33, ${BG3})`,
+                          border: `2px solid ${sel ? "#fff" : (hex || MUTED) + "55"}`,
+                          boxShadow: sel ? `0 0 10px ${hex || MUTED}` : "none",
+                          padding: 0,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6 }}>
+                  Tints your card on friends' leaderboards.
+                </div>
+              </div>
+            )}
+
+            {/* Privacy — only shown when signed in */}
+            {account.session && account.remoteProfile && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
+                  letterSpacing: 3, marginBottom: 10 }}>{"// PRIVACY"}</div>
+                {(() => {
+                  const sharePrs = account.remoteProfile.share_prs !== false;
+                  return (
+                    <div onClick={onToggleSharePrs} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "12px 14px", cursor: "pointer",
+                      background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8
+                    }}>
+                      <div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
+                          Share Personal Records
+                        </div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                          Friends can see your PRs on the leaderboard
+                        </div>
+                      </div>
+                      <div style={{ width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+                        background: sharePrs ? ACCENT : MUTED + "44",
+                        border: `1px solid ${sharePrs ? ACCENT + "88" : MUTED + "44"}`,
+                        position: "relative", transition: "all .2s" }}>
+                        <div style={{ position: "absolute", top: 3, left: sharePrs ? 21 : 3,
+                          width: 14, height: 14, borderRadius: "50%",
+                          background: sharePrs ? "#fff" : MUTED, transition: "left .2s",
+                          boxShadow: sharePrs ? `0 0 6px ${ACCENT}` : "none" }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* Monarch Themes */}
             <div style={{ marginBottom: 20 }}>
@@ -5876,12 +6548,572 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           </div>
         </div>
       )}
+
+      {/* ── ACCOUNT MODAL ── */}
+      {settingsOpen === "account" && (
+        <AuthPanel
+          onClose={() => setSettingsOpen(null)}
+          onSignIn={async (creds) => {
+            const ok = await onSignIn(creds);
+            if (ok) setSettingsOpen(null);
+          }}
+          onSignUp={async (creds) => {
+            const ok = await onSignUp(creds);
+            if (ok) setSettingsOpen(null);
+          }}
+          busy={account.busy}
+          error={account.error}
+        />
+      )}
     </div>
   );
 }
 
 
 // ─── SCREEN: DATABASE ─────────────────────────────────────────────────────────
+
+// ─── PR HISTORY MODAL ────────────────────────────────────────────────────────
+
+function PRSparkline({ events, color = GOLD }) {
+  if (!events || events.length < 2) return null;
+  const W = 80, H = 24, P = 2;
+  const xs = events.map(e => e.date || 0);
+  const ys = events.map(e => e.e1rm || 0);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const xRange = xMax - xMin || 1;
+  const yRange = yMax - yMin || 1;
+  const pts = events.map(e => {
+    const x = P + ((e.date - xMin) / xRange) * (W - 2 * P);
+    const y = H - P - ((e.e1rm - yMin) / yRange) * (H - 2 * P);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0 }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      {events.map((e, i) => {
+        const x = P + ((e.date - xMin) / xRange) * (W - 2 * P);
+        const y = H - P - ((e.e1rm - yMin) / yRange) * (H - 2 * P);
+        const isLast = i === events.length - 1;
+        return <circle key={i} cx={x} cy={y} r={isLast ? 2 : 1.2} fill={isLast ? color : `${color}88`} />;
+      })}
+    </svg>
+  );
+}
+
+function PRHistoryModal({ workouts, prs, onClose }) {
+  const timeline = useMemo(() => getPRTimeline(workouts), [workouts]);
+  const [expanded, setExpanded] = useState(null);
+
+  const items = Object.entries(prs || {})
+    .map(([name, e1rm]) => ({
+      name,
+      e1rm: Math.round(Number(e1rm) || 0),
+      events: timeline[name] || [],
+    }))
+    .filter(item => item.e1rm > 0)
+    .sort((a, b) => b.e1rm - a.e1rm);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
+        width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+        maxHeight: "90vh", overflowY: "auto", position: "relative",
+        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>PERSONAL RECORDS</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>{items.length} exercises tracked</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        {items.length === 0 && (
+          <div style={{ textAlign: "center", padding: "32px 0", fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
+            Log a strength workout to start tracking PRs.
+          </div>
+        )}
+
+        {items.map(item => {
+          const isOpen = expanded === item.name;
+          const lastEvent = item.events[item.events.length - 1];
+          return (
+            <div key={item.name} style={{
+              background: BG2, border: `1px solid ${GOLD}1a`,
+              borderRadius: 8, marginBottom: 8, overflow: "hidden",
+            }}>
+              <button onClick={() => setExpanded(isOpen ? null : item.name)} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 12,
+                background: "none", border: "none", padding: "12px 14px",
+                cursor: "pointer", textAlign: "left",
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {item.name}
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2 }}>
+                    {item.events.length} PR{item.events.length === 1 ? "" : "s"}
+                    {lastEvent && ` · last ${new Date(lastEvent.date).toLocaleDateString()}`}
+                  </div>
+                </div>
+                <PRSparkline events={item.events} />
+                <div style={{ textAlign: "right", flexShrink: 0, minWidth: 56 }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: GOLD }}>
+                    {item.e1rm}
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{wtLabel().toUpperCase()} e1RM</div>
+                </div>
+              </button>
+
+              {isOpen && item.events.length > 0 && (
+                <div style={{ borderTop: `1px solid ${GOLD}22`, padding: "8px 14px 12px" }}>
+                  {item.events.slice().reverse().map((e, i) => (
+                    <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "6px 0",
+                      borderBottom: i < item.events.length - 1 ? `1px solid ${GOLD}11` : "none",
+                    }}>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT }}>
+                        {wtVal(e.weight)} {wtLabel()} × {e.reps}
+                      </div>
+                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD }}>
+                        {e.e1rm} e1RM
+                      </div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                        {new Date(e.date).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {isOpen && item.events.length === 0 && (
+                <div style={{ borderTop: `1px solid ${GOLD}22`, padding: "10px 14px", fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+                  No tracked PR events yet — older workouts may pre-date the PR log.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── WORKOUT HEATMAP MODAL ───────────────────────────────────────────────────
+
+function HeatmapModal({ workouts, onClose }) {
+  const WEEKS = 13;
+  const TOTAL_DAYS = WEEKS * 7;
+
+  const data = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startMs = today.getTime() - (TOTAL_DAYS - 1) * 86400000;
+
+    const xpByDay = {};
+    for (const w of (workouts || [])) {
+      const d = new Date(w.date || 0);
+      if (isNaN(d.getTime()) || d.getTime() < startMs) continue;
+      d.setHours(0, 0, 0, 0);
+      const k = d.getTime();
+      xpByDay[k] = (xpByDay[k] || 0) + (w.xp || 0);
+    }
+
+    const cells = [];
+    let weekIdx = 0;
+    let totalXP = 0;
+    let activeDays = 0;
+    let maxDaily = 0;
+    for (let i = 0; i < TOTAL_DAYS; i++) {
+      const d = new Date(startMs + i * 86400000);
+      d.setHours(0, 0, 0, 0);
+      const dow = d.getDay();
+      if (i > 0 && dow === 0) weekIdx++;
+      const xp = xpByDay[d.getTime()] || 0;
+      cells.push({ date: d, key: d.getTime(), dow, weekIdx, xp });
+      if (xp > 0) { totalXP += xp; activeDays++; }
+      if (xp > maxDaily) maxDaily = xp;
+    }
+
+    let currentStreak = 0;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      if (cells[i].xp > 0) currentStreak++;
+      else if (i === cells.length - 1 && cells[i].xp === 0) continue; // grace for today not yet trained
+      else break;
+    }
+
+    let longestStreak = 0;
+    let runStreak = 0;
+    for (const c of cells) {
+      if (c.xp > 0) { runStreak++; longestStreak = Math.max(longestStreak, runStreak); }
+      else runStreak = 0;
+    }
+
+    const totalWeeks = weekIdx + 1;
+    return { cells, totalXP, activeDays, currentStreak, longestStreak, maxDaily, totalWeeks };
+  }, [workouts]);
+
+  const [selected, setSelected] = useState(null);
+
+  const colorForXP = (xp) => {
+    if (xp === 0) return "transparent";
+    const intensity = Math.min(1, xp / Math.max(1, data.maxDaily));
+    const alpha = 0.25 + intensity * 0.75;
+    const a = Math.round(alpha * 255).toString(16).padStart(2, "0");
+    return `${ACCENT}${a}`;
+  };
+
+  // Day-of-week labels: show M, W, F to keep it sparse and readable
+  const dowLabel = (i) => (i === 1 ? "M" : i === 3 ? "W" : i === 5 ? "F" : "");
+
+  // Month labels at top: emit when the month changes between consecutive weeks
+  const monthLabels = (() => {
+    const result = []; // { weekIdx, label }
+    let lastMonth = -1;
+    for (const c of data.cells) {
+      if (c.dow === 0 || c.weekIdx === 0) {
+        const m = c.date.getMonth();
+        if (m !== lastMonth) {
+          result.push({ weekIdx: c.weekIdx, label: c.date.toLocaleString("en", { month: "short" }).toUpperCase() });
+          lastMonth = m;
+        }
+      }
+    }
+    return result;
+  })();
+
+  const dayWorkouts = selected
+    ? (workouts || []).filter(w => {
+        const d = new Date(w.date || 0);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() === selected.key;
+      })
+    : [];
+
+  const Stat = ({ label, value, color = ACCENT }) => (
+    <div style={{ background: BG3, border: `1px solid ${color}22`, borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginTop: 2 }}>{label}</div>
+    </div>
+  );
+
+  const CELL = 13, GAP = 2;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
+        width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+        maxHeight: "90vh", overflowY: "auto", position: "relative",
+        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>TRAINING HEATMAP</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>last {WEEKS} weeks</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Stats row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 18 }}>
+          <Stat label="ACTIVE" value={data.activeDays} />
+          <Stat label="CURRENT" value={data.currentStreak} color={GOLD} />
+          <Stat label="LONGEST" value={data.longestStreak} color={GOLD} />
+          <Stat label="TOTAL XP" value={data.totalXP.toLocaleString()} />
+        </div>
+
+        {/* Month labels */}
+        <div style={{ position: "relative", height: 14, marginBottom: 4, marginLeft: 14 }}>
+          {monthLabels.map(({ weekIdx, label }, i) => (
+            <span key={i} style={{
+              position: "absolute", left: weekIdx * (CELL + GAP),
+              fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1,
+            }}>{label}</span>
+          ))}
+        </div>
+
+        {/* Grid */}
+        <div style={{ display: "flex", gap: GAP, marginBottom: 12 }}>
+          {/* Day labels */}
+          <div style={{ display: "grid", gridTemplateRows: `repeat(7, ${CELL}px)`, gap: GAP, width: 12 }}>
+            {[0, 1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} style={{
+                fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED,
+                display: "flex", alignItems: "center",
+              }}>{dowLabel(i)}</div>
+            ))}
+          </div>
+
+          {/* Cells */}
+          <div style={{
+            display: "grid",
+            gridTemplateRows: `repeat(7, ${CELL}px)`,
+            gridAutoColumns: `${CELL}px`,
+            gap: GAP,
+          }}>
+            {data.cells.map(c => {
+              const isSelected = selected?.key === c.key;
+              return (
+                <button key={c.key}
+                  onClick={() => setSelected(isSelected ? null : c)}
+                  style={{
+                    gridRow: c.dow + 1,
+                    gridColumn: c.weekIdx + 1,
+                    background: colorForXP(c.xp),
+                    border: isSelected
+                      ? `1.5px solid ${GOLD}`
+                      : c.xp > 0 ? `1px solid ${ACCENT}66` : `1px solid ${ACCENT}1a`,
+                    borderRadius: 2, cursor: "pointer", padding: 0,
+                    transition: "transform .1s",
+                    transform: isSelected ? "scale(1.15)" : "none",
+                  }}
+                  title={`${c.date.toLocaleDateString()} · ${c.xp} XP`}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginBottom: 16 }}>
+          <span>LESS</span>
+          {[0, 0.25, 0.5, 0.75, 1].map(t => {
+            const a = Math.round((t === 0 ? 0 : 0.25 + t * 0.75) * 255).toString(16).padStart(2, "0");
+            return <span key={t} style={{
+              width: 10, height: 10,
+              background: t === 0 ? "transparent" : `${ACCENT}${a}`,
+              border: `1px solid ${ACCENT}${t === 0 ? "1a" : "66"}`,
+              borderRadius: 2,
+            }} />;
+          })}
+          <span>MORE</span>
+        </div>
+
+        {/* Selected day detail */}
+        {selected && (
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, letterSpacing: 2 }}>
+                {selected.date.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}
+              </span>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                +{selected.xp} XP
+              </span>
+            </div>
+            {dayWorkouts.length === 0 ? (
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>No workouts logged this day.</div>
+            ) : dayWorkouts.map((w, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "5px 0",
+                borderBottom: i < dayWorkouts.length - 1 ? `1px solid ${ACCENT}11` : "none",
+              }}>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, marginRight: 8 }}>
+                  {w.exercise?.name || w.exerciseName || "Training"}
+                </span>
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, flexShrink: 0 }}>+{w.xp} XP</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── AWAKENING MODAL ──────────────────────────────────────────────────────────
+// Triggered the first time the user crosses the awakening level. Forces a
+// permanent aspect choice — no XP rewards, just a cosmetic identity that
+// tints their leaderboard card.
+
+function AwakeningModal({ onChoose }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 400,
+      background: "rgba(3,6,15,0.95)", backdropFilter: "blur(16px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "24px",
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 480, padding: "32px 22px",
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`,
+        borderRadius: 14, position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
+          background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
+
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD,
+            letterSpacing: 6, marginBottom: 6 }}>// AWAKENING</div>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900,
+            color: GOLD, letterSpacing: 3, marginBottom: 8,
+            textShadow: `0 0 20px ${GOLD}66` }}>
+            CHOOSE YOUR PATH
+          </div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
+            color: MUTED, lineHeight: 1.5 }}>
+            Level {AWAKENING_LEVEL} reached. Pick the aspect that defines you.<br/>
+            <span style={{ color: GOLD }}>This choice is permanent.</span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {ASPECTS.map(a => (
+            <button key={a.id} onClick={() => onChoose(a.id)} style={{
+              padding: "14px 16px", textAlign: "left", cursor: "pointer",
+              background: `${a.color}10`, border: `1.5px solid ${a.color}66`,
+              borderRadius: 10, transition: "all .15s",
+              display: "flex", alignItems: "center", gap: 14,
+            }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                background: `radial-gradient(circle, ${a.color}55, ${a.color}11)`,
+                border: `2px solid ${a.color}88`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 22, color: a.color,
+                boxShadow: `0 0 14px ${a.color}44`,
+              }}>{a.glyph}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13,
+                  fontWeight: 700, color: a.color, letterSpacing: 2 }}>
+                  PATH OF THE {a.name.toUpperCase()}
+                </div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
+                  color: MUTED, marginTop: 3, lineHeight: 1.4 }}>
+                  {a.description}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── VOLUME CHART ─────────────────────────────────────────────────────────────
+// Inline 12-week tonnage line chart for the Hunter screen. Stored weights are
+// in lbs; we convert to display unit at render time via wtVal/wtLabel.
+
+function _workoutTonnage(w) {
+  if (Array.isArray(w?.sets_detail) && w.sets_detail.length > 0) {
+    return w.sets_detail.reduce((s, set) => s + (Number(set.weight) || 0) * (Number(set.reps) || 0), 0);
+  }
+  const weight = Number(w?.weight) || 0;
+  const reps   = Number(w?.reps)   || 0;
+  const sets   = Number(w?.sets)   || 1;
+  return weight * reps * sets;
+}
+
+function _weeklyTonnage(workouts, weeks = 12) {
+  const now = Date.now();
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  const buckets = Array(weeks).fill(0);
+  for (const w of workouts || []) {
+    if (!w?.date) continue;
+    const ageWeeks = Math.floor((now - w.date) / weekMs);
+    if (ageWeeks < 0 || ageWeeks >= weeks) continue;
+    buckets[weeks - 1 - ageWeeks] += _workoutTonnage(w);
+  }
+  return buckets;
+}
+
+function VolumeChart({ workouts }) {
+  const data = useMemo(() => _weeklyTonnage(workouts, 12), [workouts]);
+  const peak = Math.max(...data, 1);
+  const total = data.reduce((s, v) => s + v, 0);
+  const active = data.filter(v => v > 0).length;
+  const avg = active > 0 ? total / active : 0;
+  const current = data[data.length - 1];
+  const prev = data[data.length - 2] || 0;
+  const trendUp = current > prev;
+  const trendPct = prev > 0 ? Math.round(((current - prev) / prev) * 100) : null;
+
+  // Empty state
+  if (total === 0) {
+    return (
+      <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16, textAlign: "center" }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 6 }}>
+          [ VOLUME TREND ]
+        </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>
+          Log a strength workout to start tracking weekly tonnage.
+        </div>
+      </div>
+    );
+  }
+
+  // SVG geometry — viewBox for crisp scaling
+  const W = 280, H = 70;
+  const stepX = W / (data.length - 1);
+  const points = data.map((v, i) => {
+    const x = i * stepX;
+    const y = H - (v / peak) * (H - 6) - 3;
+    return [x, y];
+  });
+  const linePath = points.map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`)).join(" ");
+  const fillPath = `${linePath} L${W},${H} L0,${H} Z`;
+
+  return (
+    <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
+          [ VOLUME TREND — 12 WEEKS ]
+        </div>
+        {trendPct !== null && (
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: trendUp ? GREEN : RED, letterSpacing: 1 }}>
+            {trendUp ? "▲" : "▼"} {Math.abs(trendPct)}%
+          </div>
+        )}
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: 70, display: "block" }}>
+        <defs>
+          <linearGradient id="volFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stopColor={ACCENT} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={ACCENT} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={fillPath} fill="url(#volFill)" />
+        <path d={linePath} fill="none" stroke={ACCENT} strokeWidth="1.5" />
+        {points.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={i === points.length - 1 ? 3 : 1.5}
+            fill={i === points.length - 1 ? GOLD : ACCENT} />
+        ))}
+      </svg>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 10 }}>
+        {[
+          ["THIS WEEK", `${Math.round(wtVal(current)).toLocaleString()} ${wtLabel()}`],
+          ["AVG / WK",  `${Math.round(wtVal(avg)).toLocaleString()} ${wtLabel()}`],
+          ["PEAK",      `${Math.round(wtVal(peak)).toLocaleString()} ${wtLabel()}`],
+        ].map(([label, val]) => (
+          <div key={label} style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: GOLD }}>{val}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginTop: 2 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, toast }) {
   const st = store.profiles[store.activeId];
@@ -5913,6 +7145,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
   const specialStats = ["cardio", "calisthenics"];
   const [selectedMuscle, setSelectedMuscle] = useState(null);
+  const [prHistoryOpen, setPrHistoryOpen]   = useState(false);
+  const [heatmapOpen, setHeatmapOpen]       = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -6101,11 +7335,97 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
+        {/* Progression entry points */}
+        <button onClick={() => setPrHistoryOpen(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 8,
+          padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+          fontFamily: "'Rajdhani',sans-serif",
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M10 1l2.5 5.5 6 .8-4.4 4.2 1 6L10 14.7 4.9 17.5l1-6L1.5 7.3l6-.8z" stroke={GOLD} strokeWidth="1.4"/>
+            </svg>
+            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 2, fontWeight: 700 }}>PR HISTORY</span>
+          </span>
+          <span style={{ fontSize: 10, color: GOLD, opacity: 0.6 }}>
+            {Object.keys(st.prs || {}).length} TRACKED →
+          </span>
+        </button>
+
+        <button onClick={() => setHeatmapOpen(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: `${ACCENT}10`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
+          padding: "12px 14px", marginBottom: 16, cursor: "pointer",
+          fontFamily: "'Rajdhani',sans-serif",
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <rect x="2" y="2"  width="4" height="4" fill={ACCENT} opacity="0.3"/>
+              <rect x="8" y="2"  width="4" height="4" fill={ACCENT} opacity="0.7"/>
+              <rect x="14" y="2" width="4" height="4" fill={ACCENT}/>
+              <rect x="2" y="8"  width="4" height="4" fill={ACCENT} opacity="0.6"/>
+              <rect x="8" y="8"  width="4" height="4" fill={ACCENT} opacity="0.4"/>
+              <rect x="14" y="8" width="4" height="4" fill={ACCENT} opacity="0.85"/>
+              <rect x="2" y="14" width="4" height="4" fill={ACCENT} opacity="0.5"/>
+              <rect x="8" y="14" width="4" height="4" fill={ACCENT}/>
+              <rect x="14" y="14" width="4" height="4" fill={ACCENT} opacity="0.25"/>
+            </svg>
+            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 2, fontWeight: 700 }}>TRAINING HEATMAP</span>
+          </span>
+          <span style={{ fontSize: 10, color: ACCENT, opacity: 0.6 }}>
+            13 WEEKS →
+          </span>
+        </button>
+
         {/* ── STATS ── */}
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
           {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
         </div>
+
+        <VolumeChart workouts={st.workouts || []} />
+
+        {(() => {
+          const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
+          if (imbalances.length === 0) return null;
+          return (
+            <div style={{ background: `${GOLD}08`, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 4, marginBottom: 10 }}>
+                [ FOCUS RECOMMENDATIONS ]
+              </div>
+              {imbalances.map((imb, i) => {
+                const suggestions = suggestExercisesFor(imb.target, 3);
+                return (
+                  <div key={i} style={{ marginBottom: i === imbalances.length - 1 ? 0 : 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700, letterSpacing: 1 }}>
+                        {imb.pair[0]} ▸ {imb.pair[1]}
+                      </span>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED }}>
+                        {imb.ratio === Infinity ? "∞" : `${imb.ratio.toFixed(1)}×`}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, lineHeight: 1.4, marginBottom: suggestions.length ? 6 : 0 }}>
+                      {imb.message}
+                    </div>
+                    {suggestions.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {suggestions.map(ex => (
+                          <span key={ex.name} style={{
+                            fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
+                            background: BG3, border: `1px solid ${GOLD}22`, borderRadius: 4,
+                            padding: "3px 8px",
+                          }}>{ex.name}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
         <StatTree
@@ -6118,8 +7438,861 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
         />
       </div>
+
+      {prHistoryOpen && (
+        <PRHistoryModal
+          workouts={st.workouts}
+          prs={st.prs}
+          onClose={() => setPrHistoryOpen(false)}
+        />
+      )}
+      {heatmapOpen && (
+        <HeatmapModal
+          workouts={st.workouts}
+          onClose={() => setHeatmapOpen(false)}
+        />
+      )}
     </div>
 
+  );
+}
+
+
+// ─── REALM HELPERS ────────────────────────────────────────────────────────────
+
+function _rankColor(lbl) {
+  if (lbl === "S") return "#FFD700";
+  if (lbl === "A") return "#9B59B6";
+  if (lbl === "B") return "#4a9eff";
+  if (lbl === "C") return "#4ecb71";
+  if (lbl === "D") return "#f59e0b";
+  return "#e05555";
+}
+
+const AUDIT_ACTION_LABELS = {
+  toggle_share_prs:    "Toggled PR sharing",
+  suspend:             "Suspended",
+  unsuspend:           "Unsuspended",
+  grant_admin:         "Granted admin",
+  revoke_admin:        "Revoked admin",
+  wipe_stats:          "Wiped stats",
+  send_password_reset: "Sent password reset",
+  hide_friend:         "Hid from friends",
+  reveal_friend:       "Revealed to friends",
+};
+
+function _auditLabel(a) {
+  return AUDIT_ACTION_LABELS[a] || a.replace(/_/g, " ");
+}
+
+function _timeAgo(iso) {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function _activityColor(iso) {
+  if (!iso) return MUTED;
+  const h = (Date.now() - new Date(iso).getTime()) / 3600000;
+  if (h < 24)  return GREEN;
+  if (h < 168) return GOLD;   // < 7d
+  return MUTED;
+}
+
+// ─── IMBALANCE DETECTOR ───────────────────────────────────────────────────────
+// Walks pairs of antagonist muscle groups and returns flags where one side
+// significantly outweighs the other. Each check has a minimum-XP gate so
+// new accounts with mostly-zero stats don't get spammed with false alarms.
+
+function detectImbalances(stats, subStats) {
+  const get    = (k) => stats?.[k] || 0;
+  const getSub = (k) => subStats?.[k] || 0;
+  const sumSub = (...keys) => keys.reduce((s, k) => s + getSub(k), 0);
+
+  const checks = [
+    {
+      label: ["Chest", "Back"],
+      a: get("chest"), b: get("back"),
+      minXp: 200, threshold: 1.5,
+      tipForward: "Posterior chain is lagging. Add rows or pull-ups.",
+      tipReverse: "Pressing volume is behind. Add bench or push-ups.",
+      targetForward: "back", targetReverse: "chest",
+    },
+    {
+      label: ["Triceps", "Biceps"],
+      a: get("tricep"), b: get("bicep"),
+      minXp: 100, threshold: 1.3,
+      tipForward: "Biceps are pulling ahead — triceps make up 2/3 of your arm. Add dips, pushdowns, or skull crushers.",
+      tipReverse: "Biceps lagging behind triceps. Add curls.",
+      targetForward: "tricep", targetReverse: "bicep",
+    },
+    {
+      label: ["Front Delts", "Rear Delts"],
+      a: getSub("anterior-deltoid"), b: getSub("posterior-deltoid"),
+      minXp: 100, threshold: 2.0,
+      tipForward: "Rear delts neglected — common in pressing-heavy programs. Add face pulls or reverse flyes.",
+      targetForward: "shoulders",
+    },
+    {
+      label: ["Quads", "Hamstrings"],
+      a: sumSub("outer-quadricep", "rectus-femoris", "inner-quadricep"),
+      b: sumSub("lateral-hamstrings", "medial-hamstrings"),
+      minXp: 200, threshold: 2.0,
+      tipForward: "Hamstrings underdeveloped. Add Romanian deadlifts or hamstring curls.",
+      targetForward: "legs",
+    },
+  ];
+
+  const out = [];
+  for (const c of checks) {
+    if (Math.max(c.a, c.b) < c.minXp) continue;
+    const aDom = c.b > 0 ? c.a / c.b : Infinity;  // a outweighs b
+    const bDom = c.a > 0 ? c.b / c.a : Infinity;  // b outweighs a
+    if (aDom >= c.threshold) {
+      // a is dominant → suggest exercises that target b
+      out.push({ pair: [c.label[0], c.label[1]], ratio: aDom, message: c.tipForward, target: c.targetForward });
+    } else if (c.tipReverse && bDom >= c.threshold) {
+      out.push({ pair: [c.label[1], c.label[0]], ratio: bDom, message: c.tipReverse, target: c.targetReverse });
+    }
+  }
+  return out;
+}
+
+function suggestExercisesFor(target, n = 3) {
+  const list = EXERCISE_DB?.[target];
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const strengthFirst = [...list].sort((a, b) => (a.type === "strength" ? -1 : 1) - (b.type === "strength" ? -1 : 1));
+  return strengthFirst.slice(0, n);
+}
+
+function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHidden, onRefresh, toast }) {
+  const [busy, setBusy] = useState(false);
+  const [auditOpen,    setAuditOpen]    = useState(false);
+  const [auditEntries, setAuditEntries] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  if (!profile) return null;
+  const rc = _rankColor(profile.rank_label);
+
+  const confirmPrompt = (msg) => typeof window !== "undefined" && window.confirm(msg);
+
+  const loadAuditLog = useCallback(async () => {
+    if (!isAdmin || !profile?.user_id) return;
+    setAuditLoading(true);
+    try {
+      const rows = await adminService.fetchAuditLog(profile.user_id, 25);
+      setAuditEntries(rows);
+    } catch (e) {
+      toast?.(`Audit log unavailable: ${e.message || e}`, RED);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [isAdmin, profile?.user_id, toast]);
+
+  const toggleAuditOpen = () => {
+    const next = !auditOpen;
+    setAuditOpen(next);
+    if (next) loadAuditLog();
+  };
+
+  const wrap = async (label, fn, successMsg, color = ACCENT, audit = null) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      if (audit) {
+        await adminService.logAdminAction(profile.user_id, audit.action, audit.metadata || {});
+        if (auditOpen) loadAuditLog();
+      }
+      toast?.(successMsg, color);
+      onRefresh?.();
+    } catch (e) { toast?.(`${label} failed: ${e.message || e}`, RED); }
+    finally { setBusy(false); }
+  };
+
+  const togglePrs = () => wrap(
+    "Toggle PRs",
+    () => adminService.setSharePrs(profile.user_id, !profile.share_prs),
+    `Share PRs ${!profile.share_prs ? "enabled" : "disabled"} for @${profile.username}`,
+    ACCENT,
+    { action: "toggle_share_prs", metadata: { value: !profile.share_prs } },
+  );
+
+  const toggleSuspend = () => {
+    const nextVal = !profile.suspended;
+    if (nextVal && !confirmPrompt(`Suspend @${profile.username}? They'll be hidden from leaderboards until you reverse this.`)) return;
+    wrap(
+      "Suspend",
+      () => adminService.setSuspended(profile.user_id, nextVal),
+      `@${profile.username} ${nextVal ? "suspended" : "unsuspended"}`,
+      nextVal ? RED : GREEN,
+      { action: nextVal ? "suspend" : "unsuspend" },
+    );
+  };
+
+  const toggleAdmin = () => {
+    const nextVal = !profile.is_admin;
+    if (!confirmPrompt(`${nextVal ? "GRANT" : "REVOKE"} admin to @${profile.username}? Admin can moderate other accounts.`)) return;
+    wrap(
+      "Admin toggle",
+      () => adminService.setIsAdmin(profile.user_id, nextVal),
+      `@${profile.username} ${nextVal ? "promoted to admin" : "admin revoked"}`,
+      nextVal ? GOLD : MUTED,
+      { action: nextVal ? "grant_admin" : "revoke_admin" },
+    );
+  };
+
+  const resetStats = () => {
+    if (!confirmPrompt(`Reset all XP, level, and PRs for @${profile.username}? Their workout history stays on their device.`)) return;
+    wrap(
+      "Reset stats",
+      () => adminService.resetUserStats(profile.user_id),
+      `Stats reset for @${profile.username}`,
+      RED,
+      { action: "wipe_stats" },
+    );
+  };
+
+  const sendPasswordReset = () => {
+    if (!confirmPrompt(`Send password-reset email to @${profile.username}? They'll get a recovery link in their inbox.`)) return;
+    wrap(
+      "Password reset",
+      () => adminService.sendPasswordResetForUser(profile.user_id),
+      `Reset email sent to @${profile.username}`,
+      GREEN,
+      { action: "send_password_reset" },
+    );
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+        border: `1px solid ${(profile.banner_color || ACCENT)}33`, borderTop: `2px solid ${profile.banner_color || ACCENT}`,
+        width: "100%", maxWidth: 480, padding: "24px 20px 40px",
+        maxHeight: "90vh", overflowY: "auto", position: "relative",
+        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${(profile.banner_color || ACCENT)}cc, transparent)` }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 8,
+              background: `${rc}22`, border: `2px solid ${rc}88`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 20, fontWeight: 900, color: rc,
+            }}>{profile.rank_label || "E"}</div>
+            <div>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: ACCENT }}>@{profile.username}</div>
+              {profile.equipped_title && (
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, fontStyle: "italic", marginTop: 2 }}>
+                  {profile.equipped_title}
+                </div>
+              )}
+              {profile.equipped_aspect && (
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 2,
+                  color: ASPECTS.find(a => a.name === profile.equipped_aspect)?.color || MUTED, marginTop: 2 }}>
+                  ⟡ PATH OF THE {profile.equipped_aspect.toUpperCase()}
+                </div>
+              )}
+              {profile.display_name && (
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginTop: 2 }}>{profile.display_name}</div>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2 }}>LVL {profile.overall_level}</span>
+            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{(profile.overall_xp || 0).toLocaleString()} XP</span>
+          </div>
+          <div style={{ height: 4, background: `${ACCENT}22`, borderRadius: 2 }}>
+            <div style={{ height: "100%", background: ACCENT, borderRadius: 2, width: `${Math.min(100, ((profile.overall_xp || 0) % 1000) / 10)}%` }} />
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
+          {[
+            ["SESSIONS", profile.total_workouts],
+            ["WEEKLY",   (profile.weekly_xp || 0).toLocaleString()],
+            ["TOTAL XP", (profile.overall_xp || 0).toLocaleString()],
+            ["FRIENDS",  (profile.friend_count ?? "—")],
+          ].map(([label, val]) => (
+            <div key={label} style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700, color: GOLD }}>{val}</div>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: "50%",
+            background: _activityColor(profile.updated_at),
+            boxShadow: `0 0 4px ${_activityColor(profile.updated_at)}`,
+          }} />
+          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+            Last active {_timeAgo(profile.updated_at)}
+          </span>
+        </div>
+
+        {profile.prs && Object.keys(profile.prs).length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 10 }}>{"// PERSONAL RECORDS"}</div>
+            {Object.entries(profile.prs)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8)
+              .map(([ex, e1rm]) => (
+                <div key={ex} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${ACCENT}11` }}>
+                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT }}>{ex}</span>
+                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: GOLD }}>{Math.round(e1rm)} lbs</span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {isAdmin && (
+          <div style={{ background: `${RED}08`, border: `1px solid ${RED}33`, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: RED, letterSpacing: 3, marginBottom: 10 }}>{"// ADMIN CONTROLS"}</div>
+
+            {/* Toggleable rows */}
+            {[
+              ["Share PRs",  profile.share_prs, togglePrs,    profile.share_prs ? "ON"    : "OFF",    profile.share_prs ? GREEN : MUTED],
+              ["Suspended",  profile.suspended, toggleSuspend, profile.suspended ? "YES"  : "NO",     profile.suspended ? RED   : MUTED],
+              ["Admin",      profile.is_admin,  toggleAdmin,   profile.is_admin  ? "YES"  : "NO",     profile.is_admin  ? GOLD  : MUTED],
+            ].map(([label, _val, onTap, valLabel, valColor]) => (
+              <button key={label} disabled={busy} onClick={onTap} style={{
+                width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                background: "none", border: "none", padding: "8px 0", cursor: busy ? "default" : "pointer",
+                borderBottom: `1px solid ${ACCENT}11`,
+              }}>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>{label}</span>
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: valColor, letterSpacing: 1 }}>
+                  {valLabel} <span style={{ opacity: 0.5, fontSize: 8 }}>↻</span>
+                </span>
+              </button>
+            ))}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", marginBottom: 10 }}>
+              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>Joined</span>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED }}>{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"}</span>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+              <button disabled={busy} onClick={sendPasswordReset} style={{
+                padding: "9px", cursor: busy ? "default" : "pointer",
+                background: `${GREEN}11`, border: `1px solid ${GREEN}55`, color: GREEN,
+                fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+              }}>RESET PW</button>
+              <button disabled={busy} onClick={resetStats} style={{
+                padding: "9px", cursor: busy ? "default" : "pointer",
+                background: `${RED}11`, border: `1px solid ${RED}55`, color: RED,
+                fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+              }}>WIPE STATS</button>
+            </div>
+
+            <button disabled={busy} onClick={onToggleHidden} style={{
+              width: "100%", padding: "10px", cursor: busy ? "default" : "pointer",
+              background: viewHidden ? `${GREEN}22` : `${ACCENT}22`,
+              border: `1px solid ${viewHidden ? GREEN : ACCENT}66`,
+              fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1,
+              color: viewHidden ? GREEN : ACCENT,
+            }}>
+              {viewHidden ? `REVEAL TO @${profile.username}` : `HIDE FROM @${profile.username}`}
+            </button>
+
+            {/* Audit log — collapsible */}
+            <button onClick={toggleAuditOpen} style={{
+              width: "100%", marginTop: 10, padding: "8px 10px", cursor: "pointer",
+              background: "none", border: `1px solid ${MUTED}33`,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 2,
+            }}>
+              <span>{auditOpen ? "▾ AUDIT LOG" : "▸ AUDIT LOG"}</span>
+              <span style={{ opacity: 0.6 }}>{auditEntries.length > 0 ? `${auditEntries.length}` : ""}</span>
+            </button>
+
+            {auditOpen && (
+              <div style={{ marginTop: 8, background: BG, border: `1px solid ${MUTED}22`, borderRadius: 6, padding: "8px 10px", maxHeight: 220, overflowY: "auto" }}>
+                {auditLoading ? (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", padding: "10px 0" }}>
+                    Loading…
+                  </div>
+                ) : auditEntries.length === 0 ? (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", padding: "10px 0" }}>
+                    No actions recorded.
+                  </div>
+                ) : auditEntries.map(entry => (
+                  <div key={entry.id} style={{ padding: "6px 0", borderBottom: `1px solid ${MUTED}11` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, fontWeight: 600 }}>
+                        {_auditLabel(entry.action)}
+                      </span>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, whiteSpace: "nowrap" }}>
+                        {_timeAgo(entry.created_at)}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2 }}>
+                      by @{entry.admin_username || "unknown"}
+                      {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+                        <span style={{ opacity: 0.7 }}> · {JSON.stringify(entry.metadata)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function _signInPrompt(title, body) {
+  return (
+    <div style={{ minHeight: "100vh", background: BG, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px 120px" }}>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900, color: ACCENT, letterSpacing: 4, marginBottom: 12 }}>{title}</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED, textAlign: "center", lineHeight: 1.6 }}>{body}</div>
+      <div style={{ marginTop: 20, fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2 }}>
+        SIGN IN VIA HOME → GEAR ICON → ACCOUNT
+      </div>
+    </div>
+  );
+}
+
+
+// ─── SCREEN: LEADERBOARD ──────────────────────────────────────────────────────
+
+function LeaderboardScreen({ account, toast }) {
+  const isAdmin   = Boolean(account?.remoteProfile?.is_admin);
+  const myUserId  = account?.session?.user?.id;
+
+  const [sortBy, setSortBy]             = useState("weekly_xp");
+  const [board, setBoard]               = useState([]);
+  const [loadingBoard, setLoadingBoard] = useState(false);
+  const [viewProfile, setViewProfile]   = useState(null);
+  const [viewHidden, setViewHidden]     = useState(null);
+
+  useEffect(() => {
+    if (!myUserId) return;
+    setLoadingBoard(true);
+    friendsService.fetchLeaderboard(sortBy)
+      .then(setBoard)
+      .catch(e => toast(e.message, RED))
+      .finally(() => setLoadingBoard(false));
+  }, [myUserId, sortBy]);
+
+  const openProfile = async (userId) => {
+    const p = await friendsService.getFriendProfile(userId).catch(() => null);
+    setViewProfile(p);
+    if (isAdmin && p) {
+      const hidden = await friendsService.getHiddenStatus(userId, myUserId).catch(() => true);
+      setViewHidden(hidden);
+    }
+  };
+
+  const handleToggleHidden = async () => {
+    if (!viewProfile || !isAdmin) return;
+    const newHidden = !viewHidden;
+    try {
+      await friendsService.setFriendHidden(viewProfile.user_id, myUserId, newHidden);
+      adminService.logAdminAction(viewProfile.user_id, newHidden ? "hide_friend" : "reveal_friend");
+      setViewHidden(newHidden);
+      toast(newHidden ? "Hidden from their friends list" : `Revealed to @${viewProfile.username}`, ACCENT);
+    } catch (e) { toast(e.message, RED); }
+  };
+
+  if (!account?.session) {
+    return _signInPrompt("LEADERBOARD", <>Sign in to see how you rank<br/>against other Hunters.</>);
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
+
+      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
+          {isAdmin ? "[ LEADERBOARD — ADMIN VIEW ]" : "[ LEADERBOARD ]"}
+        </div>
+      </div>
+
+      <div style={{ padding: "16px 16px 0" }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[["weekly_xp", "WEEKLY"], ["overall_xp", "TOTAL XP"], ["overall_level", "LEVEL"]].map(([key, lbl]) => (
+            <button key={key} onClick={() => setSortBy(key)} style={{
+              flex: 1, padding: "7px 4px", border: "none", cursor: "pointer",
+              fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+              background: sortBy === key ? `${ACCENT}22` : BG3,
+              color: sortBy === key ? ACCENT : MUTED,
+              borderBottom: `2px solid ${sortBy === key ? ACCENT : "transparent"}`,
+            }}>{lbl}</button>
+          ))}
+        </div>
+
+        {loadingBoard && (
+          <div style={{ textAlign: "center", padding: 40, fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: MUTED }}>LOADING...</div>
+        )}
+
+        {!loadingBoard && board.length === 0 && (
+          <div style={{ textAlign: "center", padding: 40, fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
+            {isAdmin ? "No users have signed up yet." : "Add friends to see them on the leaderboard."}
+          </div>
+        )}
+
+        {board.map((row, i) => {
+          const rc = _rankColor(row.rank_label);
+          const isMe = row.friend_id === myUserId;
+          const banner = row.banner_color || ACCENT;
+          return (
+            <div key={row.friend_id} onClick={() => openProfile(row.friend_id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 12,
+                background: isMe ? `${banner}11` : BG2,
+                border: `1px solid ${isMe ? banner + "55" : banner + "1a"}`,
+                borderLeft: `3px solid ${banner}`,
+                borderRadius: 10, padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+              }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: i < 3 ? GOLD : MUTED, fontWeight: 700, minWidth: 22, textAlign: "center" }}>
+                {i === 0 ? "◆" : i === 1 ? "◇" : i === 2 ? "△" : `#${i + 1}`}
+              </div>
+              <div style={{
+                width: 32, height: 32, borderRadius: 6, flexShrink: 0,
+                background: `${rc}22`, border: `1.5px solid ${rc}88`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 900, color: rc,
+              }}>{row.rank_label || "E"}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div title={`Active ${_timeAgo(row.updated_at)}`} style={{
+                    width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                    background: _activityColor(row.updated_at),
+                    boxShadow: `0 0 4px ${_activityColor(row.updated_at)}`,
+                  }} />
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: isMe ? ACCENT : TEXT, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    @{row.username}{isMe ? " ◈" : ""}
+                  </div>
+                </div>
+                {row.equipped_title && (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, fontStyle: "italic", marginTop: 1 }}>
+                    {row.equipped_title}
+                  </div>
+                )}
+                {row.equipped_aspect && (
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 2,
+                    color: ASPECTS.find(a => a.name === row.equipped_aspect)?.color || MUTED, marginTop: 1 }}>
+                    ⟡ PATH OF THE {row.equipped_aspect.toUpperCase()}
+                  </div>
+                )}
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+                  LVL {row.overall_level} · {row.total_workouts} sessions · {_timeAgo(row.updated_at)}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                  {sortBy === "overall_level"
+                    ? `LVL ${row.overall_level}`
+                    : sortBy === "overall_xp"
+                      ? `${(row.overall_xp || 0).toLocaleString()}`
+                      : `${(row.weekly_xp || 0).toLocaleString()}`}
+                </div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>
+                  {sortBy === "weekly_xp" ? "WEEKLY XP" : sortBy === "overall_xp" ? "TOTAL XP" : "XP"}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <ProfileViewerModal
+        profile={viewProfile}
+        isAdmin={isAdmin}
+        viewHidden={viewHidden}
+        onClose={() => setViewProfile(null)}
+        onToggleHidden={handleToggleHidden}
+        toast={toast}
+        onRefresh={async () => {
+          if (viewProfile) await openProfile(viewProfile.user_id);
+          friendsService.fetchLeaderboard(sortBy).then(setBoard).catch(() => {});
+        }}
+      />
+    </div>
+  );
+}
+
+
+// ─── SCREEN: FRIENDS ──────────────────────────────────────────────────────────
+
+function FriendsScreen({ account, toast }) {
+  const isAdmin   = Boolean(account?.remoteProfile?.is_admin);
+  const myUserId  = account?.session?.user?.id;
+
+  const [searchQ, setSearchQ]               = useState("");
+  const [searchResults, setSearchResults]   = useState([]);
+  const [searching, setSearching]           = useState(false);
+  const [incoming, setIncoming]             = useState([]);
+  const [outgoing, setOutgoing]             = useState([]);
+  const [profileMap, setProfileMap]         = useState({});
+  const [friendIds, setFriendIds]           = useState(new Set());
+  const [opBusy, setOpBusy]                 = useState({});
+  const [viewProfile, setViewProfile]       = useState(null);
+  const [viewHidden, setViewHidden]         = useState(null);
+
+  const setBusy = (id, val) => setOpBusy(p => ({ ...p, [id]: val }));
+
+  const loadRequests = async () => {
+    if (!myUserId) return;
+    try {
+      const r = await friendsService.fetchRequests(myUserId);
+      setIncoming(r.incoming); setOutgoing(r.outgoing); setProfileMap(r.profileMap);
+    } catch {}
+  };
+
+  const loadFriendIds = async () => {
+    if (!myUserId) return;
+    try {
+      const rows = await friendsService.fetchLeaderboard("weekly_xp");
+      setFriendIds(new Set(rows.map(r => r.friend_id)));
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (myUserId) { loadRequests(); loadFriendIds(); }
+  }, [myUserId]);
+
+  useEffect(() => {
+    if (searchQ.length < 2) { setSearchResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try { setSearchResults((await friendsService.searchUsers(searchQ)).filter(u => u.user_id !== myUserId)); }
+      catch {}
+      finally { setSearching(false); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchQ, myUserId]);
+
+  const openProfile = async (userId) => {
+    const p = await friendsService.getFriendProfile(userId).catch(() => null);
+    setViewProfile(p);
+    if (isAdmin && p) {
+      const hidden = await friendsService.getHiddenStatus(userId, myUserId).catch(() => true);
+      setViewHidden(hidden);
+    }
+  };
+
+  const handleToggleHidden = async () => {
+    if (!viewProfile || !isAdmin) return;
+    const newHidden = !viewHidden;
+    try {
+      await friendsService.setFriendHidden(viewProfile.user_id, myUserId, newHidden);
+      adminService.logAdminAction(viewProfile.user_id, newHidden ? "hide_friend" : "reveal_friend");
+      setViewHidden(newHidden);
+      toast(newHidden ? "Hidden from their friends list" : `Revealed to @${viewProfile.username}`, ACCENT);
+    } catch (e) { toast(e.message, RED); }
+  };
+
+  const handleSendRequest = async (toUserId) => {
+    setBusy(toUserId, true);
+    try {
+      await friendsService.sendFriendRequest(toUserId);
+      toast("Friend request sent", GREEN);
+      setOutgoing(prev => [...prev, { id: Date.now(), from_user: myUserId, to_user: toUserId }]);
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(toUserId, false); }
+  };
+
+  const handleAccept = async (reqId) => {
+    setBusy(reqId, true);
+    try {
+      await friendsService.acceptRequest(reqId);
+      toast("Friend request accepted", GREEN);
+      setIncoming(prev => prev.filter(r => r.id !== reqId));
+      loadFriendIds();
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(reqId, false); }
+  };
+
+  const handleReject = async (reqId) => {
+    setBusy(reqId, true);
+    try {
+      await friendsService.rejectRequest(reqId);
+      setIncoming(prev => prev.filter(r => r.id !== reqId));
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(reqId, false); }
+  };
+
+  const handleCancel = async (reqId) => {
+    setBusy(reqId, true);
+    try {
+      await friendsService.cancelRequest(reqId);
+      setOutgoing(prev => prev.filter(r => r.id !== reqId));
+    } catch (e) { toast(e.message, RED); }
+    finally { setBusy(reqId, false); }
+  };
+
+  const outgoingIds = new Set(outgoing.map(r => r.to_user));
+
+  if (!account?.session) {
+    return _signInPrompt("FRIENDS", <>Sign in to send friend requests<br/>and connect with other Hunters.</>);
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
+
+      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
+          {isAdmin ? "[ FRIENDS — ADMIN VIEW ]" : "[ FRIENDS ]"}
+        </div>
+      </div>
+
+      <div style={{ padding: "16px 16px 0" }}>
+
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>{"// FIND HUNTER"}</div>
+          <input
+            value={searchQ}
+            onChange={e => setSearchQ(e.target.value)}
+            placeholder="search by username..."
+            autoCapitalize="none" autoCorrect="off" spellCheck="false"
+            style={{
+              width: "100%", background: BG3, border: `1px solid ${ACCENT}44`,
+              color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
+              padding: "10px 14px", borderRadius: 8, outline: "none", boxSizing: "border-box",
+            }}
+          />
+          {searching && <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, marginTop: 8 }}>SCANNING...</div>}
+          {searchResults.map(u => {
+            const isPending  = outgoingIds.has(u.user_id);
+            const isFriend   = friendIds.has(u.user_id);
+            const canView    = isFriend || isAdmin;
+            const rc = _rankColor(u.rank_label || "E");
+            return (
+              <div key={u.user_id}
+                onClick={canView ? () => openProfile(u.user_id) : undefined}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: BG2, border: `1px solid ${ACCENT}22`,
+                  borderRadius: 8, padding: "10px 12px", marginTop: 8,
+                  cursor: canView ? "pointer" : "default",
+                  opacity: canView ? 1 : 0.85,
+                }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 5, flexShrink: 0,
+                  background: `${rc}22`, border: `1.5px solid ${rc}66`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 900, color: rc,
+                }}>{u.rank_label || "E"}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{u.username}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                    LVL {u.overall_level}{!canView ? " · profile locked" : ""}
+                  </div>
+                </div>
+                {isFriend ? (
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GREEN, letterSpacing: 1 }}>FRIEND</div>
+                ) : isPending ? (
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>PENDING</div>
+                ) : (
+                  <button disabled={opBusy[u.user_id]} onClick={(e) => { e.stopPropagation(); handleSendRequest(u.user_id); }} style={{
+                    background: `${ACCENT}22`, border: `1px solid ${ACCENT}66`,
+                    color: ACCENT, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                    padding: "6px 10px", cursor: "pointer", letterSpacing: 1,
+                  }}>ADD</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {incoming.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GREEN, letterSpacing: 3, marginBottom: 8 }}>{"// INCOMING REQUESTS"}</div>
+            {incoming.map(r => {
+              const p = profileMap[r.from_user];
+              return (
+                <div key={r.id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: `${GREEN}0a`, border: `1px solid ${GREEN}33`,
+                  borderRadius: 8, padding: "10px 12px", marginBottom: 8,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>LVL {p?.overall_level || "?"} · wants to be friends</div>
+                  </div>
+                  <button disabled={opBusy[r.id]} onClick={() => handleAccept(r.id)} style={{
+                    background: `${GREEN}22`, border: `1px solid ${GREEN}66`,
+                    color: GREEN, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                    padding: "6px 10px", cursor: "pointer", marginRight: 4,
+                  }}>ACCEPT</button>
+                  <button disabled={opBusy[r.id]} onClick={() => handleReject(r.id)} style={{
+                    background: `${RED}11`, border: `1px solid ${RED}44`,
+                    color: RED, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                    padding: "6px 10px", cursor: "pointer",
+                  }}>REJECT</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {outgoing.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 8 }}>{"// SENT REQUESTS"}</div>
+            {outgoing.map(r => {
+              const p = profileMap[r.to_user];
+              return (
+                <div key={r.id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: BG2, border: `1px solid ${ACCENT}1a`,
+                  borderRadius: 8, padding: "10px 12px", marginBottom: 8,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>Request pending</div>
+                  </div>
+                  <button disabled={opBusy[r.id]} onClick={() => handleCancel(r.id)} style={{
+                    background: "none", border: `1px solid ${MUTED}44`,
+                    color: MUTED, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                    padding: "6px 10px", cursor: "pointer",
+                  }}>CANCEL</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {incoming.length === 0 && outgoing.length === 0 && searchQ.length < 2 && (
+          <div style={{ textAlign: "center", padding: "24px 0", fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
+            Search for a username above to add friends.
+          </div>
+        )}
+      </div>
+
+      <ProfileViewerModal
+        profile={viewProfile}
+        isAdmin={isAdmin}
+        viewHidden={viewHidden}
+        onClose={() => setViewProfile(null)}
+        onToggleHidden={handleToggleHidden}
+        toast={toast}
+        onRefresh={async () => {
+          if (viewProfile) await openProfile(viewProfile.user_id);
+          loadFriendIds();
+        }}
+      />
+    </div>
   );
 }
 
@@ -6189,6 +8362,14 @@ export default function IronRealm() {
   });
   const [screen, setScreen] = useState("menu");
   const [toasts, setToasts] = useState([]);
+  const [session, setSession]             = useState(null);
+  const [remoteProfile, setRemoteProfile] = useState(null);
+  const [authBusy, setAuthBusy]           = useState(false);
+  const [pendingCount, setPendingCount]   = useState(0);
+  const [authError, setAuthError]         = useState(null);
+  // First-launch routing: "welcome" | "auth-signin" | "auth-signup" | "onboard"
+  const [welcomeStage, setWelcomeStage]   = useState("welcome");
+  const [awakeningPending, setAwakeningPending] = useState(false);
 
   const st = store.profiles[store.activeId];
   const settings = store.settings || INIT_STORE.settings;
@@ -6247,6 +8428,179 @@ export default function IronRealm() {
     setToasts(t => [...t, { id, msg, color }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
   }, []);
+
+  // ── Auth: load session on mount, subscribe to changes ──
+  useEffect(() => {
+    if (!supabaseConfigured) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await authService.getSession();
+        if (cancelled) return;
+        setSession(s);
+        if (s?.user) {
+          const row = await syncService.getProfileRow(s.user.id);
+          if (!cancelled) setRemoteProfile(row);
+        }
+      } catch {
+        // ignore — fall through to signed-out state
+      }
+    })();
+    const unsubscribe = authService.onAuthChange((newSession) => {
+      setSession(newSession);
+      if (!newSession) setRemoteProfile(null);
+    });
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
+
+  // ── Awakening trigger: surface the aspect picker when crossing level threshold ──
+  useEffect(() => {
+    if (!st) return;
+    if ((st.overallLevel || 1) >= AWAKENING_LEVEL && !st.cosmetics?.aspect && !awakeningPending) {
+      setAwakeningPending(true);
+    }
+  }, [st?.overallLevel, st?.cosmetics?.aspect, awakeningPending]);
+
+  // ── Auth: snapshot push (debounced) when local stats change ──
+  const pushTimerRef = useRef(null);
+  useEffect(() => {
+    if (!supabaseConfigured || !session?.user || !remoteProfile) return;
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => {
+      const snapshot = syncService.buildSnapshotFromLocal(st, settings);
+      syncService.pushSnapshot({ userId: session.user.id, snapshot }).catch(() => {});
+    }, 1500);
+    return () => { if (pushTimerRef.current) clearTimeout(pushTimerRef.current); };
+  }, [st, settings, session, remoteProfile]);
+
+  // ── Auth: full-state push (debounced, gzip'd) for cross-device restore ──
+  // Slower debounce (10s) — this uploads the entire local store, so we batch
+  // multiple edits together. Failures are silent; a snapshot push is the
+  // user-visible sync path, this is best-effort backup.
+  const fullStatePushTimerRef = useRef(null);
+  useEffect(() => {
+    if (!supabaseConfigured || !session?.user) return;
+    if (fullStatePushTimerRef.current) clearTimeout(fullStatePushTimerRef.current);
+    fullStatePushTimerRef.current = setTimeout(() => {
+      cloudStateService.pushFullState(session.user.id, store).catch(() => {});
+    }, 10000);
+    return () => { if (fullStatePushTimerRef.current) clearTimeout(fullStatePushTimerRef.current); };
+  }, [store, session]);
+
+  // ── Auth handlers ──
+  const handleSignUp = useCallback(async ({ email, password, username }) => {
+    setAuthBusy(true); setAuthError(null);
+    try {
+      const cleanUsername = authService.validateUsername(username);
+      const available = await syncService.isUsernameAvailable(cleanUsername);
+      if (!available) throw new Error("That username is taken.");
+      const { user, session: newSession } = await authService.signUp({ email, password });
+      if (!user) throw new Error("Sign-up failed — no user returned.");
+      const snapshot = syncService.buildSnapshotFromLocal(st, settings);
+      const row = await syncService.upsertProfileRow({
+        userId: user.id, username: cleanUsername, snapshot,
+      });
+      setSession(newSession || (await authService.getSession()));
+      setRemoteProfile(row);
+      toast(`Welcome, @${cleanUsername}`, GREEN);
+      return true;
+    } catch (e) {
+      setAuthError(e.message || "Sign-up failed.");
+      return false;
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [st, settings, toast]);
+
+  const handleSignIn = useCallback(async ({ email, password }) => {
+    setAuthBusy(true); setAuthError(null);
+    try {
+      const { user, session: newSession } = await authService.signIn({ email, password });
+      setSession(newSession);
+      const row = user ? await syncService.getProfileRow(user.id) : null;
+      setRemoteProfile(row);
+      if (user) friendsService.countIncoming(user.id).then(setPendingCount).catch(() => {});
+
+      // Cross-device restore: only auto-replace local state when this device
+      // has nothing of its own yet (active profile not onboarded). For users
+      // already mid-progress on this device, the debounced push keeps cloud
+      // state up to date without overwriting their work.
+      const activeProfile = store.profiles[store.activeId];
+      if (user && activeProfile && !activeProfile.onboarded) {
+        const restored = await cloudStateService.pullFullState(user.id).catch(() => null);
+        if (restored && restored.profiles && restored.activeId) {
+          setStore(restored);
+          toast("Progress restored from cloud", GREEN);
+        }
+      }
+
+      toast(row ? `Signed in as @${row.username}` : "Signed in", GREEN);
+      return true;
+    } catch (e) {
+      setAuthError(e.message || "Sign-in failed.");
+      return false;
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [toast, store]);
+
+  const handleSignOut = useCallback(async () => {
+    setAuthBusy(true);
+    try {
+      await authService.signOut();
+      setSession(null);
+      setRemoteProfile(null);
+      setPendingCount(0);
+      toast("Signed out", MUTED);
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [toast]);
+
+  const handleToggleSharePrs = useCallback(async () => {
+    if (!session?.user || !remoteProfile) return;
+    const next = remoteProfile.share_prs === false ? true : false;
+    try {
+      await adminService.setSharePrs(session.user.id, next);
+      setRemoteProfile(r => ({ ...r, share_prs: next }));
+      toast(next ? "PRs now visible to friends" : "PRs hidden from friends", next ? GREEN : MUTED);
+    } catch (e) {
+      toast(e.message || "Failed to update privacy", RED);
+    }
+  }, [session, remoteProfile, toast]);
+
+  const handleUpdateDisplayName = useCallback(async (rawName) => {
+    if (!session?.user || !remoteProfile) return false;
+    const next = (rawName || "").trim().slice(0, 30) || null;
+    try {
+      await adminService.updateProfileField(session.user.id, { display_name: next });
+      setRemoteProfile(r => ({ ...r, display_name: next }));
+      toast(next ? `Display name updated` : "Display name cleared", GREEN);
+      return true;
+    } catch (e) {
+      toast(e.message || "Failed to update display name", RED);
+      return false;
+    }
+  }, [session, remoteProfile, toast]);
+
+  const handleUpdateBannerColor = useCallback(async (hex) => {
+    if (!session?.user || !remoteProfile) return false;
+    const next = hex && /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : null;
+    try {
+      await adminService.updateProfileField(session.user.id, { banner_color: next });
+      setRemoteProfile(r => ({ ...r, banner_color: next }));
+      toast(next ? "Banner color updated" : "Banner color cleared", next || ACCENT);
+      return true;
+    } catch (e) {
+      toast(e.message || "Failed to update banner color", RED);
+      return false;
+    }
+  }, [session, remoteProfile, toast]);
+
+  const account = {
+    session, remoteProfile, busy: authBusy, error: authError,
+    supabaseConfigured,
+  };
 
   const updateActive = (fn) => setStore(s => ({ ...s, profiles: { ...s.profiles, [s.activeId]: fn(s.profiles[s.activeId]) } }));
 
@@ -6436,6 +8790,73 @@ export default function IronRealm() {
     toast(`${exercise.name} saved`, GREEN);
   };
 
+  const handleToggleBookmark = (exerciseName) => {
+    updateActive(p => {
+      const list = p.bookmarkedExercises || [];
+      const has = list.includes(exerciseName);
+      return { ...p, bookmarkedExercises: has ? list.filter(n => n !== exerciseName) : [...list, exerciseName] };
+    });
+  };
+
+  const handleToggleRitual = (ritualId) => {
+    updateActive(p => {
+      const today = _dateKey(new Date());
+      const log   = { ...(p.dailyRituals?.completionLog || {}) };
+      const todayList = new Set(log[today] || []);
+      if (todayList.has(ritualId)) todayList.delete(ritualId);
+      else todayList.add(ritualId);
+      log[today] = [...todayList];
+
+      // Compute streak with the updated log, then unlock any newly-earned titles
+      const streak = _computeRitualStreak(log);
+      const owned  = p.cosmetics?.unlockedTitles || [];
+      const newlyEarned = _newlyEarnedTitles(streak, owned);
+      if (newlyEarned.length > 0) {
+        newlyEarned.forEach(t => setTimeout(() => toast(`Title unlocked: ${t.name}`, GOLD), 200));
+      }
+
+      return {
+        ...p,
+        dailyRituals: { ...(p.dailyRituals || {}), completionLog: log },
+        cosmetics: {
+          ...(p.cosmetics || {}),
+          unlockedTitles: [...owned, ...newlyEarned.map(t => t.id)],
+          equippedTitle: p.cosmetics?.equippedTitle || newlyEarned[0]?.id || null,
+        },
+      };
+    });
+  };
+
+  const handleEquipTitle = (titleId) => {
+    updateActive(p => ({
+      ...p,
+      cosmetics: { ...(p.cosmetics || {}), equippedTitle: titleId || null },
+    }));
+    // Push the resolved title name to cloud so friends see it on leaderboards
+    if (session?.user) {
+      const titleName = titleId ? (COSMETIC_TITLES.find(t => t.id === titleId)?.name || null) : null;
+      adminService.updateProfileField(session.user.id, { equipped_title: titleName })
+        .then(() => setRemoteProfile(r => r ? { ...r, equipped_title: titleName } : r))
+        .catch(() => {});
+    }
+  };
+
+  const handleChooseAspect = (aspectId) => {
+    const aspect = ASPECTS.find(a => a.id === aspectId);
+    if (!aspect) return;
+    updateActive(p => ({
+      ...p,
+      cosmetics: { ...(p.cosmetics || {}), aspect: aspectId },
+    }));
+    setAwakeningPending(false);
+    toast(`Path of the ${aspect.name} chosen`, aspect.color);
+    if (session?.user) {
+      adminService.updateProfileField(session.user.id, { equipped_aspect: aspect.name })
+        .then(() => setRemoteProfile(r => r ? { ...r, equipped_aspect: aspect.name } : r))
+        .catch(() => {});
+    }
+  };
+
   const handleSaveCustomProgram = (prog, deleteId = null) => {
     updateActive(p => {
       const existing = p.customPrograms || [];
@@ -6445,11 +8866,42 @@ export default function IronRealm() {
   };
 
   if (!st.onboarded) {
+    let firstLaunchView;
+    if (welcomeStage === "welcome") {
+      firstLaunchView = (
+        <WelcomeScreen
+          supabaseConfigured={supabaseConfigured}
+          onCreateAccount={() => setWelcomeStage("auth-signup")}
+          onSignIn={() => setWelcomeStage("auth-signin")}
+          onGuest={() => setWelcomeStage("onboard")}
+        />
+      );
+    } else if (welcomeStage === "auth-signin" || welcomeStage === "auth-signup") {
+      firstLaunchView = (
+        <AuthPanel
+          initialMode={welcomeStage === "auth-signup" ? "signup" : "signin"}
+          onClose={() => setWelcomeStage("welcome")}
+          onSignIn={async (creds) => {
+            const ok = await handleSignIn(creds);
+            if (ok) setWelcomeStage("onboard"); // restored stores will already flip onboarded=true and skip the OnboardScreen below
+          }}
+          onSignUp={async (creds) => {
+            const ok = await handleSignUp(creds);
+            if (ok) setWelcomeStage("onboard");
+          }}
+          busy={authBusy}
+          error={authError}
+        />
+      );
+    } else {
+      firstLaunchView = <OnboardScreen onComplete={handleOnboard} />;
+    }
+
     return (
       <>
         <style>{CSS}</style>
         <style>{dynCSS}</style>
-        <OnboardScreen onComplete={handleOnboard} />
+        {firstLaunchView}
         <Toasts toasts={toasts} />
       </>
     );
@@ -6461,14 +8913,17 @@ export default function IronRealm() {
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} />}
+      {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
-      {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} settings={settings} toast={toast} />}
+      {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
       {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} toast={toast} />}
-      {screen === "program"   && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
+      {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
+      {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
+      {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}
       </div>
-      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} />
+      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} pendingCount={pendingCount} />
     </>
   );
 }

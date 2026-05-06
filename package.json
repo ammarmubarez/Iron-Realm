@@ -1,12 +1,13 @@
 {
   "name": "Iron Realm",
-  "version": "1.5.0",
+  "version": "1.7.0",
   "private": true,
   "homepage": "https://ammarmubarez.github.io/Iron-Realm",
   "dependencies": {
     "@capacitor/android": "^8.3.1",
     "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1",
+    "@supabase/supabase-js": "^2.45.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
