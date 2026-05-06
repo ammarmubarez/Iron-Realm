@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.15";
+const APP_VERSION = "1.6.16";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -3137,7 +3137,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.92)",
       backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-      paddingBottom: "56px" }}
+      paddingBottom: "96px" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -4005,7 +4005,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
 
       {/* Randomizer modal */}
       {randoMode && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "56px" }} onClick={() => setRandoMode(false)}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "96px" }} onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`, border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480, padding: "24px 20px 36px", clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)" }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>RANDOM WORKOUT</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>Pick any muscle groups. I will build a hypertrophy-optimised session.</div>
@@ -4565,7 +4565,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             <div style={{ position: "fixed", inset: 0, zIndex: 1100,
               background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
               display: "flex", alignItems: "flex-end", justifyContent: "center",
-              paddingBottom: "56px" }}
+              paddingBottom: "96px" }}
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -4609,7 +4609,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             <div style={{ position: "fixed", inset: 0, zIndex: 1100,
               background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
               display: "flex", alignItems: "flex-end", justifyContent: "center",
-              paddingBottom: "56px" }}
+              paddingBottom: "96px" }}
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -4700,7 +4700,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
       {randoMode && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)",
           backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-          paddingBottom: "56px" }}
+          paddingBottom: "96px" }}
           onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -5581,7 +5581,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
       {settingsOpen === "settings" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-          paddingBottom: "56px" }}
+          paddingBottom: "96px" }}
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
@@ -5826,7 +5826,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
       {settingsOpen === "help" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-          paddingBottom: "56px" }}
+          paddingBottom: "96px" }}
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
