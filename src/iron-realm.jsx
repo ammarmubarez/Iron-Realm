@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.10";
+const APP_VERSION = "1.6.11";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -1939,7 +1939,7 @@ const CSS = `
     background: ${DARK1}; border: 1px solid ${ACCENT}44;
     border-bottom: 1px solid ${ACCENT}88;
     border-radius: 0;
-    color: ${ACCENT}; font-family: 'Orbitron', sans-serif; font-size: 16px;
+    color: ${ACCENT}; font-family: 'Orbitron', sans-serif; font-size: 14px;
     padding: 10px 14px; width: 100%; outline: none; transition: all .2s;
     caret-color: ${ACCENT};
   }
@@ -1947,7 +1947,7 @@ const CSS = `
   .input-field:focus {
     border-color: ${ACCENT}99;
     box-shadow: 0 0 12px ${ACCENT}33, inset 0 0 12px ${ACCENT}08;
-    color: #fff;
+    color: #fff; font-size: 16px;
   }
 
   /* ── SELECT ── */
@@ -3142,13 +3142,13 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
         border: `1px solid ${meta.color}66`, borderTop: `2px solid ${meta.color}`,
         clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
-        padding: "24px 20px 32px", width: "100%", maxWidth: 480,
+        width: "100%", maxWidth: 480,
         boxShadow: `0 -8px 40px ${meta.color}22`, position: "relative",
-        maxHeight: "90vh", overflowY: "auto"
+        maxHeight: "90vh", display: "flex", flexDirection: "column"
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${meta.color}, transparent)` }} />
-
+        <div style={{ flex: 1, overflowY: "auto", padding: "24px 20px 8px" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
@@ -3326,6 +3326,8 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           </div>
         )}
 
+        </div>{/* end scrollable content */}
+        <div style={{ padding: "8px 20px 24px", borderTop: `1px solid ${meta.color}22` }}>
         <button className="btn-gold" onClick={() => {
           if (!canLog) return;
           if (isCardio) {
@@ -3346,6 +3348,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           opacity: canLog ? 1 : 0.4, cursor: canLog ? "pointer" : "not-allowed" }}>
           LOG {isCardio ? "CARDIO" : `${validSets.length} SET${validSets.length !== 1 ? "S" : ""}`}
         </button>
+        </div>{/* end sticky footer */}
       </div>
     </div>
   );
