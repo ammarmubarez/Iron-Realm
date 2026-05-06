@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.14";
+const APP_VERSION = "1.6.15";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -3137,7 +3137,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.92)",
       backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-      paddingBottom: "max(env(safe-area-inset-bottom, 0px), 52px)" }}
+      paddingBottom: "56px" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -4005,7 +4005,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, settings, toa
 
       {/* Randomizer modal */}
       {randoMode && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "max(env(safe-area-inset-bottom, 0px), 52px)" }} onClick={() => setRandoMode(false)}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "56px" }} onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`, border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480, padding: "24px 20px 36px", clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)" }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>RANDOM WORKOUT</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>Pick any muscle groups. I will build a hypertrophy-optimised session.</div>
@@ -4565,7 +4565,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             <div style={{ position: "fixed", inset: 0, zIndex: 1100,
               background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
               display: "flex", alignItems: "flex-end", justifyContent: "center",
-              paddingBottom: "max(env(safe-area-inset-bottom, 0px), 52px)" }}
+              paddingBottom: "56px" }}
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -4609,13 +4609,13 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             <div style={{ position: "fixed", inset: 0, zIndex: 1100,
               background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
               display: "flex", alignItems: "flex-end", justifyContent: "center",
-              paddingBottom: "max(env(safe-area-inset-bottom, 0px), 52px)" }}
+              paddingBottom: "56px" }}
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
                 border: `1px solid ${mm.color}55`, borderTop: `2px solid ${mm.color}`,
-                width: "100%", maxWidth: 480, padding: "20px 20px 16px", maxHeight: "75vh",
-                display: "flex", flexDirection: "column",
+                width: "100%", maxWidth: 480, padding: "20px 20px 36px", maxHeight: "75vh",
+                overflowY: "auto", WebkitOverflowScrolling: "touch",
                 clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -4634,7 +4634,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                   onClick={e => e.stopPropagation()}
                   autoFocus
                 />
-                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {visibleExs.length === 0 && (
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
                       color: MUTED, textAlign: "center", padding: 20 }}>No exercises found</div>
@@ -4700,7 +4700,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
       {randoMode && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)",
           backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-          paddingBottom: "max(env(safe-area-inset-bottom, 0px), 52px)" }}
+          paddingBottom: "56px" }}
           onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -5581,18 +5581,19 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
       {settingsOpen === "settings" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-          paddingBottom: "max(env(safe-area-inset-bottom, 0px), 52px)" }}
+          paddingBottom: "56px" }}
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
-            width: "100%", maxWidth: 480, padding: "24px 20px 32px",
-            maxHeight: "85vh", overflowY: "auto",
-            WebkitOverflowScrolling: "touch",
+            width: "100%", maxWidth: 480,
+            maxHeight: "85vh", display: "flex", flexDirection: "column",
+            position: "relative",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
               background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>SETTINGS</div>
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
@@ -5816,6 +5817,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 Export saves all profiles, workouts, and progress as a JSON file. Import restores from a previous export.
               </div>
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -5824,18 +5826,19 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
       {settingsOpen === "help" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
-          paddingBottom: "max(env(safe-area-inset-bottom, 0px), 52px)" }}
+          paddingBottom: "56px" }}
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
-            width: "100%", maxWidth: 480, padding: "24px 20px 32px",
-            maxHeight: "85vh", overflowY: "auto",
-            WebkitOverflowScrolling: "touch",
+            width: "100%", maxWidth: 480,
+            maxHeight: "85vh", display: "flex", flexDirection: "column",
+            position: "relative",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
               background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>HOW TO PLAY</div>
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
@@ -5869,6 +5872,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>{body}</div>
               </div>
             ))}
+            </div>
           </div>
         </div>
       )}
