@@ -728,7 +728,7 @@ const EXERCISE_DB = {
   glutes: [
     { name: "Hip Thrust",                   diff: "intermediate", type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings","medial-hamstrings"] },
     { name: "Barbell Hip Thrust",           diff: "intermediate", type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings","medial-hamstrings"] },
-    { name: "Glute Bridge",                 diff: "beginner",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","medial-hamstrings"] },
+    { name: "Glute Bridge",                 diff: "beginner",     type: "calisthenics", primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","medial-hamstrings"] },
     { name: "Single-Leg Glute Bridge",      diff: "intermediate", type: "calisthenics", primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","lateral-hamstrings"] },
     { name: "Sumo Deadlift",                diff: "advanced",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","gluteus-medius","inner-thigh","lowerback","medial-hamstrings"] },
     { name: "Bulgarian Split Squat",        diff: "advanced",     type: "strength",     primary: "glutes",    svgTargets: ["gluteus-maximus","outer-quadricep","rectus-femoris","lateral-hamstrings"] },
@@ -1181,7 +1181,7 @@ const FEMALE_PROGRAMS = [
         { muscle:"bicep", name:"Hammer Curl", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
       ]},
       { label: "Lower Hypertrophy", rest: false, exercises: [
-        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"strength", sets:4, repsLabel:"15 reps" },
+        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"calisthenics", sets:4, repsLabel:"15 reps" },
         { muscle:"legs", name:"Leg Press", diff:"intermediate", type:"strength", sets:4, repsLabel:"12 reps" },
         { muscle:"glutes", name:"Cable Kickbacks", diff:"beginner", type:"strength", sets:3, repsLabel:"15 each" },
         { muscle:"legs", name:"Leg Curl", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
@@ -1257,7 +1257,7 @@ const FEMALE_PROGRAMS = [
         { muscle:"bicep", name:"Hammer Curl", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
       ]},
       { label: "Glutes B", rest: false, exercises: [
-        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"strength", sets:5, repsLabel:"15 reps" },
+        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"calisthenics", sets:5, repsLabel:"15 reps" },
         { muscle:"glutes", name:"Bulgarian Split Squat", diff:"advanced", type:"strength", sets:3, repsLabel:"10 each" },
         { muscle:"glutes", name:"Sumo Deadlift", diff:"advanced", type:"strength", sets:3, repsLabel:"8 reps" },
         { muscle:"glutes", name:"Donkey Kicks", diff:"beginner", type:"calisthenics", sets:3, repsLabel:"20 each" },
@@ -1300,7 +1300,7 @@ const FEMALE_PROGRAMS = [
         { muscle:"legs", name:"Leg Press", diff:"intermediate", type:"strength", sets:4, repsLabel:"12 reps" },
         { muscle:"chest", name:"Push-ups", diff:"beginner", type:"calisthenics", sets:3, repsLabel:"failure" },
         { muscle:"back", name:"Dumbbell Row", diff:"beginner", type:"strength", sets:3, repsLabel:"12 reps" },
-        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"strength", sets:4, repsLabel:"15 reps" },
+        { muscle:"glutes", name:"Glute Bridge", diff:"beginner", type:"calisthenics", sets:4, repsLabel:"15 reps" },
         { muscle:"core", name:"Russian Twists", diff:"beginner", type:"calisthenics", sets:3, repsLabel:"20 reps" },
       ]},
       { label: "Rest", rest: true, exercises: [] },
@@ -1654,11 +1654,12 @@ function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
   const durationHours = (reps * 3 + 90) / 3600; // 1 set
   const baseXP = met * weightKg * durationHours;
 
-  // Calisthenics: no stored 1RM needed, use bodyweight
+  // Calisthenics: bodyweight + any added weight (plate, vest, etc.)
   if (exercise.type === "calisthenics") {
     const caliMet = MET_VALUES.calisthenics[exercise.diff] || 5.5;
     const caliDur = (reps * 4 + 90) / 3600;
-    return Math.round(caliMet * weightKg * caliDur);
+    const totalKg = (bodyWeightLbs + (setWeightLbs || 0)) * 0.453592;
+    return Math.round(caliMet * totalKg * caliDur);
   }
 
   const newE1RM  = epley1RM(setWeightLbs, reps);
@@ -1986,7 +1987,7 @@ const CSS = `
   .input-field:focus {
     border-color: ${ACCENT}99;
     box-shadow: 0 0 12px ${ACCENT}33, inset 0 0 12px ${ACCENT}08;
-    color: #fff;
+    color: #fff; font-size: 16px;
   }
 
   /* ── SELECT ── */
@@ -3112,7 +3113,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const isCali   = exercise.type === "calisthenics";
   const isSpeed  = isCardio && exercise.cardioMode === "speed";
 
-  const defaultSet = { reps: "", weight: isCali ? String(wtVal(Math.round(weightLbs||170))) : "" };
+  const defaultSet = { reps: "", weight: "" };
   const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
   const updateSet = (i, field, val) => setSetRows(s => s.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const addSet    = () => setSetRows(s => [...s, { ...defaultSet }]);
@@ -3139,9 +3140,9 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
     ? (parsedMins > 0 ? calcXP(exercise, 1, parsedMins, weightLbs, isSpeed ? { speedMph: parsedSpeed } : {}) : 0)
     : validSets.reduce((sum, r) => {
         const reps = parseFloat(r.reps) || 0;
-        const w    = parseFloat(r.weight) || (isCali ? weightLbs : 0);
+        const w    = parseFloat(r.weight) || 0;
         if (reps <= 0) return sum;
-        return sum + calcSetXP(exercise, reps, w || weightLbs, weightLbs, storedE1RM);
+        return sum + calcSetXP(exercise, reps, w, weightLbs, storedE1RM);
       }, 0);
 
   const sessionBestE1RM = isCali || isCardio ? null : validSets.reduce((best, r) => {
@@ -3174,20 +3175,21 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
     : null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(7,11,20,0.92)",
-      backdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.92)",
+      backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
+      paddingBottom: "96px" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
         border: `1px solid ${meta.color}66`, borderTop: `2px solid ${meta.color}`,
         clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
-        padding: "24px 20px 32px", width: "100%", maxWidth: 480,
+        width: "100%", maxWidth: 480,
         boxShadow: `0 -8px 40px ${meta.color}22`, position: "relative",
-        maxHeight: "90vh", overflowY: "auto"
+        maxHeight: "90vh", display: "flex", flexDirection: "column"
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${meta.color}, transparent)` }} />
-
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 8px" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
@@ -3289,10 +3291,10 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             }} />}
             {setRows.length > 0 && (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: isCali ? "28px 1fr 24px" : "28px 80px 1fr 24px", gap: 6, marginBottom: 4, marginTop: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 4, marginTop: 16 }}>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, textAlign: "center" }}>#</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>REPS</div>
-                  {!isCali && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>WEIGHT ({wtLabel().toUpperCase()})</div>}
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isCali ? `ADDED WT (${wtLabel().toUpperCase()})` : `WEIGHT (${wtLabel().toUpperCase()})`}</div>
                   <div />
                 </div>
                 {setRows.map((row, i) => {
@@ -3300,18 +3302,16 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                   const prReps   = lastRow && parseFloat(row.reps)   > parseFloat(lastRow.reps);
                   const prWeight = lastRow && parseFloat(row.weight) > parseFloat(lastRow.weight);
                   return (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: isCali ? "28px 1fr 24px" : "28px 80px 1fr 24px", gap: 6, marginBottom: 5, alignItems: "center" }}>
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 5, alignItems: "center" }}>
                       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: parseFloat(row.reps) > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
                       <input className="input-field" type="number" value={row.reps}
                         onChange={e => updateSet(i, "reps", e.target.value)}
                         placeholder={lastRow ? lastRow.reps + " last" : "10"}
                         style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
-                      {!isCali && (
-                        <input className="input-field" type="number" value={row.weight}
-                          onChange={e => updateSet(i, "weight", e.target.value)}
-                          placeholder={lastRow ? lastRow.weight + " last" : "135"}
-                          style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
-                      )}
+                      <input className="input-field" type="number" value={row.weight}
+                        onChange={e => updateSet(i, "weight", e.target.value)}
+                        placeholder={isCali ? "0 (BW only)" : (lastRow ? lastRow.weight + " last" : "135")}
+                        style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
                       <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: MUTED, fontSize: 15, cursor: "pointer", lineHeight: 1 }}>×</button>
                     </div>
                   );
@@ -3367,6 +3367,8 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           </div>
         )}
 
+        </div>{/* end scrollable content */}
+        <div style={{ padding: "8px 20px 16px", borderTop: `1px solid ${meta.color}22` }}>
         <button className="btn-gold" onClick={() => {
           if (!canLog) return;
           if (isCardio) {
@@ -3376,7 +3378,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             const setsDetail = validSets.map(r => ({
               reps: parseFloat(r.reps) || 0,
               // Always store in lbs internally; convert from kg if needed
-              weight: wtValBack(parseFloat(r.weight) || (isCali ? wtVal(weightLbs) : 0)),
+              weight: wtValBack(parseFloat(r.weight) || 0),
             }));
             const avgWeight = setsDetail.reduce((s, r) => s + r.weight, 0) / setsDetail.length;
             const avgReps   = setsDetail.reduce((s, r) => s + r.reps, 0) / setsDetail.length;
@@ -3387,6 +3389,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           opacity: canLog ? 1 : 0.4, cursor: canLog ? "pointer" : "not-allowed" }}>
           LOG {isCardio ? "CARDIO" : `${validSets.length} SET${validSets.length !== 1 ? "S" : ""}`}
         </button>
+        </div>{/* end sticky footer */}
       </div>
     </div>
   );
@@ -4110,7 +4113,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
       {/* Randomizer modal */}
       {randoMode && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setRandoMode(false)}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "96px" }} onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`, border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480, padding: "24px 20px 36px", clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)" }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>RANDOM WORKOUT</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>Pick any muscle groups. I will build a hypertrophy-optimised session.</div>
@@ -4193,9 +4196,14 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   const [logModal, setLogModal] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [randoMode, setRandoMode] = useState(false);
-  const [randoMuscles, setRandoMuscles] = useState([]);
-  const [randoPlan, setRandoPlan] = useState(null);
-  const [randoDiff, setRandoDiff] = useState("all");
+  const _savedRando = (() => { try { return JSON.parse(localStorage.getItem("ir_rando_plan") || "{}"); } catch { return {}; } })();
+  const [randoMuscles, setRandoMuscles] = useState(_savedRando.muscles || []);
+  const [randoPlan, setRandoPlan] = useState(_savedRando.plan || null);
+  const [randoDiff, setRandoDiff] = useState(_savedRando.diff || "all");
+
+  useEffect(() => {
+    try { localStorage.setItem("ir_rando_plan", JSON.stringify({ muscles: randoMuscles, plan: randoPlan, diff: randoDiff })); } catch {}
+  }, [randoMuscles, randoPlan, randoDiff]);
 
   const [nutInput, setNutInput] = useState({ cal: "", protein: "" });
 
@@ -4662,14 +4670,15 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
         if (modal.fromEmpty) {
           // Show muscle picker then exercise
           return (
-            <div style={{ position: "fixed", inset: 0, zIndex: 200,
-              background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)",
-              display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+            <div style={{ position: "fixed", inset: 0, zIndex: 1100,
+              background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+              display: "flex", alignItems: "flex-end", justifyContent: "center",
+              paddingBottom: "96px" }}
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
                 border: `1px solid ${ACCENT}55`, borderTop: `2px solid ${ACCENT}`,
-                width: "100%", maxWidth: 480, padding: "20px 20px 36px",
+                width: "100%", maxWidth: 480, padding: "20px 20px 20px",
                 clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
               }}>
                 <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, color: ACCENT,
@@ -4705,15 +4714,16 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             ? allExs.filter(e => e.name.toLowerCase().includes(exPickSearch.toLowerCase()))
             : allExs;
           return (
-            <div style={{ position: "fixed", inset: 0, zIndex: 200,
-              background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)",
-              display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+            <div style={{ position: "fixed", inset: 0, zIndex: 1100,
+              background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+              display: "flex", alignItems: "flex-end", justifyContent: "center",
+              paddingBottom: "96px" }}
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
                 border: `1px solid ${mm.color}55`, borderTop: `2px solid ${mm.color}`,
                 width: "100%", maxWidth: 480, padding: "20px 20px 36px", maxHeight: "75vh",
-                overflowY: "auto", display: "flex", flexDirection: "column",
+                overflowY: "auto", WebkitOverflowScrolling: "touch",
                 clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -4732,7 +4742,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                   onClick={e => e.stopPropagation()}
                   autoFocus
                 />
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {visibleExs.length === 0 && (
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
                       color: MUTED, textAlign: "center", padding: 20 }}>No exercises found</div>
@@ -4796,8 +4806,9 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
 
       {/* Randomizer muscle picker */}
       {randoMode && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(7,11,20,0.93)",
-          backdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)",
+          backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
+          paddingBottom: "96px" }}
           onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
@@ -5043,7 +5054,7 @@ function StatBadge({ muscle, level, xp }) {
 
 function Toasts({ toasts }) {
   return (
-    <div style={{ position: "fixed", top: 16, right: 16, zIndex: 999, display: "flex", flexDirection: "column", gap: 8, maxWidth: 300 }}>
+    <div style={{ position: "fixed", top: 16, right: 16, zIndex: 1300, display: "flex", flexDirection: "column", gap: 8, maxWidth: 300 }}>
       {toasts.map(t => (
         <div key={t.id} style={{
           background: `linear-gradient(90deg, ${DARK1}f8, ${BG2}f0)`,
@@ -5137,13 +5148,15 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
 
   return (
     <div style={{
-      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
+      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
       background: `linear-gradient(180deg, ${DARK1}ee, ${BG2}ff)`,
       backdropFilter: "blur(16px)",
+      WebkitBackdropFilter: "blur(16px)",
       borderTop: `1px solid ${ACCENT}44`,
       boxShadow: `0 -4px 24px ${ACCENT}18`,
       display: "flex", alignItems: "stretch",
-      paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)",
+      paddingBottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+      WebkitTransform: "translateZ(0)",
     }}>
       {/* Top accent line */}
       <div style={{
@@ -5670,6 +5683,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
+  const [importError, setImportError] = useState(null);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [savingDisplayName, setSavingDisplayName] = useState(false);
 
@@ -6095,18 +6109,21 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
       </div>
       {/* ── SETTINGS MODAL ── */}
       {settingsOpen === "settings" && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)",
-          backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
+          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
+          paddingBottom: "96px" }}
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
-            width: "100%", maxWidth: 480, padding: "24px 20px 40px",
-            maxHeight: "85vh", overflowY: "auto",
+            width: "100%", maxWidth: 480,
+            maxHeight: "85vh", display: "flex", flexDirection: "column",
+            position: "relative",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
               background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>SETTINGS</div>
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
@@ -6419,24 +6436,81 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </div>
               ))}
             </div>
+
+            {/* Data backup */}
+            <div style={{ background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 10 }}>{"// DATA BACKUP"}</div>
+              <button onClick={() => {
+                try {
+                  const data = localStorage.getItem("iron_realm_store_v1") || "{}";
+                  const blob = new Blob([data], { type: "application/json" });
+                  const url  = URL.createObjectURL(blob);
+                  const a    = document.createElement("a");
+                  a.href = url;
+                  a.download = `iron-realm-backup-${new Date().toISOString().slice(0,10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast("Backup saved!", ACCENT);
+                } catch { toast("Export failed", RED); }
+              }} style={{
+                width: "100%", marginBottom: 8, padding: "11px",
+                background: `${ACCENT}15`, border: `1px solid ${ACCENT}55`,
+                borderRadius: 6, cursor: "pointer",
+                fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
+                color: ACCENT, letterSpacing: 2
+              }}>⬇ EXPORT DATA</button>
+              <label style={{
+                display: "block", width: "100%", padding: "11px",
+                background: `${GOLD}15`, border: `1px solid ${GOLD}55`,
+                borderRadius: 6, cursor: "pointer", textAlign: "center",
+                fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
+                color: GOLD, letterSpacing: 2, boxSizing: "border-box"
+              }}>
+                ⬆ IMPORT DATA
+                <input type="file" accept=".json" style={{ display: "none" }} onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    try {
+                      const parsed = JSON.parse(ev.target.result);
+                      if (!parsed.profiles) throw new Error("Invalid backup file");
+                      localStorage.setItem("iron_realm_store_v1", JSON.stringify(parsed));
+                      toast("Data restored! Reloading…", GOLD);
+                      setTimeout(() => window.location.reload(), 1200);
+                    } catch { setImportError("Invalid backup file. Make sure you're using an Iron Realm export."); }
+                  };
+                  reader.readAsText(file);
+                  e.target.value = "";
+                }} />
+              </label>
+              {importError && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: RED, marginTop: 6 }}>{importError}</div>}
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 8, lineHeight: 1.4 }}>
+                Export saves all profiles, workouts, and progress as a JSON file. Import restores from a previous export.
+              </div>
+            </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* ── HELP MODAL ── */}
       {settingsOpen === "help" && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)",
-          backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
+          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
+          paddingBottom: "96px" }}
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
-            width: "100%", maxWidth: 480, padding: "24px 20px 40px",
-            maxHeight: "85vh", overflowY: "auto",
+            width: "100%", maxWidth: 480,
+            maxHeight: "85vh", display: "flex", flexDirection: "column",
+            position: "relative",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
               background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>HOW TO PLAY</div>
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
@@ -6470,6 +6544,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>{body}</div>
               </div>
             ))}
+            </div>
           </div>
         </div>
       )}
@@ -8327,6 +8402,27 @@ export default function IronRealm() {
     try { localStorage.setItem("iron_realm_store_v1", JSON.stringify(store)); } catch {}
   }, [store]);
 
+  useEffect(() => {
+    const BASE = "https://ammarmubarez.github.io/Iron-Realm";
+    const check = async () => {
+      try {
+        const res = await fetch(`${BASE}/version.json?_=${Date.now()}`, { cache: "no-store" });
+        const { version } = await res.json();
+        if (version && version !== APP_VERSION) {
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+          window.location.reload(true);
+        }
+      } catch {}
+    };
+    check();
+    const onVisible = () => { if (!document.hidden) check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   const toast = useCallback((msg, color = ACCENT) => {
     const id = Date.now();
     setToasts(t => [...t, { id, msg, color }]);
@@ -8826,8 +8922,8 @@ export default function IronRealm() {
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
       {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}
-      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} pendingCount={pendingCount} />
       </div>
+      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} pendingCount={pendingCount} />
     </>
   );
 }

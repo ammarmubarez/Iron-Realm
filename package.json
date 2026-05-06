@@ -2,7 +2,7 @@
   "name": "Iron Realm",
   "version": "1.7.0",
   "private": true,
-  "homepage": "https://ammarmubarez.github.io/iron-realm",
+  "homepage": "https://ammarmubarez.github.io/Iron-Realm",
   "dependencies": {
     "@capacitor/android": "^8.3.1",
     "@capacitor/cli": "^8.3.1",
@@ -19,6 +19,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "prebuild": "node -e \"const fs=require('fs');const v=fs.readFileSync('src/iron-realm.jsx','utf8').match(/APP_VERSION\\s*=\\s*\\\"([^\\\"]+)\\\"/)[1];fs.writeFileSync('public/version.json',JSON.stringify({version:v})+'\\n');console.log('version.json →',v)\"",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
