@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
-const APP_VERSION = "1.6.16";
+const APP_VERSION = "1.6.17";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -6220,6 +6220,27 @@ export default function IronRealm() {
   useEffect(() => {
     try { localStorage.setItem("iron_realm_store_v1", JSON.stringify(store)); } catch {}
   }, [store]);
+
+  useEffect(() => {
+    const BASE = "https://ammarmubarez.github.io/Iron-Realm";
+    const check = async () => {
+      try {
+        const res = await fetch(`${BASE}/version.json?_=${Date.now()}`, { cache: "no-store" });
+        const { version } = await res.json();
+        if (version && version !== APP_VERSION) {
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+          window.location.reload(true);
+        }
+      } catch {}
+    };
+    check();
+    const onVisible = () => { if (!document.hidden) check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   const toast = useCallback((msg, color = ACCENT) => {
     const id = Date.now();
