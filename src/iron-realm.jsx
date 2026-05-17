@@ -7099,6 +7099,81 @@ function _workoutTonnage(w) {
   return weight * reps * sets;
 }
 
+// ─── MUSCLE RECOVERY ─────────────────────────────────────────────────────────
+// Heuristic recovery state per major muscle group based on time since last
+// session targeting it. No volume weighting — keeps the logic simple and
+// transparent. Thresholds tuned for hypertrophy/recovery norms.
+
+const RECOVERY_MUSCLES = [
+  { key: "chest",     name: "Chest" },
+  { key: "back",      name: "Back" },
+  { key: "shoulders", name: "Shoulders" },
+  { key: "bicep",     name: "Biceps" },
+  { key: "tricep",    name: "Triceps" },
+  { key: "forearms",  name: "Forearms" },
+  { key: "legs",      name: "Legs" },
+  { key: "glutes",    name: "Glutes" },
+  { key: "calves",    name: "Calves" },
+  { key: "core",      name: "Core" },
+];
+
+function _recoveryState(hoursAgo) {
+  if (hoursAgo == null)  return { label: "UNTRAINED", color: "#666",   weight: 0 };
+  if (hoursAgo < 24)     return { label: "FATIGUED",  color: "#e05555", weight: 4 };
+  if (hoursAgo < 48)     return { label: "RECOVERING",color: "#f59e0b", weight: 3 };
+  if (hoursAgo < 72)     return { label: "RECOVERED", color: "#e8c44a", weight: 2 };
+  return                     { label: "FRESH",      color: "#4ecb71", weight: 1 };
+}
+
+function _computeRecovery(workouts) {
+  const lastByMuscle = {};
+  for (const w of workouts || []) {
+    if (!w?.date || !w?.muscle) continue;
+    if (!lastByMuscle[w.muscle] || w.date > lastByMuscle[w.muscle]) {
+      lastByMuscle[w.muscle] = w.date;
+    }
+  }
+  const now = Date.now();
+  return RECOVERY_MUSCLES.map(m => {
+    const last = lastByMuscle[m.key];
+    const hoursAgo = last ? (now - last) / 3600000 : null;
+    return { ...m, hoursAgo, lastDate: last, state: _recoveryState(hoursAgo) };
+  });
+}
+
+function RecoveryGrid({ workouts }) {
+  const rows = useMemo(() => _computeRecovery(workouts), [workouts]);
+  return (
+    <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>
+        [ MUSCLE RECOVERY ]
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        {rows.map(r => (
+          <div key={r.key} style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "7px 9px", background: `${r.state.color}11`,
+            border: `1px solid ${r.state.color}44`, borderRadius: 6,
+          }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+              background: r.state.color, boxShadow: `0 0 6px ${r.state.color}88`,
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.1 }}>
+                {r.name}
+              </div>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: r.state.color, letterSpacing: 1 }}>
+                {r.lastDate ? _timeAgo(r.lastDate) : "never"}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function _weeklyTonnage(workouts, weeks = 12) {
   const now = Date.now();
   const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -7463,6 +7538,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </div>
 
         <VolumeChart workouts={st.workouts || []} />
+
+        <RecoveryGrid workouts={st.workouts || []} />
 
         {(() => {
           const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
