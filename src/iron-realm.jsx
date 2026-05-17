@@ -3311,18 +3311,42 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                   const lastRow = lastSession?.sets_detail?.[i];
                   const prReps   = lastRow && parseFloat(row.reps)   > parseFloat(lastRow.reps);
                   const prWeight = lastRow && parseFloat(row.weight) > parseFloat(lastRow.weight);
+                  const repsN   = parseFloat(row.reps);
+                  const weightN = parseFloat(row.weight);
+                  const showE1RM = !isCali && !isCardio
+                    && repsN >= 1 && repsN <= 12 && weightN > 0;
+                  const setE1RM = showE1RM ? epley1RM(weightN, repsN) : 0;
+                  const beatsPR = showE1RM && storedE1RM && setE1RM > storedE1RM;
+                  const closePR = showE1RM && storedE1RM && !beatsPR
+                    && setE1RM >= storedE1RM * 0.95;
+                  const e1rmColor = beatsPR ? GOLD : closePR ? GOLD2 : MUTED;
                   return (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 5, alignItems: "center" }}>
-                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: parseFloat(row.reps) > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
-                      <input className="input-field" type="number" value={row.reps}
-                        onChange={e => updateSet(i, "reps", e.target.value)}
-                        placeholder={lastRow ? lastRow.reps + " last" : "10"}
-                        style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
-                      <input className="input-field" type="number" value={row.weight}
-                        onChange={e => updateSet(i, "weight", e.target.value)}
-                        placeholder={isCali ? "0 (BW only)" : (lastRow ? lastRow.weight + " last" : "135")}
-                        style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
-                      <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: MUTED, fontSize: 15, cursor: "pointer", lineHeight: 1 }}>×</button>
+                    <div key={i} style={{ marginBottom: 5 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, alignItems: "center" }}>
+                        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: repsN > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
+                        <input className="input-field" type="number" value={row.reps}
+                          onChange={e => updateSet(i, "reps", e.target.value)}
+                          placeholder={lastRow ? lastRow.reps + " last" : "10"}
+                          style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
+                        <input className="input-field" type="number" value={row.weight}
+                          onChange={e => updateSet(i, "weight", e.target.value)}
+                          placeholder={isCali ? "0 (BW only)" : (lastRow ? lastRow.weight + " last" : "135")}
+                          style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
+                        <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: MUTED, fontSize: 15, cursor: "pointer", lineHeight: 1 }}>×</button>
+                      </div>
+                      {showE1RM && (
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: e1rmColor,
+                          paddingLeft: 38, marginTop: 2, letterSpacing: 0.5,
+                          textShadow: beatsPR ? `0 0 6px ${GOLD}88` : "none" }}>
+                          → est. 1RM {Math.round(wtVal(setE1RM))} {wtLabel()}
+                          {storedE1RM && (
+                            <span style={{ color: MUTED, marginLeft: 6, fontSize: 9 }}>
+                              (PR {Math.round(wtVal(storedE1RM))})
+                            </span>
+                          )}
+                          {beatsPR && <span style={{ color: GOLD, marginLeft: 6, fontWeight: 700 }}>★ NEW</span>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
