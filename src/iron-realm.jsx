@@ -1485,8 +1485,18 @@ const INIT_STORE = {
     showXPGain:    true,
     showMilestones: true,
     compactCards:  false,
+    travelMode:    false, // filters exercise lists to bodyweight/cardio only
   },
 };
+
+// Travel mode: an exercise is travel-friendly if it can be done with body
+// weight or minimal gear. Calisthenics and cardio types qualify; strength
+// exercises (barbell/dumbbell/machine) do not. Custom exercises typed as
+// calisthenics or cardio are included automatically.
+function isTravelFriendly(exercise) {
+  if (!exercise) return false;
+  return exercise.type === "calisthenics" || exercise.type === "cardio";
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 // MET (Metabolic Equivalent of Task) values by exercise type + difficulty
@@ -3406,10 +3416,13 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const [editModal, setEditModal] = useState(null);
   const [selDay, setSelDay] = useState(0); // 0=today
   const [currentSupersetGroup, setCurrentSupersetGroup] = useState(null);
+  const travelMode = settings?.travelMode === true;
   const allBrowseExercises = [
     ...(EXERCISE_DB[selMuscle] || []),
     ...(st.customExercises||[]).filter(e => e.primary === selMuscle)
-  ].slice().sort((a, b) => a.name.localeCompare(b.name));
+  ]
+    .filter(e => !travelMode || isTravelFriendly(e))
+    .slice().sort((a, b) => a.name.localeCompare(b.name));
   const exercises = browseSearch.trim()
     ? allBrowseExercises.filter(e => e.name.toLowerCase().includes(browseSearch.toLowerCase()))
     : allBrowseExercises;
@@ -3439,7 +3452,10 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 0" }}>
         <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
-          color: GOLD, letterSpacing: 2, marginBottom: 12 }}>{themeLabel(settings,"workout","WORKOUT")}</div>
+          color: GOLD, letterSpacing: 2, marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          {themeLabel(settings,"workout","WORKOUT")}
+          {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
+        </div>
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 0 }}>
@@ -3796,6 +3812,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
   };
 
   // Always show browseable exercises — plan is shown as a separate banner above
+  const travelMode = settings?.travelMode === true;
   const allExercises = (isSearching || bookmarksOnly)
     ? [...Object.entries(EXERCISE_DB).flatMap(([, exs]) => exs), ...allCustom]
     : getExercisesForMuscle(selMuscle);
@@ -3804,12 +3821,14 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
     : (bookmarksOnly
       ? allExercises.filter(e => bookmarkedSet.has(e.name))
       : allExercises)
-  ).slice().sort((a, b) => {
-    // Bookmarked first (when not filtered to bookmarks-only), then alphabetical
-    const aB = bookmarkedSet.has(a.name), bB = bookmarkedSet.has(b.name);
-    if (!bookmarksOnly && aB !== bB) return aB ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  )
+    .filter(e => !travelMode || isTravelFriendly(e))
+    .slice().sort((a, b) => {
+      // Bookmarked first (when not filtered to bookmarks-only), then alphabetical
+      const aB = bookmarkedSet.has(a.name), bB = bookmarkedSet.has(b.name);
+      if (!bookmarksOnly && aB !== bB) return aB ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
 
   const handleSaveCustom = () => {
     if (!cName.trim()) { toast("Enter a name", RED); return; }
@@ -3826,7 +3845,10 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   return (
     <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>{themeLabel(settings,"database","DATABASE")}</div>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+        {themeLabel(settings,"database","DATABASE")}
+        {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
+      </div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, letterSpacing: 2, marginBottom: 18 }}>EXERCISE COMPENDIUM</div>
 
       {/* Search */}
@@ -6387,6 +6409,38 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                   );
                 })}
               </div>
+            </div>
+
+            {/* Modes */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 10 }}>{"// MODES"}</div>
+              {(() => {
+                const isOn = settings?.travelMode === true;
+                return (
+                  <div onClick={() => onUpdateSettings({ travelMode: !isOn })} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "12px 14px", marginBottom: 6, cursor: "pointer",
+                    background: BG3, border: `1px solid ${isOn ? GOLD : ACCENT2 + "33"}`, borderRadius: 8
+                  }}>
+                    <div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
+                        ✈ Travel mode
+                      </div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                        Filter the database to bodyweight + cardio only
+                      </div>
+                    </div>
+                    <div style={{ width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+                      background: isOn ? GOLD : MUTED + "44", border: `1px solid ${isOn ? GOLD + "88" : MUTED + "44"}`,
+                      position: "relative", transition: "all .2s" }}>
+                      <div style={{ position: "absolute", top: 3, left: isOn ? 21 : 3,
+                        width: 14, height: 14, borderRadius: "50%",
+                        background: isOn ? "#fff" : MUTED, transition: "left .2s",
+                        boxShadow: isOn ? `0 0 6px ${GOLD}` : "none" }} />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Toggles */}
