@@ -3127,6 +3127,16 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
   const updateSet = (i, field, val) => setSetRows(s => s.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const addSet    = () => setSetRows(s => [...s, { ...defaultSet }]);
+  const repeatLastSet = () => setSetRows(s => {
+    // Walk backward to find the last row with both reps and weight set
+    for (let i = s.length - 1; i >= 0; i--) {
+      const r = s[i];
+      if (parseFloat(r.reps) > 0 && (parseFloat(r.weight) > 0 || isCali)) {
+        return [...s, { reps: r.reps, weight: r.weight }];
+      }
+    }
+    return [...s, { ...defaultSet }];
+  });
   const removeSet = (i) => setSetRows(s => s.filter((_, idx) => idx !== i));
 
   const [cardioMinutes, setCardioMinutes] = useState("");
@@ -3352,11 +3362,27 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                 })}
               </>
             )}
-            <button onClick={addSet} style={{
-              width: "100%", marginTop: 6, background: `${ACCENT}06`, border: `1px dashed ${ACCENT}28`,
-              borderRadius: 6, padding: "7px", cursor: "pointer",
-              fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2
-            }}>+ BLANK SET</button>
+            {(() => {
+              const hasFilled = setRows.some(r => parseFloat(r.reps) > 0 && (parseFloat(r.weight) > 0 || isCali));
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                  <button onClick={addSet} style={{
+                    background: `${ACCENT}06`, border: `1px dashed ${ACCENT}28`,
+                    borderRadius: 6, padding: "7px", cursor: "pointer",
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2
+                  }}>+ BLANK SET</button>
+                  <button onClick={repeatLastSet} disabled={!hasFilled} style={{
+                    background: hasFilled ? `${GOLD}0a` : "transparent",
+                    border: `1px dashed ${hasFilled ? GOLD + "44" : MUTED + "22"}`,
+                    borderRadius: 6, padding: "7px",
+                    cursor: hasFilled ? "pointer" : "not-allowed",
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
+                    color: hasFilled ? GOLD : MUTED, letterSpacing: 2,
+                    opacity: hasFilled ? 1 : 0.5,
+                  }}>+ REPEAT LAST</button>
+                </div>
+              );
+            })()}
           </div>
         )}
 
