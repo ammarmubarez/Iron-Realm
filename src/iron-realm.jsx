@@ -1485,17 +1485,52 @@ const INIT_STORE = {
     showXPGain:    true,
     showMilestones: true,
     compactCards:  false,
-    travelMode:    false, // filters exercise lists to bodyweight/cardio only
+    travelMode:    false, // filters exercise lists to your hotel-gym equipment
+    travelEquipment: ["BODYWEIGHT", "DUMBBELL", "KETTLEBELL", "CARDIO"],
   },
 };
 
-// Travel mode: an exercise is travel-friendly if it can be done with body
-// weight or minimal gear. Calisthenics and cardio types qualify; strength
-// exercises (barbell/dumbbell/machine) do not. Custom exercises typed as
-// calisthenics or cardio are included automatically.
-function isTravelFriendly(exercise) {
-  if (!exercise) return false;
-  return exercise.type === "calisthenics" || exercise.type === "cardio";
+// Travel mode: an exercise is available if it can be done with whatever
+// equipment is checked in settings.travelEquipment (hotel-gym scenario by
+// default = bodyweight + dumbbell + kettlebell + cardio). Strength exercises
+// are classified from their name; calisthenics and cardio map directly from
+// the exercise type.
+
+const EQUIPMENT_CATEGORIES = [
+  { id: "BODYWEIGHT", name: "Bodyweight / bench" },
+  { id: "DUMBBELL",   name: "Dumbbells" },
+  { id: "KETTLEBELL", name: "Kettlebells" },
+  { id: "CARDIO",     name: "Cardio (treadmill, bike, etc.)" },
+  { id: "BARBELL",    name: "Barbell" },
+  { id: "MACHINE",    name: "Machines (leg press, pec deck, etc.)" },
+  { id: "CABLE",      name: "Cables" },
+];
+
+const MACHINE_NAME_PATTERNS = [
+  "machine", "pulldown", "pull-down", "leg press", "leg extension",
+  "leg curl", "pec deck", "hack squat", "smith", "preacher",
+];
+
+function exerciseEquipment(exercise) {
+  if (!exercise) return null;
+  if (exercise.type === "calisthenics") return "BODYWEIGHT";
+  if (exercise.type === "cardio")       return "CARDIO";
+  if (exercise.type !== "strength")     return null;
+  const name = (exercise.name || "").toLowerCase();
+  if (name.includes("dumbbell"))   return "DUMBBELL";
+  if (name.includes("kettlebell")) return "KETTLEBELL";
+  if (name.includes("cable"))      return "CABLE";
+  if (MACHINE_NAME_PATTERNS.some(p => name.includes(p))) return "MACHINE";
+  return "BARBELL"; // default for strength exercises
+}
+
+function isTravelFriendly(exercise, availableEquipment) {
+  const equip = exerciseEquipment(exercise);
+  if (!equip) return false;
+  const list = Array.isArray(availableEquipment) && availableEquipment.length > 0
+    ? availableEquipment
+    : ["BODYWEIGHT", "CARDIO"];
+  return list.includes(equip);
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -3471,7 +3506,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
     ...(EXERCISE_DB[selMuscle] || []),
     ...(st.customExercises||[]).filter(e => e.primary === selMuscle)
   ]
-    .filter(e => !travelMode || isTravelFriendly(e))
+    .filter(e => !travelMode || isTravelFriendly(e, settings?.travelEquipment))
     .slice().sort((a, b) => a.name.localeCompare(b.name));
   const exercises = browseSearch.trim()
     ? allBrowseExercises.filter(e => e.name.toLowerCase().includes(browseSearch.toLowerCase()))
@@ -3872,7 +3907,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
       ? allExercises.filter(e => bookmarkedSet.has(e.name))
       : allExercises)
   )
-    .filter(e => !travelMode || isTravelFriendly(e))
+    .filter(e => !travelMode || isTravelFriendly(e, settings?.travelEquipment))
     .slice().sort((a, b) => {
       // Bookmarked first (when not filtered to bookmarks-only), then alphabetical
       const aB = bookmarkedSet.has(a.name), bB = bookmarkedSet.has(b.name);
@@ -6466,29 +6501,70 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 10 }}>{"// MODES"}</div>
               {(() => {
                 const isOn = settings?.travelMode === true;
+                const equipList = Array.isArray(settings?.travelEquipment) && settings.travelEquipment.length > 0
+                  ? settings.travelEquipment
+                  : ["BODYWEIGHT", "CARDIO"];
+                const toggleEquip = (id) => {
+                  const set = new Set(equipList);
+                  if (set.has(id)) set.delete(id); else set.add(id);
+                  onUpdateSettings({ travelEquipment: [...set] });
+                };
                 return (
-                  <div onClick={() => onUpdateSettings({ travelMode: !isOn })} style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    padding: "12px 14px", marginBottom: 6, cursor: "pointer",
-                    background: BG3, border: `1px solid ${isOn ? GOLD : ACCENT2 + "33"}`, borderRadius: 8
-                  }}>
-                    <div>
-                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
-                        ✈ Travel mode
+                  <>
+                    <div onClick={() => onUpdateSettings({ travelMode: !isOn })} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "12px 14px", marginBottom: isOn ? 8 : 6, cursor: "pointer",
+                      background: BG3, border: `1px solid ${isOn ? GOLD : ACCENT2 + "33"}`, borderRadius: 8
+                    }}>
+                      <div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
+                          ✈ Travel mode
+                        </div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                          Filter the database to whatever equipment you have access to
+                        </div>
                       </div>
-                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
-                        Filter the database to bodyweight + cardio only
+                      <div style={{ width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+                        background: isOn ? GOLD : MUTED + "44", border: `1px solid ${isOn ? GOLD + "88" : MUTED + "44"}`,
+                        position: "relative", transition: "all .2s" }}>
+                        <div style={{ position: "absolute", top: 3, left: isOn ? 21 : 3,
+                          width: 14, height: 14, borderRadius: "50%",
+                          background: isOn ? "#fff" : MUTED, transition: "left .2s",
+                          boxShadow: isOn ? `0 0 6px ${GOLD}` : "none" }} />
                       </div>
                     </div>
-                    <div style={{ width: 40, height: 22, borderRadius: 11, flexShrink: 0,
-                      background: isOn ? GOLD : MUTED + "44", border: `1px solid ${isOn ? GOLD + "88" : MUTED + "44"}`,
-                      position: "relative", transition: "all .2s" }}>
-                      <div style={{ position: "absolute", top: 3, left: isOn ? 21 : 3,
-                        width: 14, height: 14, borderRadius: "50%",
-                        background: isOn ? "#fff" : MUTED, transition: "left .2s",
-                        boxShadow: isOn ? `0 0 6px ${GOLD}` : "none" }} />
-                    </div>
-                  </div>
+
+                    {isOn && (
+                      <div style={{ background: `${GOLD}06`, border: `1px solid ${GOLD}33`, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GOLD, letterSpacing: 2, marginBottom: 8 }}>
+                          {"// EQUIPMENT AVAILABLE"}
+                        </div>
+                        {EQUIPMENT_CATEGORIES.map(eq => {
+                          const on = equipList.includes(eq.id);
+                          return (
+                            <div key={eq.id} onClick={() => toggleEquip(eq.id)} style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "6px 4px", cursor: "pointer",
+                            }}>
+                              <div style={{
+                                width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                background: on ? GOLD : "transparent",
+                                border: `1.5px solid ${on ? GOLD : MUTED}`,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                color: BG, fontSize: 11, fontWeight: 900,
+                              }}>{on ? "✓" : ""}</div>
+                              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: on ? TEXT : MUTED }}>
+                                {eq.name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 8, lineHeight: 1.4 }}>
+                          Default is a typical hotel gym (bodyweight, dumbbells, kettlebells, cardio). Add or remove based on what's at your location.
+                        </div>
+                      </div>
+                    )}
+                  </>
                 );
               })()}
             </div>
