@@ -3493,12 +3493,117 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
 
 
 // ─── SCREEN: FREE WORKOUT ─────────────────────────────────────────────────────
+function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
+  if (!sessionLog || sessionLog.length === 0) return null;
+  const totalXP   = sessionLog.reduce((s, l) => s + (l.xp || 0), 0);
+  const totalSets = sessionLog.reduce((s, l) => s + (l.sets || 1), 0);
+  const muscles   = [...new Set(sessionLog.map(l => l.muscle).filter(Boolean))];
+  const prs       = sessionLog.filter(l => l.isPR);
+  const durationMin = sessionStart ? Math.max(1, Math.round((Date.now() - sessionStart) / 60000)) : null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(3,6,15,0.96)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+        border: `1px solid ${GOLD}55`, borderTop: `3px solid ${GOLD}`,
+        width: "100%", maxWidth: 460, padding: "28px 22px 28px",
+        maxHeight: "90vh", overflowY: "auto", borderRadius: 12,
+        boxShadow: `0 0 48px ${GOLD}33`,
+      }}>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 6, marginBottom: 4 }}>SESSION COMPLETE</div>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 42, fontWeight: 900, color: GOLD, letterSpacing: 2,
+            textShadow: `0 0 24px ${GOLD}66`, lineHeight: 1 }}>+{totalXP.toLocaleString()}</div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT, letterSpacing: 2, marginTop: 2 }}>TOTAL XP</div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 20 }}>
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{sessionLog.length}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>EXERCISES</div>
+          </div>
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{totalSets}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>SETS</div>
+          </div>
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{durationMin != null ? `${durationMin}m` : "—"}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>DURATION</div>
+          </div>
+        </div>
+
+        {prs.length > 0 && (
+          <div style={{ background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>★ NEW PERSONAL RECORDS</div>
+            {prs.map((l, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0",
+                borderBottom: i < prs.length - 1 ? `1px solid ${GOLD}22` : "none" }}>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, fontWeight: 600 }}>{l.name}</span>
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>
+                  {l.prevE1RM ? `${Math.round(wtVal(l.prevE1RM))} → ` : ""}{Math.round(wtVal(l.newE1RM || 0))} {wtLabel()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {muscles.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>MUSCLES TRAINED</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {muscles.map(m => {
+                const mm = MUSCLE_META[m] || { color: ACCENT, name: m };
+                return (
+                  <span key={m} style={{
+                    background: `${mm.color}1a`, border: `1px solid ${mm.color}55`, borderRadius: 6,
+                    padding: "5px 10px", fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
+                    color: mm.color, fontWeight: 700, letterSpacing: 1,
+                  }}>{mm.name.toUpperCase()}</span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>EXERCISES LOGGED</div>
+          {sessionLog.map((l, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0",
+              borderBottom: `1px solid ${ACCENT}11` }}>
+              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, display: "flex", alignItems: "center", gap: 6 }}>
+                {l.isPR && <span style={{ color: GOLD, fontWeight: 700 }}>★</span>}
+                {l.name}
+                <span style={{ color: MUTED, fontSize: 10 }}>· {l.sets || 1} sets</span>
+              </span>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>+{l.xp || 0}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button onClick={onClose} style={{
+            padding: "12px", cursor: "pointer",
+            background: BG3, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+          }}>KEEP TRAINING</button>
+          <button onClick={onComplete} className="btn-gold" style={{ padding: "12px", fontSize: 11, letterSpacing: 2 }}>
+            COMPLETE ✓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast }) {
   const MUSCLE_CATEGORIES = ["chest","back","legs","shoulders","bicep","tricep","forearms","core","glutes","calves","cardio"];
   const [selMuscle, setSelMuscle] = useState("chest");
   const [browseSearch, setBrowseSearch] = useState("");
   const [logModal, setLogModal] = useState(null);
   const [sessionLog, setSessionLog] = useState([]);
+  const [sessionStart, setSessionStart] = useState(null);
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [editModal, setEditModal] = useState(null);
   const [selDay, setSelDay] = useState(0); // 0=today
   const [currentSupersetGroup, setCurrentSupersetGroup] = useState(null);
@@ -3678,8 +3783,15 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
           {selDay === todayDayIdx && sessionLog.length > 0 && (
             <div style={{ marginTop: 16, background: `${GOLD}0a`,
               border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                color: GOLD, letterSpacing: 3, marginBottom: 8 }}>{"// THIS SESSION"}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
+                  color: GOLD, letterSpacing: 3 }}>{"// THIS SESSION"}</div>
+                <button onClick={() => setFinishModalOpen(true)} style={{
+                  background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 6,
+                  padding: "5px 11px", cursor: "pointer",
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, fontWeight: 700, letterSpacing: 2,
+                }}>FINISH ▶</button>
+              </div>
               {sessionLog.map((l, i) => {
                 const prev = sessionLog[i - 1];
                 const next = sessionLog[i + 1];
@@ -3817,6 +3929,22 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
 
 
 
+      {/* Workout finish summary modal */}
+      {finishModalOpen && (
+        <WorkoutFinishModal
+          sessionLog={sessionLog}
+          sessionStart={sessionStart}
+          onClose={() => setFinishModalOpen(false)}
+          onComplete={() => {
+            setSessionLog([]);
+            setSessionStart(null);
+            setFinishModalOpen(false);
+            setCurrentSupersetGroup(null);
+            toast("Session complete · well fought", GOLD);
+          }}
+        />
+      )}
+
       {/* Log / Edit modal */}
       {(logModal || editModal) && (
         <ExerciseLogModal
@@ -3834,7 +3962,21 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               supersetGroup, date: Date.now() };
             if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
             onLogExercise(entry);
-            setSessionLog(s => [...s, { name: modal.exercise.name, xp: data.xp, supersetGroup }]);
+            const prevE1RM = (st.prs || {})[modal.exercise.name] || null;
+            setSessionLog(s => [...s, {
+              name: modal.exercise.name,
+              muscle: modal.muscle,
+              xp: data.xp,
+              sets: data.sets,
+              reps: data.reps,
+              weight: data.weight,
+              isPR: data.isPR,
+              newE1RM: data.newE1RM,
+              prevE1RM,
+              supersetGroup,
+              date: Date.now(),
+            }]);
+            if (sessionStart == null) setSessionStart(Date.now());
             setLogModal(null); setEditModal(null);
             setTab("log"); setSelDay(todayDayIdx);
             toast(`${modal.exercise.name} logged! +${data.xp} XP`, GOLD);
