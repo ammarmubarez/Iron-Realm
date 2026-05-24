@@ -1470,6 +1470,7 @@ const newProfile = (id, name = "Hunter") => ({
   bookmarkedExercises: [],   // array of exercise names pinned to top of database
   dailyRituals: { completionLog: {} }, // { 'YYYY-MM-DD': ['pushups','stretch',...] }
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
+  patronLift:   null,   // exercise name pinned as signature lift
   createdAt: Date.now(),
 });
 
@@ -7370,7 +7371,7 @@ function VolumeChart({ workouts }) {
 }
 
 
-function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, toast }) {
+function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, onSetPatronLift, toast }) {
   const st = store.profiles[store.activeId];
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
@@ -7399,9 +7400,10 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   };
 
   const specialStats = ["cardio", "calisthenics"];
-  const [selectedMuscle, setSelectedMuscle] = useState(null);
-  const [prHistoryOpen, setPrHistoryOpen]   = useState(false);
-  const [heatmapOpen, setHeatmapOpen]       = useState(false);
+  const [selectedMuscle, setSelectedMuscle]   = useState(null);
+  const [prHistoryOpen, setPrHistoryOpen]     = useState(false);
+  const [heatmapOpen, setHeatmapOpen]         = useState(false);
+  const [patronPickerOpen, setPatronPickerOpen] = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -7589,6 +7591,100 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         <div style={{ marginBottom: 16, padding: "0 8px" }}>
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
+
+        {/* ── PATRON LIFT ── */}
+        {(() => {
+          const prs = st.prs || {};
+          const prKeys = Object.keys(prs);
+          const patronLift = st.patronLift || null;
+          const patronE1RM = patronLift ? prs[patronLift] : null;
+          const hasAnyPr = prKeys.length > 0;
+          return (
+            <div style={{ marginBottom: 8 }}>
+              {patronLift ? (
+                <div style={{ background: `${GOLD}0e`, border: `1px solid ${GOLD}44`, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 2 }}>SIGNATURE LIFT</div>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{patronLift}</div>
+                    {patronE1RM && (
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, marginTop: 2 }}>
+                        est. 1RM · <span style={{ fontWeight: 700 }}>{Math.round(wtVal(patronE1RM))} {wtLabel()}</span>
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setPatronPickerOpen(true)} style={{
+                    background: `${GOLD}22`, border: `1px solid ${GOLD}55`, borderRadius: 7,
+                    padding: "7px 12px", cursor: "pointer",
+                    fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, fontWeight: 700, letterSpacing: 1,
+                    flexShrink: 0,
+                  }}>CHANGE</button>
+                </div>
+              ) : (
+                <button disabled={!hasAnyPr} onClick={() => hasAnyPr && setPatronPickerOpen(true)} style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  background: hasAnyPr ? `${GOLD}08` : BG3, border: `1px solid ${hasAnyPr ? GOLD + "33" : MUTED + "22"}`,
+                  borderRadius: 8, padding: "12px 14px", cursor: hasAnyPr ? "pointer" : "default",
+                  fontFamily: "'Rajdhani',sans-serif",
+                }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 16, opacity: hasAnyPr ? 0.7 : 0.3 }}>🏆</span>
+                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: hasAnyPr ? GOLD : MUTED, letterSpacing: 2, fontWeight: 700 }}>
+                      {hasAnyPr ? "PIN SIGNATURE LIFT" : "EARN A PR TO PIN"}
+                    </span>
+                  </span>
+                  {hasAnyPr && <span style={{ fontSize: 10, color: GOLD, opacity: 0.6 }}>SELECT →</span>}
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Patron lift picker modal */}
+        {patronPickerOpen && (() => {
+          const prs = st.prs || {};
+          const sorted = Object.entries(prs).sort((a, b) => b[1] - a[1]);
+          return (
+            <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+              onClick={() => setPatronPickerOpen(false)}>
+              <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+                background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+                border: `1px solid ${GOLD}33`, borderTop: `2px solid ${GOLD}`,
+                width: "100%", maxWidth: 480, padding: "20px 18px 40px",
+                maxHeight: "70vh", overflowY: "auto",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD, letterSpacing: 3 }}>SELECT SIGNATURE LIFT</div>
+                  <button onClick={() => setPatronPickerOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+                </div>
+                {st.patronLift && (
+                  <button onClick={() => { (onSetPatronLift || (n => onUpdateProfile(store.activeId, { patronLift: n })))(null); setPatronPickerOpen(false); }} style={{
+                    width: "100%", padding: "10px 14px", marginBottom: 10, cursor: "pointer",
+                    background: `${RED}11`, border: `1px solid ${RED}33`, borderRadius: 8,
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: RED, fontWeight: 700, textAlign: "left",
+                  }}>✕  REMOVE PIN</button>
+                )}
+                {sorted.map(([ex, e1rm]) => {
+                  const isPinned = ex === st.patronLift;
+                  return (
+                    <button key={ex} onClick={() => { (onSetPatronLift || (n => onUpdateProfile(store.activeId, { patronLift: n })))(ex); setPatronPickerOpen(false); }} style={{
+                      width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                      background: isPinned ? `${GOLD}18` : "none",
+                      border: "none", borderBottom: `1px solid ${ACCENT}11`,
+                      padding: "11px 4px", cursor: "pointer",
+                    }}>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: isPinned ? GOLD : TEXT, fontWeight: isPinned ? 700 : 400 }}>
+                        {isPinned && "★ "}{ex}
+                      </span>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>
+                        {Math.round(wtVal(e1rm))} {wtLabel()}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Progression entry points */}
         <button onClick={() => setPrHistoryOpen(true)} style={{
@@ -8003,6 +8099,20 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
             Last active {_timeAgo(profile.updated_at)}
           </span>
         </div>
+
+        {profile.patron_lift && (
+          <div style={{ background: `${GOLD}0e`, border: `1px solid ${GOLD}44`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 3 }}>SIGNATURE LIFT</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{profile.patron_lift}</span>
+              {profile.prs?.[profile.patron_lift] && (
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                  {Math.round(profile.prs[profile.patron_lift])} lbs est. 1RM
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {profile.prs && Object.keys(profile.prs).length > 0 && (
           <div style={{ marginBottom: 20 }}>
@@ -9114,6 +9224,15 @@ export default function IronRealm() {
     }
   };
 
+  const handleSetPatronLift = (exerciseName) => {
+    updateActive(p => ({ ...p, patronLift: exerciseName || null }));
+    if (session?.user) {
+      adminService.updateProfileField(session.user.id, { patron_lift: exerciseName || null })
+        .then(() => setRemoteProfile(r => r ? { ...r, patron_lift: exerciseName || null } : r))
+        .catch(() => {});
+    }
+  };
+
   const handleSaveCustomProgram = (prog, deleteId = null) => {
     updateActive(p => {
       const existing = p.customPrograms || [];
@@ -9175,7 +9294,7 @@ export default function IronRealm() {
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
-      {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} toast={toast} />}
+      {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onSetPatronLift={handleSetPatronLift} toast={toast} />}
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
       {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}
