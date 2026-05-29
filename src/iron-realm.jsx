@@ -7,7 +7,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -1470,6 +1470,7 @@ const newProfile = (id, name = "Hunter") => ({
   bookmarkedExercises: [],   // array of exercise names pinned to top of database
   dailyRituals: { completionLog: {} }, // { 'YYYY-MM-DD': ['pushups','stretch',...] }
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
+  patronLift:   null,   // exercise name pinned as signature lift
   createdAt: Date.now(),
 });
 
@@ -1485,8 +1486,53 @@ const INIT_STORE = {
     showXPGain:    true,
     showMilestones: true,
     compactCards:  false,
+    travelMode:    false, // filters exercise lists to your hotel-gym equipment
+    travelEquipment: ["BODYWEIGHT", "DUMBBELL", "KETTLEBELL", "CARDIO"],
   },
 };
+
+// Travel mode: an exercise is available if it can be done with whatever
+// equipment is checked in settings.travelEquipment (hotel-gym scenario by
+// default = bodyweight + dumbbell + kettlebell + cardio). Strength exercises
+// are classified from their name; calisthenics and cardio map directly from
+// the exercise type.
+
+const EQUIPMENT_CATEGORIES = [
+  { id: "BODYWEIGHT", name: "Bodyweight / bench" },
+  { id: "DUMBBELL",   name: "Dumbbells" },
+  { id: "KETTLEBELL", name: "Kettlebells" },
+  { id: "CARDIO",     name: "Cardio (treadmill, bike, etc.)" },
+  { id: "BARBELL",    name: "Barbell" },
+  { id: "MACHINE",    name: "Machines (leg press, pec deck, etc.)" },
+  { id: "CABLE",      name: "Cables" },
+];
+
+const MACHINE_NAME_PATTERNS = [
+  "machine", "pulldown", "pull-down", "leg press", "leg extension",
+  "leg curl", "pec deck", "hack squat", "smith", "preacher",
+];
+
+function exerciseEquipment(exercise) {
+  if (!exercise) return null;
+  if (exercise.type === "calisthenics") return "BODYWEIGHT";
+  if (exercise.type === "cardio")       return "CARDIO";
+  if (exercise.type !== "strength")     return null;
+  const name = (exercise.name || "").toLowerCase();
+  if (name.includes("dumbbell"))   return "DUMBBELL";
+  if (name.includes("kettlebell")) return "KETTLEBELL";
+  if (name.includes("cable"))      return "CABLE";
+  if (MACHINE_NAME_PATTERNS.some(p => name.includes(p))) return "MACHINE";
+  return "BARBELL"; // default for strength exercises
+}
+
+function isTravelFriendly(exercise, availableEquipment) {
+  const equip = exerciseEquipment(exercise);
+  if (!equip) return false;
+  const list = Array.isArray(availableEquipment) && availableEquipment.length > 0
+    ? availableEquipment
+    : ["BODYWEIGHT", "CARDIO"];
+  return list.includes(equip);
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 // MET (Metabolic Equivalent of Task) values by exercise type + difficulty
@@ -3117,6 +3163,16 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
   const updateSet = (i, field, val) => setSetRows(s => s.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const addSet    = () => setSetRows(s => [...s, { ...defaultSet }]);
+  const repeatLastSet = () => setSetRows(s => {
+    // Walk backward to find the last row with both reps and weight set
+    for (let i = s.length - 1; i >= 0; i--) {
+      const r = s[i];
+      if (parseFloat(r.reps) > 0 && (parseFloat(r.weight) > 0 || isCali)) {
+        return [...s, { reps: r.reps, weight: r.weight }];
+      }
+    }
+    return [...s, { ...defaultSet }];
+  });
   const removeSet = (i) => setSetRows(s => s.filter((_, idx) => idx !== i));
 
   const [cardioMinutes, setCardioMinutes] = useState("");
@@ -3301,28 +3357,68 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                   const lastRow = lastSession?.sets_detail?.[i];
                   const prReps   = lastRow && parseFloat(row.reps)   > parseFloat(lastRow.reps);
                   const prWeight = lastRow && parseFloat(row.weight) > parseFloat(lastRow.weight);
+                  const repsN   = parseFloat(row.reps);
+                  const weightN = parseFloat(row.weight);
+                  const showE1RM = !isCali && !isCardio
+                    && repsN >= 1 && repsN <= 12 && weightN > 0;
+                  const setE1RM = showE1RM ? epley1RM(weightN, repsN) : 0;
+                  const beatsPR = showE1RM && storedE1RM && setE1RM > storedE1RM;
+                  const closePR = showE1RM && storedE1RM && !beatsPR
+                    && setE1RM >= storedE1RM * 0.95;
+                  const e1rmColor = beatsPR ? GOLD : closePR ? GOLD2 : MUTED;
                   return (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 5, alignItems: "center" }}>
-                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: parseFloat(row.reps) > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
-                      <input className="input-field" type="number" value={row.reps}
-                        onChange={e => updateSet(i, "reps", e.target.value)}
-                        placeholder={lastRow ? lastRow.reps + " last" : "10"}
-                        style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
-                      <input className="input-field" type="number" value={row.weight}
-                        onChange={e => updateSet(i, "weight", e.target.value)}
-                        placeholder={isCali ? "0 (BW only)" : (lastRow ? lastRow.weight + " last" : "135")}
-                        style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
-                      <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: MUTED, fontSize: 15, cursor: "pointer", lineHeight: 1 }}>×</button>
+                    <div key={i} style={{ marginBottom: 5 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, alignItems: "center" }}>
+                        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: repsN > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
+                        <input className="input-field" type="number" value={row.reps}
+                          onChange={e => updateSet(i, "reps", e.target.value)}
+                          placeholder={lastRow ? lastRow.reps + " last" : "10"}
+                          style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
+                        <input className="input-field" type="number" value={row.weight}
+                          onChange={e => updateSet(i, "weight", e.target.value)}
+                          placeholder={isCali ? "0 (BW only)" : (lastRow ? lastRow.weight + " last" : "135")}
+                          style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
+                        <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: MUTED, fontSize: 15, cursor: "pointer", lineHeight: 1 }}>×</button>
+                      </div>
+                      {showE1RM && (
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: e1rmColor,
+                          paddingLeft: 38, marginTop: 2, letterSpacing: 0.5,
+                          textShadow: beatsPR ? `0 0 6px ${GOLD}88` : "none" }}>
+                          → est. 1RM {Math.round(wtVal(setE1RM))} {wtLabel()}
+                          {storedE1RM && (
+                            <span style={{ color: MUTED, marginLeft: 6, fontSize: 9 }}>
+                              (PR {Math.round(wtVal(storedE1RM))})
+                            </span>
+                          )}
+                          {beatsPR && <span style={{ color: GOLD, marginLeft: 6, fontWeight: 700 }}>★ NEW</span>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </>
             )}
-            <button onClick={addSet} style={{
-              width: "100%", marginTop: 6, background: `${ACCENT}06`, border: `1px dashed ${ACCENT}28`,
-              borderRadius: 6, padding: "7px", cursor: "pointer",
-              fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2
-            }}>+ BLANK SET</button>
+            {(() => {
+              const hasFilled = setRows.some(r => parseFloat(r.reps) > 0 && (parseFloat(r.weight) > 0 || isCali));
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                  <button onClick={addSet} style={{
+                    background: `${ACCENT}06`, border: `1px dashed ${ACCENT}28`,
+                    borderRadius: 6, padding: "7px", cursor: "pointer",
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2
+                  }}>+ BLANK SET</button>
+                  <button onClick={repeatLastSet} disabled={!hasFilled} style={{
+                    background: hasFilled ? `${GOLD}0a` : "transparent",
+                    border: `1px dashed ${hasFilled ? GOLD + "44" : MUTED + "22"}`,
+                    borderRadius: 6, padding: "7px",
+                    cursor: hasFilled ? "pointer" : "not-allowed",
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
+                    color: hasFilled ? GOLD : MUTED, letterSpacing: 2,
+                    opacity: hasFilled ? 1 : 0.5,
+                  }}>+ REPEAT LAST</button>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -3397,19 +3493,127 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
 
 
 // ─── SCREEN: FREE WORKOUT ─────────────────────────────────────────────────────
+function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
+  if (!sessionLog || sessionLog.length === 0) return null;
+  const totalXP   = sessionLog.reduce((s, l) => s + (l.xp || 0), 0);
+  const totalSets = sessionLog.reduce((s, l) => s + (l.sets || 1), 0);
+  const muscles   = [...new Set(sessionLog.map(l => l.muscle).filter(Boolean))];
+  const prs       = sessionLog.filter(l => l.isPR);
+  const durationMin = sessionStart ? Math.max(1, Math.round((Date.now() - sessionStart) / 60000)) : null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(3,6,15,0.96)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+        border: `1px solid ${GOLD}55`, borderTop: `3px solid ${GOLD}`,
+        width: "100%", maxWidth: 460, padding: "28px 22px 28px",
+        maxHeight: "90vh", overflowY: "auto", borderRadius: 12,
+        boxShadow: `0 0 48px ${GOLD}33`,
+      }}>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 6, marginBottom: 4 }}>SESSION COMPLETE</div>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 42, fontWeight: 900, color: GOLD, letterSpacing: 2,
+            textShadow: `0 0 24px ${GOLD}66`, lineHeight: 1 }}>+{totalXP.toLocaleString()}</div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT, letterSpacing: 2, marginTop: 2 }}>TOTAL XP</div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 20 }}>
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{sessionLog.length}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>EXERCISES</div>
+          </div>
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{totalSets}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>SETS</div>
+          </div>
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{durationMin != null ? `${durationMin}m` : "—"}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>DURATION</div>
+          </div>
+        </div>
+
+        {prs.length > 0 && (
+          <div style={{ background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>★ NEW PERSONAL RECORDS</div>
+            {prs.map((l, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0",
+                borderBottom: i < prs.length - 1 ? `1px solid ${GOLD}22` : "none" }}>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, fontWeight: 600 }}>{l.name}</span>
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>
+                  {l.prevE1RM ? `${Math.round(wtVal(l.prevE1RM))} → ` : ""}{Math.round(wtVal(l.newE1RM || 0))} {wtLabel()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {muscles.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>MUSCLES TRAINED</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {muscles.map(m => {
+                const mm = MUSCLE_META[m] || { color: ACCENT, name: m };
+                return (
+                  <span key={m} style={{
+                    background: `${mm.color}1a`, border: `1px solid ${mm.color}55`, borderRadius: 6,
+                    padding: "5px 10px", fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
+                    color: mm.color, fontWeight: 700, letterSpacing: 1,
+                  }}>{mm.name.toUpperCase()}</span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>EXERCISES LOGGED</div>
+          {sessionLog.map((l, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0",
+              borderBottom: `1px solid ${ACCENT}11` }}>
+              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, display: "flex", alignItems: "center", gap: 6 }}>
+                {l.isPR && <span style={{ color: GOLD, fontWeight: 700 }}>★</span>}
+                {l.name}
+                <span style={{ color: MUTED, fontSize: 10 }}>· {l.sets || 1} sets</span>
+              </span>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>+{l.xp || 0}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button onClick={onClose} style={{
+            padding: "12px", cursor: "pointer",
+            background: BG3, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+          }}>KEEP TRAINING</button>
+          <button onClick={onComplete} className="btn-gold" style={{ padding: "12px", fontSize: 11, letterSpacing: 2 }}>
+            COMPLETE ✓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast }) {
   const MUSCLE_CATEGORIES = ["chest","back","legs","shoulders","bicep","tricep","forearms","core","glutes","calves","cardio"];
   const [selMuscle, setSelMuscle] = useState("chest");
   const [browseSearch, setBrowseSearch] = useState("");
   const [logModal, setLogModal] = useState(null);
   const [sessionLog, setSessionLog] = useState([]);
+  const [sessionStart, setSessionStart] = useState(null);
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [editModal, setEditModal] = useState(null);
   const [selDay, setSelDay] = useState(0); // 0=today
   const [currentSupersetGroup, setCurrentSupersetGroup] = useState(null);
+  const travelMode = settings?.travelMode === true;
   const allBrowseExercises = [
     ...(EXERCISE_DB[selMuscle] || []),
     ...(st.customExercises||[]).filter(e => e.primary === selMuscle)
-  ].slice().sort((a, b) => a.name.localeCompare(b.name));
+  ]
+    .filter(e => !travelMode || isTravelFriendly(e, settings?.travelEquipment))
+    .slice().sort((a, b) => a.name.localeCompare(b.name));
   const exercises = browseSearch.trim()
     ? allBrowseExercises.filter(e => e.name.toLowerCase().includes(browseSearch.toLowerCase()))
     : allBrowseExercises;
@@ -3439,7 +3643,10 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 0" }}>
         <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
-          color: GOLD, letterSpacing: 2, marginBottom: 12 }}>{themeLabel(settings,"workout","WORKOUT")}</div>
+          color: GOLD, letterSpacing: 2, marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          {themeLabel(settings,"workout","WORKOUT")}
+          {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
+        </div>
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 0 }}>
@@ -3576,8 +3783,15 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
           {selDay === todayDayIdx && sessionLog.length > 0 && (
             <div style={{ marginTop: 16, background: `${GOLD}0a`,
               border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                color: GOLD, letterSpacing: 3, marginBottom: 8 }}>{"// THIS SESSION"}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
+                  color: GOLD, letterSpacing: 3 }}>{"// THIS SESSION"}</div>
+                <button onClick={() => setFinishModalOpen(true)} style={{
+                  background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 6,
+                  padding: "5px 11px", cursor: "pointer",
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, fontWeight: 700, letterSpacing: 2,
+                }}>FINISH ▶</button>
+              </div>
               {sessionLog.map((l, i) => {
                 const prev = sessionLog[i - 1];
                 const next = sessionLog[i + 1];
@@ -3715,6 +3929,22 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
 
 
 
+      {/* Workout finish summary modal */}
+      {finishModalOpen && (
+        <WorkoutFinishModal
+          sessionLog={sessionLog}
+          sessionStart={sessionStart}
+          onClose={() => setFinishModalOpen(false)}
+          onComplete={() => {
+            setSessionLog([]);
+            setSessionStart(null);
+            setFinishModalOpen(false);
+            setCurrentSupersetGroup(null);
+            toast("Session complete · well fought", GOLD);
+          }}
+        />
+      )}
+
       {/* Log / Edit modal */}
       {(logModal || editModal) && (
         <ExerciseLogModal
@@ -3732,7 +3962,21 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               supersetGroup, date: Date.now() };
             if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
             onLogExercise(entry);
-            setSessionLog(s => [...s, { name: modal.exercise.name, xp: data.xp, supersetGroup }]);
+            const prevE1RM = (st.prs || {})[modal.exercise.name] || null;
+            setSessionLog(s => [...s, {
+              name: modal.exercise.name,
+              muscle: modal.muscle,
+              xp: data.xp,
+              sets: data.sets,
+              reps: data.reps,
+              weight: data.weight,
+              isPR: data.isPR,
+              newE1RM: data.newE1RM,
+              prevE1RM,
+              supersetGroup,
+              date: Date.now(),
+            }]);
+            if (sessionStart == null) setSessionStart(Date.now());
             setLogModal(null); setEditModal(null);
             setTab("log"); setSelDay(todayDayIdx);
             toast(`${modal.exercise.name} logged! +${data.xp} XP`, GOLD);
@@ -3796,6 +4040,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
   };
 
   // Always show browseable exercises — plan is shown as a separate banner above
+  const travelMode = settings?.travelMode === true;
   const allExercises = (isSearching || bookmarksOnly)
     ? [...Object.entries(EXERCISE_DB).flatMap(([, exs]) => exs), ...allCustom]
     : getExercisesForMuscle(selMuscle);
@@ -3804,12 +4049,14 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
     : (bookmarksOnly
       ? allExercises.filter(e => bookmarkedSet.has(e.name))
       : allExercises)
-  ).slice().sort((a, b) => {
-    // Bookmarked first (when not filtered to bookmarks-only), then alphabetical
-    const aB = bookmarkedSet.has(a.name), bB = bookmarkedSet.has(b.name);
-    if (!bookmarksOnly && aB !== bB) return aB ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  )
+    .filter(e => !travelMode || isTravelFriendly(e, settings?.travelEquipment))
+    .slice().sort((a, b) => {
+      // Bookmarked first (when not filtered to bookmarks-only), then alphabetical
+      const aB = bookmarkedSet.has(a.name), bB = bookmarkedSet.has(b.name);
+      if (!bookmarksOnly && aB !== bB) return aB ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
 
   const handleSaveCustom = () => {
     if (!cName.trim()) { toast("Enter a name", RED); return; }
@@ -3826,7 +4073,10 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   return (
     <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>{themeLabel(settings,"database","DATABASE")}</div>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+        {themeLabel(settings,"database","DATABASE")}
+        {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
+      </div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, letterSpacing: 2, marginBottom: 18 }}>EXERCISE COMPENDIUM</div>
 
       {/* Search */}
@@ -4196,6 +4446,9 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   const [logModal, setLogModal] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [randoMode, setRandoMode] = useState(false);
+  const [sessionLog, setSessionLog] = useState([]);
+  const [sessionStart, setSessionStart] = useState(null);
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
   const _savedRando = (() => { try { return JSON.parse(localStorage.getItem("ir_rando_plan") || "{}"); } catch { return {}; } })();
   const [randoMuscles, setRandoMuscles] = useState(_savedRando.muscles || []);
   const [randoPlan, setRandoPlan] = useState(_savedRando.plan || null);
@@ -4624,6 +4877,23 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           </div>
         )}
 
+        {/* FINISH SESSION — only on today, only when sessionLog has items */}
+        {selDay === todayIdx && sessionLog.length > 0 && (
+          <button onClick={() => setFinishModalOpen(true)} style={{
+            width: "100%", marginTop: 14,
+            background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}11)`,
+            border: `1px solid ${GOLD}66`, borderRadius: 10,
+            padding: "12px 14px", cursor: "pointer",
+            fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 3,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <span>FINISH SESSION ▶</span>
+            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, opacity: 0.85 }}>
+              {sessionLog.length} ex · +{sessionLog.reduce((s,l)=>s+(l.xp||0),0)} XP
+            </span>
+          </button>
+        )}
+
         {/* Weekly XP summary */}
         <div style={{ marginTop: 20, background: BG2, border: `1px solid ${GOLD}22`,
           borderRadius: 10, padding: "12px 14px" }}>
@@ -4795,6 +5065,15 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 date: entryDate });
               // If editing, unlog the original entry first
               if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
+              if (!modal.originalEntry && selDay === todayIdx) {
+                const prevE1RM = (st.prs || {})[modal.exercise.name] || null;
+                setSessionLog(s => [...s, {
+                  name: modal.exercise.name, muscle: modal.muscle,
+                  xp: data.xp, sets: data.sets, reps: data.reps, weight: data.weight,
+                  isPR: data.isPR, newE1RM: data.newE1RM, prevE1RM, date: Date.now(),
+                }]);
+                if (sessionStart == null) setSessionStart(Date.now());
+              }
               setLogModal(null); setEditEntry(null);
               const dayLabel2 = selDay === todayIdx ? "today" : DAYS[selDay];
               toast(`${modal.exercise.name} logged for ${dayLabel2}! +${data.xp} XP`, GOLD);
@@ -4803,6 +5082,20 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           />
         );
       })()}
+
+      {finishModalOpen && (
+        <WorkoutFinishModal
+          sessionLog={sessionLog}
+          sessionStart={sessionStart}
+          onClose={() => setFinishModalOpen(false)}
+          onComplete={() => {
+            setSessionLog([]);
+            setSessionStart(null);
+            setFinishModalOpen(false);
+            toast("Session complete · well fought", GOLD);
+          }}
+        />
+      )}
 
       {/* Randomizer muscle picker */}
       {randoMode && (
@@ -6389,6 +6682,79 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               </div>
             </div>
 
+            {/* Modes */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 10 }}>{"// MODES"}</div>
+              {(() => {
+                const isOn = settings?.travelMode === true;
+                const equipList = Array.isArray(settings?.travelEquipment) && settings.travelEquipment.length > 0
+                  ? settings.travelEquipment
+                  : ["BODYWEIGHT", "CARDIO"];
+                const toggleEquip = (id) => {
+                  const set = new Set(equipList);
+                  if (set.has(id)) set.delete(id); else set.add(id);
+                  onUpdateSettings({ travelEquipment: [...set] });
+                };
+                return (
+                  <>
+                    <div onClick={() => onUpdateSettings({ travelMode: !isOn })} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "12px 14px", marginBottom: isOn ? 8 : 6, cursor: "pointer",
+                      background: BG3, border: `1px solid ${isOn ? GOLD : ACCENT2 + "33"}`, borderRadius: 8
+                    }}>
+                      <div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
+                          ✈ Travel mode
+                        </div>
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                          Filter the database to whatever equipment you have access to
+                        </div>
+                      </div>
+                      <div style={{ width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+                        background: isOn ? GOLD : MUTED + "44", border: `1px solid ${isOn ? GOLD + "88" : MUTED + "44"}`,
+                        position: "relative", transition: "all .2s" }}>
+                        <div style={{ position: "absolute", top: 3, left: isOn ? 21 : 3,
+                          width: 14, height: 14, borderRadius: "50%",
+                          background: isOn ? "#fff" : MUTED, transition: "left .2s",
+                          boxShadow: isOn ? `0 0 6px ${GOLD}` : "none" }} />
+                      </div>
+                    </div>
+
+                    {isOn && (
+                      <div style={{ background: `${GOLD}06`, border: `1px solid ${GOLD}33`, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GOLD, letterSpacing: 2, marginBottom: 8 }}>
+                          {"// EQUIPMENT AVAILABLE"}
+                        </div>
+                        {EQUIPMENT_CATEGORIES.map(eq => {
+                          const on = equipList.includes(eq.id);
+                          return (
+                            <div key={eq.id} onClick={() => toggleEquip(eq.id)} style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "6px 4px", cursor: "pointer",
+                            }}>
+                              <div style={{
+                                width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                background: on ? GOLD : "transparent",
+                                border: `1.5px solid ${on ? GOLD : MUTED}`,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                color: BG, fontSize: 11, fontWeight: 900,
+                              }}>{on ? "✓" : ""}</div>
+                              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: on ? TEXT : MUTED }}>
+                                {eq.name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 8, lineHeight: 1.4 }}>
+                          Default is a typical hotel gym (bodyweight, dumbbells, kettlebells, cardio). Add or remove based on what's at your location.
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
             {/* Toggles */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 10 }}>{"// NOTIFICATIONS"}</div>
@@ -7021,6 +7387,81 @@ function _workoutTonnage(w) {
   return weight * reps * sets;
 }
 
+// ─── MUSCLE RECOVERY ─────────────────────────────────────────────────────────
+// Heuristic recovery state per major muscle group based on time since last
+// session targeting it. No volume weighting — keeps the logic simple and
+// transparent. Thresholds tuned for hypertrophy/recovery norms.
+
+const RECOVERY_MUSCLES = [
+  { key: "chest",     name: "Chest" },
+  { key: "back",      name: "Back" },
+  { key: "shoulders", name: "Shoulders" },
+  { key: "bicep",     name: "Biceps" },
+  { key: "tricep",    name: "Triceps" },
+  { key: "forearms",  name: "Forearms" },
+  { key: "legs",      name: "Legs" },
+  { key: "glutes",    name: "Glutes" },
+  { key: "calves",    name: "Calves" },
+  { key: "core",      name: "Core" },
+];
+
+function _recoveryState(hoursAgo) {
+  if (hoursAgo == null)  return { label: "UNTRAINED", color: "#666",   weight: 0 };
+  if (hoursAgo < 24)     return { label: "FATIGUED",  color: "#e05555", weight: 4 };
+  if (hoursAgo < 48)     return { label: "RECOVERING",color: "#f59e0b", weight: 3 };
+  if (hoursAgo < 72)     return { label: "RECOVERED", color: "#e8c44a", weight: 2 };
+  return                     { label: "FRESH",      color: "#4ecb71", weight: 1 };
+}
+
+function _computeRecovery(workouts) {
+  const lastByMuscle = {};
+  for (const w of workouts || []) {
+    if (!w?.date || !w?.muscle) continue;
+    if (!lastByMuscle[w.muscle] || w.date > lastByMuscle[w.muscle]) {
+      lastByMuscle[w.muscle] = w.date;
+    }
+  }
+  const now = Date.now();
+  return RECOVERY_MUSCLES.map(m => {
+    const last = lastByMuscle[m.key];
+    const hoursAgo = last ? (now - last) / 3600000 : null;
+    return { ...m, hoursAgo, lastDate: last, state: _recoveryState(hoursAgo) };
+  });
+}
+
+function RecoveryGrid({ workouts }) {
+  const rows = useMemo(() => _computeRecovery(workouts), [workouts]);
+  return (
+    <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>
+        [ MUSCLE RECOVERY ]
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        {rows.map(r => (
+          <div key={r.key} style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "7px 9px", background: `${r.state.color}11`,
+            border: `1px solid ${r.state.color}44`, borderRadius: 6,
+          }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+              background: r.state.color, boxShadow: `0 0 6px ${r.state.color}88`,
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.1 }}>
+                {r.name}
+              </div>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: r.state.color, letterSpacing: 1 }}>
+                {r.lastDate ? _timeAgo(r.lastDate) : "never"}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function _weeklyTonnage(workouts, weeks = 12) {
   const now = Date.now();
   const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -7115,7 +7556,7 @@ function VolumeChart({ workouts }) {
 }
 
 
-function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, toast }) {
+function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, onSetPatronLift, toast }) {
   const st = store.profiles[store.activeId];
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
@@ -7144,9 +7585,10 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   };
 
   const specialStats = ["cardio", "calisthenics"];
-  const [selectedMuscle, setSelectedMuscle] = useState(null);
-  const [prHistoryOpen, setPrHistoryOpen]   = useState(false);
-  const [heatmapOpen, setHeatmapOpen]       = useState(false);
+  const [selectedMuscle, setSelectedMuscle]   = useState(null);
+  const [prHistoryOpen, setPrHistoryOpen]     = useState(false);
+  const [heatmapOpen, setHeatmapOpen]         = useState(false);
+  const [patronPickerOpen, setPatronPickerOpen] = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -7335,6 +7777,100 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
+        {/* ── PATRON LIFT ── */}
+        {(() => {
+          const prs = st.prs || {};
+          const prKeys = Object.keys(prs);
+          const patronLift = st.patronLift || null;
+          const patronE1RM = patronLift ? prs[patronLift] : null;
+          const hasAnyPr = prKeys.length > 0;
+          return (
+            <div style={{ marginBottom: 8 }}>
+              {patronLift ? (
+                <div style={{ background: `${GOLD}0e`, border: `1px solid ${GOLD}44`, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 2 }}>SIGNATURE LIFT</div>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{patronLift}</div>
+                    {patronE1RM && (
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, marginTop: 2 }}>
+                        est. 1RM · <span style={{ fontWeight: 700 }}>{Math.round(wtVal(patronE1RM))} {wtLabel()}</span>
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setPatronPickerOpen(true)} style={{
+                    background: `${GOLD}22`, border: `1px solid ${GOLD}55`, borderRadius: 7,
+                    padding: "7px 12px", cursor: "pointer",
+                    fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, fontWeight: 700, letterSpacing: 1,
+                    flexShrink: 0,
+                  }}>CHANGE</button>
+                </div>
+              ) : (
+                <button disabled={!hasAnyPr} onClick={() => hasAnyPr && setPatronPickerOpen(true)} style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  background: hasAnyPr ? `${GOLD}08` : BG3, border: `1px solid ${hasAnyPr ? GOLD + "33" : MUTED + "22"}`,
+                  borderRadius: 8, padding: "12px 14px", cursor: hasAnyPr ? "pointer" : "default",
+                  fontFamily: "'Rajdhani',sans-serif",
+                }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 16, opacity: hasAnyPr ? 0.7 : 0.3 }}>🏆</span>
+                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: hasAnyPr ? GOLD : MUTED, letterSpacing: 2, fontWeight: 700 }}>
+                      {hasAnyPr ? "PIN SIGNATURE LIFT" : "EARN A PR TO PIN"}
+                    </span>
+                  </span>
+                  {hasAnyPr && <span style={{ fontSize: 10, color: GOLD, opacity: 0.6 }}>SELECT →</span>}
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Patron lift picker modal */}
+        {patronPickerOpen && (() => {
+          const prs = st.prs || {};
+          const sorted = Object.entries(prs).sort((a, b) => b[1] - a[1]);
+          return (
+            <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+              onClick={() => setPatronPickerOpen(false)}>
+              <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+                background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+                border: `1px solid ${GOLD}33`, borderTop: `2px solid ${GOLD}`,
+                width: "100%", maxWidth: 480, padding: "20px 18px 40px",
+                maxHeight: "70vh", overflowY: "auto",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD, letterSpacing: 3 }}>SELECT SIGNATURE LIFT</div>
+                  <button onClick={() => setPatronPickerOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+                </div>
+                {st.patronLift && (
+                  <button onClick={() => { (onSetPatronLift || (n => onUpdateProfile(store.activeId, { patronLift: n })))(null); setPatronPickerOpen(false); }} style={{
+                    width: "100%", padding: "10px 14px", marginBottom: 10, cursor: "pointer",
+                    background: `${RED}11`, border: `1px solid ${RED}33`, borderRadius: 8,
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: RED, fontWeight: 700, textAlign: "left",
+                  }}>✕  REMOVE PIN</button>
+                )}
+                {sorted.map(([ex, e1rm]) => {
+                  const isPinned = ex === st.patronLift;
+                  return (
+                    <button key={ex} onClick={() => { (onSetPatronLift || (n => onUpdateProfile(store.activeId, { patronLift: n })))(ex); setPatronPickerOpen(false); }} style={{
+                      width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                      background: isPinned ? `${GOLD}18` : "none",
+                      border: "none", borderBottom: `1px solid ${ACCENT}11`,
+                      padding: "11px 4px", cursor: "pointer",
+                    }}>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: isPinned ? GOLD : TEXT, fontWeight: isPinned ? 700 : 400 }}>
+                        {isPinned && "★ "}{ex}
+                      </span>
+                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>
+                        {Math.round(wtVal(e1rm))} {wtLabel()}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Progression entry points */}
         <button onClick={() => setPrHistoryOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -7385,6 +7921,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </div>
 
         <VolumeChart workouts={st.workouts || []} />
+
+        <RecoveryGrid workouts={st.workouts || []} />
 
         {(() => {
           const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
@@ -7746,6 +8284,20 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
             Last active {_timeAgo(profile.updated_at)}
           </span>
         </div>
+
+        {profile.patron_lift && (
+          <div style={{ background: `${GOLD}0e`, border: `1px solid ${GOLD}44`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 3 }}>SIGNATURE LIFT</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{profile.patron_lift}</span>
+              {profile.prs?.[profile.patron_lift] && (
+                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                  {Math.round(profile.prs[profile.patron_lift])} lbs est. 1RM
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {profile.prs && Object.keys(profile.prs).length > 0 && (
           <div style={{ marginBottom: 20 }}>
@@ -8857,6 +9409,15 @@ export default function IronRealm() {
     }
   };
 
+  const handleSetPatronLift = (exerciseName) => {
+    updateActive(p => ({ ...p, patronLift: exerciseName || null }));
+    if (session?.user) {
+      adminService.updateProfileField(session.user.id, { patron_lift: exerciseName || null })
+        .then(() => setRemoteProfile(r => r ? { ...r, patron_lift: exerciseName || null } : r))
+        .catch(() => {});
+    }
+  };
+
   const handleSaveCustomProgram = (prog, deleteId = null) => {
     updateActive(p => {
       const existing = p.customPrograms || [];
@@ -8918,7 +9479,7 @@ export default function IronRealm() {
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
-      {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} toast={toast} />}
+      {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onSetPatronLift={handleSetPatronLift} toast={toast} />}
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
       {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}
