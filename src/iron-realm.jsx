@@ -4446,6 +4446,9 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   const [logModal, setLogModal] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [randoMode, setRandoMode] = useState(false);
+  const [sessionLog, setSessionLog] = useState([]);
+  const [sessionStart, setSessionStart] = useState(null);
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
   const _savedRando = (() => { try { return JSON.parse(localStorage.getItem("ir_rando_plan") || "{}"); } catch { return {}; } })();
   const [randoMuscles, setRandoMuscles] = useState(_savedRando.muscles || []);
   const [randoPlan, setRandoPlan] = useState(_savedRando.plan || null);
@@ -4874,6 +4877,23 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           </div>
         )}
 
+        {/* FINISH SESSION — only on today, only when sessionLog has items */}
+        {selDay === todayIdx && sessionLog.length > 0 && (
+          <button onClick={() => setFinishModalOpen(true)} style={{
+            width: "100%", marginTop: 14,
+            background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}11)`,
+            border: `1px solid ${GOLD}66`, borderRadius: 10,
+            padding: "12px 14px", cursor: "pointer",
+            fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 3,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <span>FINISH SESSION ▶</span>
+            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, opacity: 0.85 }}>
+              {sessionLog.length} ex · +{sessionLog.reduce((s,l)=>s+(l.xp||0),0)} XP
+            </span>
+          </button>
+        )}
+
         {/* Weekly XP summary */}
         <div style={{ marginTop: 20, background: BG2, border: `1px solid ${GOLD}22`,
           borderRadius: 10, padding: "12px 14px" }}>
@@ -5045,6 +5065,15 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 date: entryDate });
               // If editing, unlog the original entry first
               if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
+              if (!modal.originalEntry && selDay === todayIdx) {
+                const prevE1RM = (st.prs || {})[modal.exercise.name] || null;
+                setSessionLog(s => [...s, {
+                  name: modal.exercise.name, muscle: modal.muscle,
+                  xp: data.xp, sets: data.sets, reps: data.reps, weight: data.weight,
+                  isPR: data.isPR, newE1RM: data.newE1RM, prevE1RM, date: Date.now(),
+                }]);
+                if (sessionStart == null) setSessionStart(Date.now());
+              }
               setLogModal(null); setEditEntry(null);
               const dayLabel2 = selDay === todayIdx ? "today" : DAYS[selDay];
               toast(`${modal.exercise.name} logged for ${dayLabel2}! +${data.xp} XP`, GOLD);
@@ -5053,6 +5082,20 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           />
         );
       })()}
+
+      {finishModalOpen && (
+        <WorkoutFinishModal
+          sessionLog={sessionLog}
+          sessionStart={sessionStart}
+          onClose={() => setFinishModalOpen(false)}
+          onComplete={() => {
+            setSessionLog([]);
+            setSessionStart(null);
+            setFinishModalOpen(false);
+            toast("Session complete · well fought", GOLD);
+          }}
+        />
+      )}
 
       {/* Randomizer muscle picker */}
       {randoMode && (
