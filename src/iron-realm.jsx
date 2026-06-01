@@ -1630,6 +1630,28 @@ function epley1RM(weight, reps) {
   return weight * (1 + reps / 30);
 }
 
+// RPE (Rate of Perceived Exertion) — 1-10 scale
+// Returns label + color for a given RPE value
+const RPE_META = {
+  6:  { label: "Easy",      color: "#4ade80", hint: "4+ reps left" },
+  7:  { label: "Moderate",  color: "#86efac", hint: "3 reps left" },
+  8:  { label: "Hard",      color: "#fbbf24", hint: "2 reps left" },
+  9:  { label: "Very hard", color: "#f97316", hint: "1 rep left" },
+  10: { label: "Max",       color: "#ef4444", hint: "Failure" },
+};
+
+// Suggest next-session weight change based on RPE
+// RPE ≤ 6: +5%   RPE 7: +2.5%   RPE 8: hold   RPE 9: hold   RPE 10: -5%
+function rpeWeightSuggestion(rpe, weight) {
+  if (!rpe || !weight) return null;
+  if (rpe <= 6)  return { delta: +Math.round(weight * 0.05), reason: "Too easy — push up" };
+  if (rpe === 7) return { delta: +Math.round(weight * 0.025), reason: "Room to grow" };
+  if (rpe === 8) return { delta: 0, reason: "Solid working weight" };
+  if (rpe === 9) return { delta: 0, reason: "Hold steady — push for +1 rep" };
+  if (rpe >= 10) return { delta: -Math.round(weight * 0.05), reason: "Pushed too hard — back off" };
+  return null;
+}
+
 // Intensity modifier: reward training close to your max [2]
 function intensityModifier(pct) {
   if (pct < 0.40) return 0.50;
@@ -3159,7 +3181,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const isCali   = exercise.type === "calisthenics";
   const isSpeed  = isCardio && exercise.cardioMode === "speed";
 
-  const defaultSet = { reps: "", weight: "" };
+  const defaultSet = { reps: "", weight: "", rpe: null };
   const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
   const updateSet = (i, field, val) => setSetRows(s => s.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const addSet    = () => setSetRows(s => [...s, { ...defaultSet }]);
@@ -3168,7 +3190,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
     for (let i = s.length - 1; i >= 0; i--) {
       const r = s[i];
       if (parseFloat(r.reps) > 0 && (parseFloat(r.weight) > 0 || isCali)) {
-        return [...s, { reps: r.reps, weight: r.weight }];
+        return [...s, { reps: r.reps, weight: r.weight, rpe: null }];
       }
     }
     return [...s, { ...defaultSet }];
@@ -3366,6 +3388,8 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                   const closePR = showE1RM && storedE1RM && !beatsPR
                     && setE1RM >= storedE1RM * 0.95;
                   const e1rmColor = beatsPR ? GOLD : closePR ? GOLD2 : MUTED;
+                  const rowFilled = repsN > 0 && (weightN > 0 || isCali);
+                  const rpeMeta = row.rpe ? RPE_META[row.rpe] || RPE_META[Math.min(10, Math.max(6, row.rpe))] : null;
                   return (
                     <div key={i} style={{ marginBottom: 5 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, alignItems: "center" }}>
@@ -3391,6 +3415,31 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                             </span>
                           )}
                           {beatsPR && <span style={{ color: GOLD, marginLeft: 6, fontWeight: 700 }}>★ NEW</span>}
+                        </div>
+                      )}
+                      {/* RPE picker — appears once reps + weight are filled, only for strength */}
+                      {rowFilled && !isCardio && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, paddingLeft: 38, marginTop: 4, marginBottom: 2 }}>
+                          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2, marginRight: 2 }}>RPE</span>
+                          {[6,7,8,9,10].map(v => {
+                            const m = RPE_META[v];
+                            const active = row.rpe === v;
+                            return (
+                              <button key={v} onClick={() => updateSet(i, "rpe", active ? null : v)} style={{
+                                width: 26, height: 22, padding: 0,
+                                background: active ? `${m.color}33` : "transparent",
+                                border: `1px solid ${active ? m.color : MUTED + "33"}`,
+                                borderRadius: 4, cursor: "pointer",
+                                fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+                                color: active ? m.color : MUTED,
+                              }}>{v}</button>
+                            );
+                          })}
+                          {rpeMeta && (
+                            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: rpeMeta.color, marginLeft: 4 }}>
+                              {rpeMeta.label}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -3463,6 +3512,40 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           </div>
         )}
 
+        {/* RPE-based next-session suggestion */}
+        {(() => {
+          const rpeRows = setRows.filter(r => r.rpe && parseFloat(r.weight) > 0);
+          if (rpeRows.length === 0 || isCali || isCardio) return null;
+          const lastRow = rpeRows[rpeRows.length - 1];
+          const wt = parseFloat(lastRow.weight);
+          const sugg = rpeWeightSuggestion(lastRow.rpe, wt);
+          if (!sugg) return null;
+          const nextWeight = wt + sugg.delta;
+          const arrow = sugg.delta > 0 ? "↑" : sugg.delta < 0 ? "↓" : "→";
+          const color = sugg.delta > 0 ? GREEN : sugg.delta < 0 ? RED : ACCENT;
+          return (
+            <div style={{ margin: "0 20px 12px", padding: "10px 12px",
+              background: `${color}0e`, border: `1px solid ${color}44`, borderRadius: 8 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color, letterSpacing: 3, marginBottom: 4 }}>
+                {"// NEXT SESSION SUGGESTION"}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT }}>
+                  {sugg.reason}
+                </div>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color }}>
+                  {arrow} {Math.round(wtVal(nextWeight))} {wtLabel()}
+                  {sugg.delta !== 0 && (
+                    <span style={{ fontSize: 9, marginLeft: 4, opacity: 0.7 }}>
+                      ({sugg.delta > 0 ? "+" : ""}{Math.round(wtVal(sugg.delta))})
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         </div>{/* end scrollable content */}
         <div style={{ padding: "8px 20px 16px", borderTop: `1px solid ${meta.color}22` }}>
         <button className="btn-gold" onClick={() => {
@@ -3475,6 +3558,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
               reps: parseFloat(r.reps) || 0,
               // Always store in lbs internally; convert from kg if needed
               weight: wtValBack(parseFloat(r.weight) || 0),
+              ...(r.rpe ? { rpe: r.rpe } : {}),
             }));
             const avgWeight = setsDetail.reduce((s, r) => s + r.weight, 0) / setsDetail.length;
             const avgReps   = setsDetail.reduce((s, r) => s + r.reps, 0) / setsDetail.length;
