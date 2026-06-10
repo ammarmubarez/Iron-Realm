@@ -2031,6 +2031,26 @@ const CSS = `
   @keyframes streakFlame { 0%,100%{transform:scale(1)} 50%{transform:scale(1.25)} }
   .streak-flame { display:inline-block; animation: streakFlame 1.6s ease-in-out infinite; }
 
+  /* ── v1.9 CHARACTER HOLOGRAM ── */
+  @keyframes drawPath { from{stroke-dashoffset:1} to{stroke-dashoffset:0} }
+  .body-draw { stroke-dasharray: 1;
+    animation: drawPath 1.5s cubic-bezier(.4,0,.2,1) backwards;
+    animation-delay: calc(var(--i, 0) * 28ms); }
+  @keyframes musclesIn { from{opacity:0} to{opacity:1} }
+  .muscle-in { animation: musclesIn .7s ease-out backwards;
+    animation-delay: calc(.7s + var(--i, 0) * 55ms); }
+  @keyframes musclePulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .muscle-highlight { animation: musclePulse 1.1s ease-in-out infinite; }
+  @keyframes bodyBreathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.013)} }
+  .body-breathe { animation: bodyBreathe 4.5s ease-in-out 2.2s infinite; transform-origin: 50% 28%; }
+  @keyframes scanSweep { 0%{top:-14%} 60%{top:104%} 100%{top:104%} }
+  .body-scan { position:absolute; left:6%; right:6%; height:42px; pointer-events:none;
+    background: linear-gradient(180deg, transparent, ${ACCENT}14 35%, ${ACCENT}48 50%, ${ACCENT}14 65%, transparent);
+    mix-blend-mode: screen;
+    animation: scanSweep 4.6s cubic-bezier(.45,0,.55,1) 1.8s infinite; }
+  .holo-corner { position:absolute; width:18px; height:18px; pointer-events:none;
+    border-color: ${ACCENT}88; border-style: solid; border-width: 0; }
+
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
   .fade-in  { animation: fadeIn .4s ease-out both; }
@@ -2745,13 +2765,15 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
   const muscleGroups = _MUSCLE_PATHS[svgKey] || {};
   const bodyPaths    = _BODY_PATHS[svgKey]   || [];
   return (
-    <svg viewBox="0 0 676.49 1203.49" fill="none"
+    <svg viewBox="0 0 676.49 1203.49" fill="none" className="body-breathe"
       style={{ width: "100%", maxHeight: 380 }}>
-      {Object.entries(muscleGroups).map(([gid, paths]) => {
+      {Object.entries(muscleGroups).map(([gid, paths], gi) => {
         const color  = getColor(gid);
         const glow   = getGlow(gid);
         return (
-          <g key={gid} id={gid} style={glow ? { filter: glow } : undefined}>
+          <g key={gid} id={gid}
+            className={highlight === gid ? "muscle-in muscle-highlight" : "muscle-in"}
+            style={{ "--i": gi, ...(glow ? { filter: glow } : null) }}>
             {paths.map((p, i) => p.type === "line"
               ? <line key={i} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2}
                   stroke={p.fill === "none" ? LINE : color}
@@ -2770,8 +2792,10 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
       <g id="body-outline" fill="none" stroke={LINE}
         strokeLinecap="round" strokeLinejoin="round">
         {bodyPaths.map((p, i) => p.type === "line"
-          ? <line key={i} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} strokeWidth={p.sw}/>
-          : <path key={i} d={p.d} strokeWidth={p.sw}/>
+          ? <line key={i} className="body-draw" pathLength="1" style={{ "--i": i }}
+              x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} strokeWidth={p.sw}/>
+          : <path key={i} className="body-draw" pathLength="1" style={{ "--i": i }}
+              d={p.d} strokeWidth={p.sw}/>
         )}
       </g>
       {showCardio && (levels.cardio||1) > 5 && (
@@ -2787,9 +2811,22 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
 function BodyFigure({ levels, subLevels, gender, highlight }) {
   const isFemale = gender === "female";
   return (
-    <div style={{ display: "flex", gap: 2, width: "100%", justifyContent: "center" }}>
-      <SvgFigure svgKey={isFemale ? "femaleFront" : "maleFront"} levels={levels} subLevels={subLevels} showCardio highlight={highlight} />
-      <SvgFigure svgKey={isFemale ? "femaleBack"  : "maleBack"}  levels={levels} subLevels={subLevels} highlight={highlight} />
+    <div style={{ position: "relative", padding: "26px 10px 18px", overflow: "hidden",
+      background: `radial-gradient(ellipse at 50% 40%, ${ACCENT}08 0%, transparent 70%)` }}>
+      {/* Holographic corner brackets */}
+      <div className="holo-corner" style={{ top: 6, left: 6, borderTopWidth: 1.5, borderLeftWidth: 1.5 }} />
+      <div className="holo-corner" style={{ top: 6, right: 6, borderTopWidth: 1.5, borderRightWidth: 1.5 }} />
+      <div className="holo-corner" style={{ bottom: 6, left: 6, borderBottomWidth: 1.5, borderLeftWidth: 1.5 }} />
+      <div className="holo-corner" style={{ bottom: 6, right: 6, borderBottomWidth: 1.5, borderRightWidth: 1.5 }} />
+      <div style={{ position: "absolute", top: 10, left: 0, right: 0, textAlign: "center",
+        fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 5,
+        opacity: 0.7, animation: "cornerBlink 4s linear infinite" }}>{"// BODY MATRIX"}</div>
+      <div style={{ display: "flex", gap: 2, width: "100%", justifyContent: "center" }}>
+        <SvgFigure svgKey={isFemale ? "femaleFront" : "maleFront"} levels={levels} subLevels={subLevels} showCardio highlight={highlight} />
+        <SvgFigure svgKey={isFemale ? "femaleBack"  : "maleBack"}  levels={levels} subLevels={subLevels} highlight={highlight} />
+      </div>
+      {/* System scan sweep */}
+      <div className="body-scan" />
     </div>
   );
 }
@@ -2839,7 +2876,7 @@ function TiltCard({ children, max = 7, style }) {
 }
 
 // Animated number: eases from previous value to the new one
-function CountUp({ value, decimals = 0, duration = 900 }) {
+function CountUp({ value, decimals = 0, duration = 900, locale = false }) {
   const [disp, setDisp] = useState(value);
   const prevRef = useRef(null);
   useEffect(() => {
@@ -2857,7 +2894,7 @@ function CountUp({ value, decimals = 0, duration = 900 }) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [value, duration]);
-  return <>{disp.toFixed(decimals)}</>;
+  return <>{locale ? Math.round(disp).toLocaleString() : disp.toFixed(decimals)}</>;
 }
 
 function XPBar({ current, needed, color = ACCENT, height = 6 }) {
@@ -4279,7 +4316,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   return (
     <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
         {themeLabel(settings,"database","DATABASE")}
         {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
       </div>
@@ -4392,7 +4429,8 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
           const subs = ex.svgTargets ? ex.svgTargets.map(t => MUSCLE_META[t]?.name).filter(Boolean) : [];
           const isBookmarked = bookmarkedSet.has(ex.name);
           return (
-            <div key={i} style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div key={ex.name} className="card-in" style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px",
+              animationDelay: `${Math.min(i, 8) * 45}ms` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                   <button onClick={() => onToggleBookmark?.(ex.name)} title={isBookmarked ? "Remove bookmark" : "Bookmark"} style={{
@@ -4865,10 +4903,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 const mm = MUSCLE_META[ex.muscle] || MUSCLE_META.chest;
                 const alreadyLogged = byDay[selDay].some(w => w.exerciseName === ex.name);
                 return (
-                  <div key={i} style={{ background: BG2,
+                  <div key={i} className="card-in" style={{ background: BG2,
                     border: `1px solid ${alreadyLogged ? GREEN+"44" : mm.color+"22"}`,
                     borderLeft: `3px solid ${alreadyLogged ? GREEN : mm.color}`,
-                    borderRadius: 8, padding: "10px 12px",
+                    borderRadius: 8, padding: "10px 12px", animationDelay: `${Math.min(i, 8) * 55}ms`,
                     display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
@@ -7901,11 +7939,12 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             const isActive = p.id === store.activeId;
             const r = getRank(p.overallLevel);
             return (
-              <button key={p.id} onClick={() => onSwitchProfile(p.id)} style={{
+              <button key={p.id} className="card-in" onClick={() => onSwitchProfile(p.id)} style={{
                 background: isActive ? `${ACCENT}22` : BG3,
                 border: `1px solid ${isActive ? ACCENT : ACCENT2 + "44"}`,
                 borderRadius: 10, padding: "8px 14px", cursor: "pointer", flexShrink: 0,
-                textAlign: "center", minWidth: 80, transition: "all .15s"
+                textAlign: "center", minWidth: 80, transition: "all .15s",
+                animationDelay: `${profiles.indexOf(p) * 70}ms`
               }}>
                 <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
                   color: r.color, textShadow: isActive ? `0 0 10px ${r.color}66` : "none" }}>{r.rank}</div>
@@ -7921,16 +7960,40 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
       </div>
 
       <div style={{ padding: "16px 18px" }}>
-        {/* ── RANK CARD ── */}
-        <div style={{ background: `${rank.color}11`, border: `1px solid ${rank.color}44`,
-          borderRadius: 14, padding: "16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start" }}>
+        {/* ── RANK CARD — tilts toward touch, glare tracks the pointer ── */}
+        <TiltCard>
+        <div className="card-in" style={{ background: `${rank.color}11`, border: `1px solid ${rank.color}44`,
+          borderRadius: 14, padding: "16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start",
+          position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
+            background: "radial-gradient(circle at var(--gx,50%) var(--gy,50%), #ffffff10, transparent 55%)" }} />
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3 }}>OVERALL RANK</div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 38, fontWeight: 900,
-                  color: rank.color, textShadow: `0 0 24px ${rank.color}66`, lineHeight: 1 }}>{rank.rank}</div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: rank.color, letterSpacing: 2 }}>{rank.label}</div>
+              <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                {/* Mini animated rank emblem */}
+                <div style={{ position: "relative", width: 64, height: 64, flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ position: "absolute", inset: -6, borderRadius: "50%",
+                    background: `conic-gradient(from 0deg, transparent, ${rank.color}55, transparent 32%)`,
+                    animation: "auraSpin 5s linear infinite", filter: "blur(5px)" }} />
+                  <svg className="emblem-ring" width="64" height="64" viewBox="0 0 64 64"
+                    style={{ position: "absolute", inset: 0 }}>
+                    <circle cx="32" cy="32" r="30" fill="none" stroke={rank.color} strokeWidth="1"
+                      strokeDasharray="8 10" opacity="0.75" />
+                  </svg>
+                  <svg className="emblem-ring2" width="64" height="64" viewBox="0 0 64 64"
+                    style={{ position: "absolute", inset: 0 }}>
+                    <circle cx="32" cy="32" r="24" fill="none" stroke={rank.color} strokeWidth="0.7"
+                      strokeDasharray="2 7" opacity="0.5" />
+                  </svg>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 30, fontWeight: 900,
+                    color: rank.color, textShadow: `0 0 20px ${rank.color}, 0 0 40px ${rank.color}66`,
+                    lineHeight: 1, animation: "emblemPulse 2.8s ease-in-out infinite" }}>{rank.rank}</div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3 }}>OVERALL RANK</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: rank.color, letterSpacing: 2, fontWeight: 700 }}>{rank.label}</div>
+                </div>
               </div>
               <button onClick={() => { setEditMode(!editMode); setEditName(st.name); setEditAge(String(st.age||"")); setEditWeight(String(st.weightLbs||170)); setEditHeightFt(String(Math.floor((st.heightIn||70)/12))); setEditHeightIn(String((st.heightIn||70)%12)); setEditGender(st.gender||"male"); }} style={{
                 background: editMode ? `${GOLD}22` : BG3, border: `1px solid ${editMode ? GOLD : ACCENT2 + "44"}`,
@@ -7942,12 +8005,15 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             <div style={{ marginTop: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: ACCENT }}>LVL {st.overallLevel}</span>
-                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{current.toLocaleString()} / {needed.toLocaleString()} XP</span>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}><CountUp value={current} locale duration={1200} /> / {needed.toLocaleString()} XP</span>
               </div>
-              <XPBar current={current} needed={needed} color={rank.color} height={6} />
+              <div className="shimmer-bar">
+                <XPBar current={current} needed={needed} color={rank.color} height={6} />
+              </div>
             </div>
           </div>
         </div>
+        </TiltCard>
 
         {/* ── EDIT FORM ── */}
         {editMode && (
@@ -8028,8 +8094,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           </div>
         )}
 
-        {/* ── BODY FIGURE ── */}
-        <div style={{ marginBottom: 16, padding: "0 8px" }}>
+        {/* ── BODY FIGURE — holographic scan frame ── */}
+        <div className="card-in card-in-2" style={{ marginBottom: 16, padding: "0 8px" }}>
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
@@ -8128,6 +8194,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         })()}
 
         {/* Progression entry points */}
+        <Reveal dir="left">
         <button onClick={() => setPrHistoryOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 8,
@@ -8144,7 +8211,9 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             {Object.keys(st.prs || {}).length} TRACKED →
           </span>
         </button>
+        </Reveal>
 
+        <Reveal dir="right" delay={80}>
         <button onClick={() => setHeatmapOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: `${ACCENT}10`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
@@ -8169,16 +8238,19 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             13 WEEKS →
           </span>
         </button>
+        </Reveal>
 
         {/* ── STATS ── */}
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-          {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
-        </div>
+        <Reveal dir="scale">
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+            {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
+          </div>
+        </Reveal>
 
-        <VolumeChart workouts={st.workouts || []} />
+        <Reveal><VolumeChart workouts={st.workouts || []} /></Reveal>
 
-        <RecoveryGrid workouts={st.workouts || []} />
+        <Reveal><RecoveryGrid workouts={st.workouts || []} /></Reveal>
 
         {(() => {
           const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
@@ -8221,16 +8293,18 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           );
         })()}
 
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
-        <StatTree
-          tree={STAT_TREE}
-          getGroupXP={getGroupXP}
-          getSuperXP={getSuperXP}
-          subStats={subStats}
-          subLevels={subLevels}
-          selectedMuscle={selectedMuscle}
-          onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
-        />
+        <Reveal>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
+          <StatTree
+            tree={STAT_TREE}
+            getGroupXP={getGroupXP}
+            getSuperXP={getSuperXP}
+            subStats={subStats}
+            subLevels={subLevels}
+            selectedMuscle={selectedMuscle}
+            onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
+          />
+        </Reveal>
       </div>
 
       {prHistoryOpen && (
