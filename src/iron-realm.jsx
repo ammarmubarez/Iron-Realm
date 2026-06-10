@@ -1977,6 +1977,42 @@ const CSS = `
   @keyframes sysBoot { 0%{clip-path:inset(0 100% 0 0)} 100%{clip-path:inset(0 0% 0 0)} }
   @keyframes cornerBlink { 0%,90%,100%{opacity:1} 95%{opacity:.3} }
 
+  /* ── v1.9 MOTION PACK ── */
+  @keyframes auraSpin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+  @keyframes ringSpinRev { from{transform:rotate(360deg)} to{transform:rotate(0deg)} }
+  @keyframes shimmerSweep { 0%{left:-60%} 100%{left:130%} }
+  @keyframes glitchIn {
+    0%{clip-path:inset(40% 0 42% 0);transform:translateX(-8px);opacity:0}
+    15%{clip-path:inset(8% 0 64% 0);transform:translateX(5px);opacity:.7}
+    30%{clip-path:inset(54% 0 6% 0);transform:translateX(-4px);opacity:.85}
+    45%{clip-path:inset(0 0 0 0);transform:translateX(3px);opacity:1}
+    60%{clip-path:inset(22% 0 38% 0);transform:translateX(-2px)}
+    75%{clip-path:inset(0 0 0 0);transform:translateX(1px)}
+    100%{clip-path:inset(0 0 0 0);transform:translateX(0);opacity:1}
+  }
+  @keyframes cardIn { from{transform:translateY(20px) scale(.97);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+  @keyframes orbRise { 0%{transform:translateY(0) translateX(0);opacity:0} 12%{opacity:.8} 85%{opacity:.25} 100%{transform:translateY(-64px) translateX(var(--drift,6px));opacity:0} }
+  @keyframes breatheGlow { 0%,100%{border-color:${ACCENT}33;box-shadow:inset 0 0 0 ${ACCENT}00} 50%{border-color:${ACCENT}99;box-shadow:inset 0 0 18px ${ACCENT}0c} }
+  @keyframes emblemPulse { 0%,100%{transform:scale(1);filter:brightness(1)} 50%{transform:scale(1.06);filter:brightness(1.3)} }
+
+  .glitch-in { animation: glitchIn .7s linear both; }
+  .card-in   { animation: cardIn .55s cubic-bezier(.16,1,.3,1) both; }
+  .card-in-1 { animation-delay: .06s } .card-in-2 { animation-delay: .14s }
+  .card-in-3 { animation-delay: .22s } .card-in-4 { animation-delay: .30s }
+  .card-in-5 { animation-delay: .38s } .card-in-6 { animation-delay: .46s }
+  .breathe   { animation: breatheGlow 3.2s ease-in-out infinite; }
+  .card-in.breathe { animation: cardIn .55s cubic-bezier(.16,1,.3,1) both, breatheGlow 3.2s ease-in-out .8s infinite; }
+  .shimmer-bar { position: relative; overflow: hidden; }
+  .shimmer-bar::after {
+    content:''; position:absolute; top:0; bottom:0; left:-60%; width:45%;
+    background: linear-gradient(100deg, transparent, #ffffff3e, transparent);
+    animation: shimmerSweep 2.6s ease-in-out 1.2s infinite;
+    pointer-events: none;
+  }
+  .emblem-ring  { animation: auraSpin 14s linear infinite; transform-origin: center; }
+  .emblem-ring2 { animation: ringSpinRev 9s linear infinite; transform-origin: center; }
+  button:active { transform: scale(.96); transition: transform .08s; }
+
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
   .fade-in  { animation: fadeIn .4s ease-out both; }
@@ -6151,50 +6187,78 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         {/* Top cyan line */}
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+        {/* Rising energy orbs */}
+        {[12, 30, 52, 71, 90].map((left, i) => (
+          <div key={i} style={{
+            position: "absolute", bottom: 4, left: `${left}%`, width: 3, height: 3,
+            borderRadius: "50%", background: i % 2 === 0 ? ACCENT : GOLD,
+            boxShadow: `0 0 6px ${i % 2 === 0 ? ACCENT : GOLD}`,
+            "--drift": `${(i % 3 - 1) * 14}px`,
+            animation: `orbRise ${2.6 + i * 0.7}s ease-out ${i * 0.9}s infinite`,
+            pointerEvents: "none",
+          }} />
+        ))}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900, color: GOLD,
-              letterSpacing: 3, textShadow: `0 0 14px ${GOLD}88` }}>{st.name.toUpperCase()}</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <button onClick={() => setSettingsOpen("help")} style={{
-                background: "none", border: `1px solid ${MUTED}44`, borderRadius: "50%",
-                width: 28, height: 28, cursor: "pointer", color: MUTED,
-                fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
-                display: "flex", alignItems: "center", justifyContent: "center"
-              }}>?</button>
-              <button onClick={() => setSettingsOpen("settings")} style={{
-                background: "none", border: "none", cursor: "pointer",
-                color: MUTED, padding: 0, display: "flex", alignItems: "center"
-              }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="3"/>
-                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
-                </svg>
-              </button>
-            </div>
-            <div style={{ textAlign: "right" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {/* Animated rank emblem */}
+            <div style={{ position: "relative", width: 54, height: 54, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ position: "absolute", inset: -5, borderRadius: "50%",
+                background: `conic-gradient(from 0deg, transparent, ${rank.color}55, transparent 32%)`,
+                animation: "auraSpin 5s linear infinite", filter: "blur(5px)" }} />
+              <svg className="emblem-ring" width="54" height="54" viewBox="0 0 54 54"
+                style={{ position: "absolute", inset: 0 }}>
+                <circle cx="27" cy="27" r="25" fill="none" stroke={rank.color} strokeWidth="1"
+                  strokeDasharray="7 9" opacity="0.75" />
+              </svg>
+              <svg className="emblem-ring2" width="54" height="54" viewBox="0 0 54 54"
+                style={{ position: "absolute", inset: 0 }}>
+                <circle cx="27" cy="27" r="20" fill="none" stroke={rank.color} strokeWidth="0.7"
+                  strokeDasharray="2 7" opacity="0.5" />
+              </svg>
               <div style={{
-                fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900, color: rank.color,
-                textShadow: `0 0 20px ${rank.color}, 0 0 40px ${rank.color}66`,
-                lineHeight: 1
+                fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900, color: rank.color,
+                textShadow: `0 0 16px ${rank.color}, 0 0 34px ${rank.color}66`, lineHeight: 1,
+                animation: "emblemPulse 2.8s ease-in-out infinite",
               }}>{rank.rank}</div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: rank.color, letterSpacing: 3, opacity: 0.8 }}>{rank.label.toUpperCase()}</div>
             </div>
+            <div>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
+              <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900, color: GOLD,
+                letterSpacing: 3, textShadow: `0 0 14px ${GOLD}88` }}>{st.name.toUpperCase()}</div>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7, color: rank.color, letterSpacing: 3, opacity: 0.85, marginTop: 2 }}>{rank.label.toUpperCase()}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={() => setSettingsOpen("help")} style={{
+              background: "none", border: `1px solid ${MUTED}44`, borderRadius: "50%",
+              width: 28, height: 28, cursor: "pointer", color: MUTED,
+              fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>?</button>
+            <button onClick={() => setSettingsOpen("settings")} style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: MUTED, padding: 0, display: "flex", alignItems: "center"
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+              </svg>
+            </button>
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
           <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2, textShadow: `0 0 6px ${ACCENT}` }}>LVL {st.overallLevel}</span>
           <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{current.toLocaleString()} / {needed.toLocaleString()} XP</span>
         </div>
-        <XPBar current={current} needed={needed} color={GOLD} height={4} />
+        <div className="shimmer-bar">
+          <XPBar current={current} needed={needed} color={GOLD} height={4} />
+        </div>
       </div>
 
       <div style={{ padding: "20px" }}>
         {/* Today's mission */}
-        <div style={{
+        <div className="card-in card-in-1 breathe" style={{
           background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
           border: `1px solid ${ACCENT}44`, borderTop: `1px solid ${ACCENT}99`,
           clipPath: "polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))",
@@ -6225,7 +6289,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           const catColors = { TRAINING: ACCENT, RECOVERY: "#00ff88", NUTRITION: GOLD, "APP TIP": "#cc44ff" };
           const col = catColors[tip.category] || ACCENT;
           return (
-            <div onClick={() => setTipExpanded(e => !e)} style={{
+            <div className="card-in card-in-2" onClick={() => setTipExpanded(e => !e)} style={{
               background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
               border: `1px solid ${col}33`, borderLeft: `3px solid ${col}`,
               borderRadius: 10, padding: "12px 14px", marginBottom: 14, cursor: "pointer",
@@ -6267,7 +6331,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         })()}
 
         {/* ── WEIGHT WIDGET ── */}
-        <div style={{
+        <div className="card-in card-in-3" style={{
           background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
           border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}44`,
           clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
@@ -6332,10 +6396,11 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           )}
         </div>
 
-        {/* Quick actions */}}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        {/* Quick actions */}
+        <div className="card-in card-in-4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <button className="btn-primary" onClick={() => setScreen("schedule")}
-            style={{ padding: "16px", fontSize: 14, letterSpacing: 2 }}>
+            style={{ padding: "16px", fontSize: 14, letterSpacing: 2,
+              animation: "borderPulse 3s ease-in-out infinite" }}>
             <span style={{ fontSize: 11 }}>{_isShadow ? "BEGIN THE HUNT" : _isBeast ? "UNLEASH" : _isArchitect ? "INITIATE PROTOCOL" : "START TRAINING"}</span>
           </button>
           <button onClick={() => setScreen("character")} style={{
@@ -6348,7 +6413,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         </div>
 
         {/* Social actions */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div className="card-in card-in-5" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
           <button onClick={() => setScreen("leaderboard")} style={{
             background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
             padding: "12px", cursor: "pointer", transition: "all .2s",
