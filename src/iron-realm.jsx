@@ -2013,6 +2013,24 @@ const CSS = `
   .emblem-ring2 { animation: ringSpinRev 9s linear infinite; transform-origin: center; }
   button:active { transform: scale(.96); transition: transform .08s; }
 
+  /* ── v1.9 SCROLL + INTERACTIVE PACK ── */
+  .reveal { opacity: 0; transform: translateY(28px);
+    transition: opacity .65s cubic-bezier(.16,1,.3,1), transform .65s cubic-bezier(.16,1,.3,1); }
+  .reveal.reveal-left  { transform: translateX(-36px); }
+  .reveal.reveal-right { transform: translateX(36px); }
+  .reveal.reveal-scale { transform: scale(.9); }
+  .reveal.revealed { opacity: 1; transform: none; }
+  @keyframes rippleBurst { from{transform:scale(0);opacity:.55} to{transform:scale(3);opacity:0} }
+  .ripple-fx { position:absolute; border-radius:50%; pointer-events:none; z-index:5;
+    background: radial-gradient(circle, ${ACCENT}aa 0%, ${ACCENT}22 55%, transparent 72%);
+    animation: rippleBurst .55s ease-out forwards; }
+  .tilt-wrap { transition: transform .3s cubic-bezier(.16,1,.3,1); will-change: transform;
+    transform-style: preserve-3d; }
+  @keyframes checkPop { 0%{transform:scale(0) rotate(-30deg)} 60%{transform:scale(1.35) rotate(8deg)} 100%{transform:scale(1) rotate(0)} }
+  .check-pop { animation: checkPop .35s cubic-bezier(.16,1,.3,1) both; }
+  @keyframes streakFlame { 0%,100%{transform:scale(1)} 50%{transform:scale(1.25)} }
+  .streak-flame { display:inline-block; animation: streakFlame 1.6s ease-in-out infinite; }
+
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
   .fade-in  { animation: fadeIn .4s ease-out both; }
@@ -2774,6 +2792,72 @@ function BodyFigure({ levels, subLevels, gender, highlight }) {
       <SvgFigure svgKey={isFemale ? "femaleBack"  : "maleBack"}  levels={levels} subLevels={subLevels} highlight={highlight} />
     </div>
   );
+}
+
+/* ── v1.9 INTERACTIVE MOTION ── */
+// Scroll-reveal: fades/slides children in the first time they enter the viewport
+function Reveal({ children, dir = "up", delay = 0, style, className = "", ...rest }) {
+  const ref = useRef(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setSeen(true); return; }
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setSeen(true); obs.disconnect(); }
+    }, { threshold: 0.12 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  const dirClass = dir === "left" ? "reveal-left" : dir === "right" ? "reveal-right" : dir === "scale" ? "reveal-scale" : "";
+  return (
+    <div ref={ref} className={`reveal ${dirClass} ${seen ? "revealed" : ""} ${className}`}
+      style={{ ...style, transitionDelay: seen ? `${delay}ms` : "0ms" }} {...rest}>
+      {children}
+    </div>
+  );
+}
+
+// Pointer-tracking 3D tilt with a light glare that follows the finger/cursor
+function TiltCard({ children, max = 7, style }) {
+  const ref = useRef(null);
+  const move = e => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `perspective(700px) rotateY(${(px * max).toFixed(2)}deg) rotateX(${(-py * max).toFixed(2)}deg) scale(1.012)`;
+    el.style.setProperty("--gx", `${((px + 0.5) * 100).toFixed(1)}%`);
+    el.style.setProperty("--gy", `${((py + 0.5) * 100).toFixed(1)}%`);
+  };
+  const reset = () => { const el = ref.current; if (el) el.style.transform = ""; };
+  return (
+    <div ref={ref} className="tilt-wrap" style={style}
+      onPointerMove={move} onPointerLeave={reset} onPointerUp={reset} onPointerCancel={reset}>
+      {children}
+    </div>
+  );
+}
+
+// Animated number: eases from previous value to the new one
+function CountUp({ value, decimals = 0, duration = 900 }) {
+  const [disp, setDisp] = useState(value);
+  const prevRef = useRef(null);
+  useEffect(() => {
+    const from = prevRef.current === null ? 0 : prevRef.current;
+    prevRef.current = value;
+    if (from === value) { setDisp(value); return; }
+    const t0 = performance.now();
+    let raf;
+    const tick = now => {
+      const p = Math.min(1, (now - t0) / duration);
+      const e = 1 - Math.pow(1 - p, 3);
+      setDisp(from + (value - from) * e);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+  return <>{disp.toFixed(decimals)}</>;
 }
 
 function XPBar({ current, needed, color = ACCENT, height = 6 }) {
@@ -6139,7 +6223,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
+    <div onScroll={e => e.currentTarget.style.setProperty("--sy", e.currentTarget.scrollTop)}
+      style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
       {/* Background effects */}
       <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${ACCENT}0d 0%, transparent 60%)`, pointerEvents: "none" }} />
       {/* Shadow: void tendrils rising from the floor */}
@@ -6170,11 +6255,17 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             animation: "runeFloat 3s ease-in-out infinite" }} />
         </div>
       )}
-      {["⬡", "◈", "⟁"].map((r, i) => (
-        <div key={i} style={{ position: "absolute", fontSize: 16, color: ACCENT, top: `${20 + i * 25}%`,
-          left: i % 2 === 0 ? `${3 + i}%` : `${88 - i * 2}%`,
-          animation: `runeFloat ${3 + i}s ease-in-out ${i * 0.7}s infinite`, opacity: 0.12, pointerEvents: "none" }}>{r}</div>
-      ))}
+      {/* Parallax rune field — sticky layer, each rune drifts up at its own depth while you scroll */}
+      <div style={{ position: "sticky", top: 0, height: 0, zIndex: 0, pointerEvents: "none" }}>
+        {["⬡", "◈", "⟁", "✦", "◇", "⬢"].map((r, i) => (
+          <div key={i} style={{ position: "absolute", top: 120 + i * 115,
+            left: i % 2 === 0 ? `${4 + i}%` : `${86 - i * 2}%`,
+            transform: `translateY(calc(var(--sy, 0) * ${(-0.1 - (i % 3) * 0.14).toFixed(2)}px))` }}>
+            <div style={{ fontSize: 14 + (i % 3) * 4, color: i % 3 === 1 ? GOLD : ACCENT,
+              animation: `runeFloat ${3 + i}s ease-in-out ${i * 0.7}s infinite`, opacity: 0.1 + (i % 3) * 0.04 }}>{r}</div>
+          </div>
+        ))}
+      </div>
 
       {/* Header — System Window */}
       <div style={{
@@ -6257,13 +6348,16 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
       </div>
 
       <div style={{ padding: "20px" }}>
-        {/* Today's mission */}
+        {/* Today's mission — tilts in 3D toward your touch, with a tracking glare */}
+        <TiltCard>
         <div className="card-in card-in-1 breathe" style={{
           background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
           border: `1px solid ${ACCENT}44`, borderTop: `1px solid ${ACCENT}99`,
           clipPath: "polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))",
           padding: "16px", marginBottom: 16, position: "relative"
         }}>
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
+            background: "radial-gradient(circle at var(--gx,50%) var(--gy,50%), #ffffff12, transparent 55%)" }} />
           <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 4, marginBottom: 10,
             textShadow: `0 0 8px ${ACCENT}` }}>{"// DAILY MISSION"}</div>
           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 4 }}>{_isArchitect ? '[ SYSTEM ACTIVE ]' : _isShadow ? '[ SHADOW REALM ONLINE ]' : _isBeast ? '[ DESTRUCTION ENGAGED ]' : today}</div>
@@ -6282,6 +6376,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: MUTED }}>No program selected. Choose a program to get daily quests.</div>
           )}
         </div>
+        </TiltCard>
 
                 {/* ── DAILY TIP ── */}
         {(() => {
@@ -6344,7 +6439,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 20, fontWeight: 900,
                 color: GOLD, textShadow: `0 0 12px ${GOLD}66` }}>
-                {wtVal(st.weightLbs || 0).toFixed(1)}
+                <CountUp value={wtVal(st.weightLbs || 0)} decimals={1} />
               </div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
                 color: MUTED, fontWeight: 700 }}>{wtLabel().toUpperCase()}</div>
@@ -6459,6 +6554,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           const streak = _computeRitualStreak(completionLog);
           const allDone = DAILY_RITUALS.every(r => doneToday.has(r.id));
           return (
+            <Reveal dir="scale">
             <div style={{ background: `${GOLD}0a`, border: `1px solid ${GOLD}33`,
               borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
@@ -6466,7 +6562,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                   {"// DAILY RITUALS"}
                 </div>
                 <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: streak > 0 ? GOLD : MUTED, letterSpacing: 1 }}>
-                  {streak > 0 ? `${streak}🔥 day streak` : "no streak"}
+                  {streak > 0 ? <>{streak}<span className="streak-flame">🔥</span> day streak</> : "no streak"}
                 </div>
               </div>
               {DAILY_RITUALS.map(r => {
@@ -6476,7 +6572,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                     display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
                     padding: "8px 4px", borderBottom: `1px solid ${ACCENT2}11`,
                   }}>
-                    <div style={{
+                    <div className={done ? "check-pop" : ""} style={{
                       width: 18, height: 18, borderRadius: 4, flexShrink: 0,
                       background: done ? GOLD : "transparent",
                       border: `1.5px solid ${done ? GOLD : MUTED}`,
@@ -6498,11 +6594,13 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </div>
               )}
             </div>
+            </Reveal>
           );
         })()}
 
         {/* Equipped title selector — only show if user has unlocked any */}
         {(st.cosmetics?.unlockedTitles?.length || 0) > 0 && (
+          <Reveal dir="left">
           <div style={{ background: BG2, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>
               {"// EQUIPPED TITLE"}
@@ -6529,24 +6627,31 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               })}
             </div>
           </div>
+          </Reveal>
         )}
 
-        {/* Recent workouts */}
+        {/* Recent workouts — entries slide in from alternating sides on scroll */}
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 4, marginBottom: 10 }}>{_isBeast ? "[ RECENT KILLS ]" : _isShadow ? "[ SHADOW RECORD ]" : _isArchitect ? "[ ACTIVITY LOG ]" : "[ RECENT ACTIVITY ]"}</div>
+          <Reveal>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 4, marginBottom: 10 }}>{_isBeast ? "[ RECENT KILLS ]" : _isShadow ? "[ SHADOW RECORD ]" : _isArchitect ? "[ ACTIVITY LOG ]" : "[ RECENT ACTIVITY ]"}</div>
+          </Reveal>
           {st.workouts.length === 0 ? (
-            <div className="card" style={{ padding: 16, textAlign: "center" }}>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>No battles recorded yet.<br />Begin your first training session.</div>
-            </div>
+            <Reveal delay={80}>
+              <div className="card" style={{ padding: 16, textAlign: "center" }}>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>No battles recorded yet.<br />Begin your first training session.</div>
+              </div>
+            </Reveal>
           ) : (
             st.workouts.slice(-3).reverse().map((w, i) => (
-              <div key={i} className="card" style={{ padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{w.muscle ? MUSCLE_META[w.muscle]?.name : "Training"}</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{new Date(w.date).toLocaleDateString()}</div>
+              <Reveal key={i} dir={i % 2 === 0 ? "left" : "right"} delay={i * 90}>
+                <div className="card" style={{ padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{w.muscle ? MUSCLE_META[w.muscle]?.name : "Training"}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{new Date(w.date).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: GOLD }}>+{w.xp} XP</div>
                 </div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: GOLD }}>+{w.xp} XP</div>
-              </div>
+              </Reveal>
             ))
           )}
         </div>
@@ -9001,6 +9106,28 @@ function FriendsScreen({ account, toast }) {
 
 
 export default function IronRealm() {
+  // v1.9: energy ripple on every button press, spawned at the touch point
+  useEffect(() => {
+    const onDown = e => {
+      const btn = e.target.closest?.("button");
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const size = Math.max(r.width, r.height) * 1.2;
+      const fx = document.createElement("span");
+      fx.className = "ripple-fx";
+      fx.style.width = fx.style.height = `${size}px`;
+      fx.style.left = `${e.clientX - r.left - size / 2}px`;
+      fx.style.top = `${e.clientY - r.top - size / 2}px`;
+      const cs = getComputedStyle(btn);
+      if (cs.position === "static") btn.style.position = "relative";
+      if (cs.overflow !== "hidden") btn.style.overflow = "hidden";
+      btn.appendChild(fx);
+      setTimeout(() => fx.remove(), 600);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, []);
+
   const [store, setStore] = useState(() => {
     try {
       const s = localStorage.getItem("iron_realm_store_v1");
