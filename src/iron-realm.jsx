@@ -1719,13 +1719,15 @@ function getPRTimeline(workouts) {
 function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
   const weightKg = bodyWeightLbs * 0.453592;
   const met = MET_VALUES.strength[exercise.diff] || 5.0;
-  const durationHours = (reps * 3 + 90) / 3600; // 1 set
+  // Pure rep-volume: ~6s per controlled strength rep, no per-set overhead.
+  // Two sets of 10 now earn the same baseXP as one set of 20.
+  const durationHours = (reps * 6) / 3600;
   const baseXP = met * weightKg * durationHours;
 
   // Calisthenics: bodyweight + any added weight (plate, vest, etc.)
   if (exercise.type === "calisthenics") {
     const caliMet = MET_VALUES.calisthenics[exercise.diff] || 5.5;
-    const caliDur = (reps * 4 + 90) / 3600;
+    const caliDur = (reps * 4) / 3600;
     const totalKg = (bodyWeightLbs + (setWeightLbs || 0)) * 0.453592;
     return Math.round(caliMet * totalKg * caliDur);
   }
