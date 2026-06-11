@@ -1630,6 +1630,28 @@ function epley1RM(weight, reps) {
   return weight * (1 + reps / 30);
 }
 
+// RPE (Rate of Perceived Exertion) — 1-10 scale
+// Returns label + color for a given RPE value
+const RPE_META = {
+  6:  { label: "Easy",      color: "#4ade80", hint: "4+ reps left" },
+  7:  { label: "Moderate",  color: "#86efac", hint: "3 reps left" },
+  8:  { label: "Hard",      color: "#fbbf24", hint: "2 reps left" },
+  9:  { label: "Very hard", color: "#f97316", hint: "1 rep left" },
+  10: { label: "Max",       color: "#ef4444", hint: "Failure" },
+};
+
+// Suggest next-session weight change based on RPE
+// RPE ≤ 6: +5%   RPE 7: +2.5%   RPE 8: hold   RPE 9: hold   RPE 10: -5%
+function rpeWeightSuggestion(rpe, weight) {
+  if (!rpe || !weight) return null;
+  if (rpe <= 6)  return { delta: +Math.round(weight * 0.05), reason: "Too easy — push up" };
+  if (rpe === 7) return { delta: +Math.round(weight * 0.025), reason: "Room to grow" };
+  if (rpe === 8) return { delta: 0, reason: "Solid working weight" };
+  if (rpe === 9) return { delta: 0, reason: "Hold steady — push for +1 rep" };
+  if (rpe >= 10) return { delta: -Math.round(weight * 0.05), reason: "Pushed too hard — back off" };
+  return null;
+}
+
 // Intensity modifier: reward training close to your max [2]
 function intensityModifier(pct) {
   if (pct < 0.40) return 0.50;
@@ -1697,13 +1719,15 @@ function getPRTimeline(workouts) {
 function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
   const weightKg = bodyWeightLbs * 0.453592;
   const met = MET_VALUES.strength[exercise.diff] || 5.0;
-  const durationHours = (reps * 3 + 90) / 3600; // 1 set
+  // Pure rep-volume: ~6s per controlled strength rep, no per-set overhead.
+  // Two sets of 10 now earn the same baseXP as one set of 20.
+  const durationHours = (reps * 6) / 3600;
   const baseXP = met * weightKg * durationHours;
 
   // Calisthenics: bodyweight + any added weight (plate, vest, etc.)
   if (exercise.type === "calisthenics") {
     const caliMet = MET_VALUES.calisthenics[exercise.diff] || 5.5;
-    const caliDur = (reps * 4 + 90) / 3600;
+    const caliDur = (reps * 4) / 3600;
     const totalKg = (bodyWeightLbs + (setWeightLbs || 0)) * 0.453592;
     return Math.round(caliMet * totalKg * caliDur);
   }
@@ -1952,6 +1976,80 @@ const CSS = `
   @keyframes hexPulse { 0%,100%{opacity:.6;transform:scale(1)} 50%{opacity:1;transform:scale(1.04)} }
   @keyframes sysBoot { 0%{clip-path:inset(0 100% 0 0)} 100%{clip-path:inset(0 0% 0 0)} }
   @keyframes cornerBlink { 0%,90%,100%{opacity:1} 95%{opacity:.3} }
+
+  /* ── v1.9 MOTION PACK ── */
+  @keyframes auraSpin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+  @keyframes ringSpinRev { from{transform:rotate(360deg)} to{transform:rotate(0deg)} }
+  @keyframes shimmerSweep { 0%{left:-60%} 100%{left:130%} }
+  @keyframes glitchIn {
+    0%{clip-path:inset(40% 0 42% 0);transform:translateX(-8px);opacity:0}
+    15%{clip-path:inset(8% 0 64% 0);transform:translateX(5px);opacity:.7}
+    30%{clip-path:inset(54% 0 6% 0);transform:translateX(-4px);opacity:.85}
+    45%{clip-path:inset(0 0 0 0);transform:translateX(3px);opacity:1}
+    60%{clip-path:inset(22% 0 38% 0);transform:translateX(-2px)}
+    75%{clip-path:inset(0 0 0 0);transform:translateX(1px)}
+    100%{clip-path:inset(0 0 0 0);transform:translateX(0);opacity:1}
+  }
+  @keyframes cardIn { from{transform:translateY(20px) scale(.97);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+  @keyframes orbRise { 0%{transform:translateY(0) translateX(0);opacity:0} 12%{opacity:.8} 85%{opacity:.25} 100%{transform:translateY(-64px) translateX(var(--drift,6px));opacity:0} }
+  @keyframes breatheGlow { 0%,100%{border-color:${ACCENT}33;box-shadow:inset 0 0 0 ${ACCENT}00} 50%{border-color:${ACCENT}99;box-shadow:inset 0 0 18px ${ACCENT}0c} }
+  @keyframes emblemPulse { 0%,100%{transform:scale(1);filter:brightness(1)} 50%{transform:scale(1.06);filter:brightness(1.3)} }
+
+  .glitch-in { animation: glitchIn .7s linear both; }
+  .card-in   { animation: cardIn .55s cubic-bezier(.16,1,.3,1) both; }
+  .card-in-1 { animation-delay: .06s } .card-in-2 { animation-delay: .14s }
+  .card-in-3 { animation-delay: .22s } .card-in-4 { animation-delay: .30s }
+  .card-in-5 { animation-delay: .38s } .card-in-6 { animation-delay: .46s }
+  .breathe   { animation: breatheGlow 3.2s ease-in-out infinite; }
+  .card-in.breathe { animation: cardIn .55s cubic-bezier(.16,1,.3,1) both, breatheGlow 3.2s ease-in-out .8s infinite; }
+  .shimmer-bar { position: relative; overflow: hidden; }
+  .shimmer-bar::after {
+    content:''; position:absolute; top:0; bottom:0; left:-60%; width:45%;
+    background: linear-gradient(100deg, transparent, #ffffff3e, transparent);
+    animation: shimmerSweep 2.6s ease-in-out 1.2s infinite;
+    pointer-events: none;
+  }
+  .emblem-ring  { animation: auraSpin 14s linear infinite; transform-origin: center; }
+  .emblem-ring2 { animation: ringSpinRev 9s linear infinite; transform-origin: center; }
+  button:active { transform: scale(.96); transition: transform .08s; }
+
+  /* ── v1.9 SCROLL + INTERACTIVE PACK ── */
+  .reveal { opacity: 0; transform: translateY(28px);
+    transition: opacity .65s cubic-bezier(.16,1,.3,1), transform .65s cubic-bezier(.16,1,.3,1); }
+  .reveal.reveal-left  { transform: translateX(-36px); }
+  .reveal.reveal-right { transform: translateX(36px); }
+  .reveal.reveal-scale { transform: scale(.9); }
+  .reveal.revealed { opacity: 1; transform: none; }
+  @keyframes rippleBurst { from{transform:scale(0);opacity:.55} to{transform:scale(3);opacity:0} }
+  .ripple-fx { position:absolute; border-radius:50%; pointer-events:none; z-index:5;
+    background: radial-gradient(circle, ${ACCENT}aa 0%, ${ACCENT}22 55%, transparent 72%);
+    animation: rippleBurst .55s ease-out forwards; }
+  .tilt-wrap { transition: transform .3s cubic-bezier(.16,1,.3,1); will-change: transform;
+    transform-style: preserve-3d; }
+  @keyframes checkPop { 0%{transform:scale(0) rotate(-30deg)} 60%{transform:scale(1.35) rotate(8deg)} 100%{transform:scale(1) rotate(0)} }
+  .check-pop { animation: checkPop .35s cubic-bezier(.16,1,.3,1) both; }
+  @keyframes streakFlame { 0%,100%{transform:scale(1)} 50%{transform:scale(1.25)} }
+  .streak-flame { display:inline-block; animation: streakFlame 1.6s ease-in-out infinite; }
+
+  /* ── v1.9 CHARACTER HOLOGRAM ── */
+  @keyframes drawPath { from{stroke-dashoffset:1} to{stroke-dashoffset:0} }
+  .body-draw { stroke-dasharray: 1;
+    animation: drawPath 1.5s cubic-bezier(.4,0,.2,1) backwards;
+    animation-delay: calc(var(--i, 0) * 28ms); }
+  @keyframes musclesIn { from{opacity:0} to{opacity:1} }
+  .muscle-in { animation: musclesIn .7s ease-out backwards;
+    animation-delay: calc(.7s + var(--i, 0) * 55ms); }
+  @keyframes musclePulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .muscle-highlight { animation: musclePulse 1.1s ease-in-out infinite; }
+  @keyframes bodyBreathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.013)} }
+  .body-breathe { animation: bodyBreathe 4.5s ease-in-out 2.2s infinite; transform-origin: 50% 28%; }
+  @keyframes scanSweep { 0%{top:-14%} 60%{top:104%} 100%{top:104%} }
+  .body-scan { position:absolute; left:6%; right:6%; height:42px; pointer-events:none;
+    background: linear-gradient(180deg, transparent, ${ACCENT}14 35%, ${ACCENT}48 50%, ${ACCENT}14 65%, transparent);
+    mix-blend-mode: screen;
+    animation: scanSweep 4.6s cubic-bezier(.45,0,.55,1) 1.8s infinite; }
+  .holo-corner { position:absolute; width:18px; height:18px; pointer-events:none;
+    border-color: ${ACCENT}88; border-style: solid; border-width: 0; }
 
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
@@ -2667,13 +2765,15 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
   const muscleGroups = _MUSCLE_PATHS[svgKey] || {};
   const bodyPaths    = _BODY_PATHS[svgKey]   || [];
   return (
-    <svg viewBox="0 0 676.49 1203.49" fill="none"
+    <svg viewBox="0 0 676.49 1203.49" fill="none" className="body-breathe"
       style={{ width: "100%", maxHeight: 380 }}>
-      {Object.entries(muscleGroups).map(([gid, paths]) => {
+      {Object.entries(muscleGroups).map(([gid, paths], gi) => {
         const color  = getColor(gid);
         const glow   = getGlow(gid);
         return (
-          <g key={gid} id={gid} style={glow ? { filter: glow } : undefined}>
+          <g key={gid} id={gid}
+            className={highlight === gid ? "muscle-in muscle-highlight" : "muscle-in"}
+            style={{ "--i": gi, ...(glow ? { filter: glow } : null) }}>
             {paths.map((p, i) => p.type === "line"
               ? <line key={i} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2}
                   stroke={p.fill === "none" ? LINE : color}
@@ -2692,8 +2792,10 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
       <g id="body-outline" fill="none" stroke={LINE}
         strokeLinecap="round" strokeLinejoin="round">
         {bodyPaths.map((p, i) => p.type === "line"
-          ? <line key={i} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} strokeWidth={p.sw}/>
-          : <path key={i} d={p.d} strokeWidth={p.sw}/>
+          ? <line key={i} className="body-draw" pathLength="1" style={{ "--i": i }}
+              x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} strokeWidth={p.sw}/>
+          : <path key={i} className="body-draw" pathLength="1" style={{ "--i": i }}
+              d={p.d} strokeWidth={p.sw}/>
         )}
       </g>
       {showCardio && (levels.cardio||1) > 5 && (
@@ -2709,11 +2811,90 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
 function BodyFigure({ levels, subLevels, gender, highlight }) {
   const isFemale = gender === "female";
   return (
-    <div style={{ display: "flex", gap: 2, width: "100%", justifyContent: "center" }}>
-      <SvgFigure svgKey={isFemale ? "femaleFront" : "maleFront"} levels={levels} subLevels={subLevels} showCardio highlight={highlight} />
-      <SvgFigure svgKey={isFemale ? "femaleBack"  : "maleBack"}  levels={levels} subLevels={subLevels} highlight={highlight} />
+    <div style={{ position: "relative", padding: "26px 10px 18px", overflow: "hidden",
+      background: `radial-gradient(ellipse at 50% 40%, ${ACCENT}08 0%, transparent 70%)` }}>
+      {/* Holographic corner brackets */}
+      <div className="holo-corner" style={{ top: 6, left: 6, borderTopWidth: 1.5, borderLeftWidth: 1.5 }} />
+      <div className="holo-corner" style={{ top: 6, right: 6, borderTopWidth: 1.5, borderRightWidth: 1.5 }} />
+      <div className="holo-corner" style={{ bottom: 6, left: 6, borderBottomWidth: 1.5, borderLeftWidth: 1.5 }} />
+      <div className="holo-corner" style={{ bottom: 6, right: 6, borderBottomWidth: 1.5, borderRightWidth: 1.5 }} />
+      <div style={{ position: "absolute", top: 10, left: 0, right: 0, textAlign: "center",
+        fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 5,
+        opacity: 0.7, animation: "cornerBlink 4s linear infinite" }}>{"// BODY MATRIX"}</div>
+      <div style={{ display: "flex", gap: 2, width: "100%", justifyContent: "center" }}>
+        <SvgFigure svgKey={isFemale ? "femaleFront" : "maleFront"} levels={levels} subLevels={subLevels} showCardio highlight={highlight} />
+        <SvgFigure svgKey={isFemale ? "femaleBack"  : "maleBack"}  levels={levels} subLevels={subLevels} highlight={highlight} />
+      </div>
+      {/* System scan sweep */}
+      <div className="body-scan" />
     </div>
   );
+}
+
+/* ── v1.9 INTERACTIVE MOTION ── */
+// Scroll-reveal: fades/slides children in the first time they enter the viewport
+function Reveal({ children, dir = "up", delay = 0, style, className = "", ...rest }) {
+  const ref = useRef(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setSeen(true); return; }
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setSeen(true); obs.disconnect(); }
+    }, { threshold: 0.12 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  const dirClass = dir === "left" ? "reveal-left" : dir === "right" ? "reveal-right" : dir === "scale" ? "reveal-scale" : "";
+  return (
+    <div ref={ref} className={`reveal ${dirClass} ${seen ? "revealed" : ""} ${className}`}
+      style={{ ...style, transitionDelay: seen ? `${delay}ms` : "0ms" }} {...rest}>
+      {children}
+    </div>
+  );
+}
+
+// Pointer-tracking 3D tilt with a light glare that follows the finger/cursor
+function TiltCard({ children, max = 7, style }) {
+  const ref = useRef(null);
+  const move = e => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `perspective(700px) rotateY(${(px * max).toFixed(2)}deg) rotateX(${(-py * max).toFixed(2)}deg) scale(1.012)`;
+    el.style.setProperty("--gx", `${((px + 0.5) * 100).toFixed(1)}%`);
+    el.style.setProperty("--gy", `${((py + 0.5) * 100).toFixed(1)}%`);
+  };
+  const reset = () => { const el = ref.current; if (el) el.style.transform = ""; };
+  return (
+    <div ref={ref} className="tilt-wrap" style={style}
+      onPointerMove={move} onPointerLeave={reset} onPointerUp={reset} onPointerCancel={reset}>
+      {children}
+    </div>
+  );
+}
+
+// Animated number: eases from previous value to the new one
+function CountUp({ value, decimals = 0, duration = 900, locale = false }) {
+  const [disp, setDisp] = useState(value);
+  const prevRef = useRef(null);
+  useEffect(() => {
+    const from = prevRef.current === null ? 0 : prevRef.current;
+    prevRef.current = value;
+    if (from === value) { setDisp(value); return; }
+    const t0 = performance.now();
+    let raf;
+    const tick = now => {
+      const p = Math.min(1, (now - t0) / duration);
+      const e = 1 - Math.pow(1 - p, 3);
+      setDisp(from + (value - from) * e);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+  return <>{locale ? Math.round(disp).toLocaleString() : disp.toFixed(decimals)}</>;
 }
 
 function XPBar({ current, needed, color = ACCENT, height = 6 }) {
@@ -3159,7 +3340,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const isCali   = exercise.type === "calisthenics";
   const isSpeed  = isCardio && exercise.cardioMode === "speed";
 
-  const defaultSet = { reps: "", weight: "" };
+  const defaultSet = { reps: "", weight: "", rpe: null };
   const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
   const updateSet = (i, field, val) => setSetRows(s => s.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const addSet    = () => setSetRows(s => [...s, { ...defaultSet }]);
@@ -3168,7 +3349,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
     for (let i = s.length - 1; i >= 0; i--) {
       const r = s[i];
       if (parseFloat(r.reps) > 0 && (parseFloat(r.weight) > 0 || isCali)) {
-        return [...s, { reps: r.reps, weight: r.weight }];
+        return [...s, { reps: r.reps, weight: r.weight, rpe: null }];
       }
     }
     return [...s, { ...defaultSet }];
@@ -3366,6 +3547,8 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                   const closePR = showE1RM && storedE1RM && !beatsPR
                     && setE1RM >= storedE1RM * 0.95;
                   const e1rmColor = beatsPR ? GOLD : closePR ? GOLD2 : MUTED;
+                  const rowFilled = repsN > 0 && (weightN > 0 || isCali);
+                  const rpeMeta = row.rpe ? RPE_META[row.rpe] || RPE_META[Math.min(10, Math.max(6, row.rpe))] : null;
                   return (
                     <div key={i} style={{ marginBottom: 5 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, alignItems: "center" }}>
@@ -3391,6 +3574,31 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                             </span>
                           )}
                           {beatsPR && <span style={{ color: GOLD, marginLeft: 6, fontWeight: 700 }}>★ NEW</span>}
+                        </div>
+                      )}
+                      {/* RPE picker — appears once reps + weight are filled, only for strength */}
+                      {rowFilled && !isCardio && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, paddingLeft: 38, marginTop: 4, marginBottom: 2 }}>
+                          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2, marginRight: 2 }}>RPE</span>
+                          {[6,7,8,9,10].map(v => {
+                            const m = RPE_META[v];
+                            const active = row.rpe === v;
+                            return (
+                              <button key={v} onClick={() => updateSet(i, "rpe", active ? null : v)} style={{
+                                width: 26, height: 22, padding: 0,
+                                background: active ? `${m.color}33` : "transparent",
+                                border: `1px solid ${active ? m.color : MUTED + "33"}`,
+                                borderRadius: 4, cursor: "pointer",
+                                fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+                                color: active ? m.color : MUTED,
+                              }}>{v}</button>
+                            );
+                          })}
+                          {rpeMeta && (
+                            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: rpeMeta.color, marginLeft: 4 }}>
+                              {rpeMeta.label}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -3463,6 +3671,40 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           </div>
         )}
 
+        {/* RPE-based next-session suggestion */}
+        {(() => {
+          const rpeRows = setRows.filter(r => r.rpe && parseFloat(r.weight) > 0);
+          if (rpeRows.length === 0 || isCali || isCardio) return null;
+          const lastRow = rpeRows[rpeRows.length - 1];
+          const wt = parseFloat(lastRow.weight);
+          const sugg = rpeWeightSuggestion(lastRow.rpe, wt);
+          if (!sugg) return null;
+          const nextWeight = wt + sugg.delta;
+          const arrow = sugg.delta > 0 ? "↑" : sugg.delta < 0 ? "↓" : "→";
+          const color = sugg.delta > 0 ? GREEN : sugg.delta < 0 ? RED : ACCENT;
+          return (
+            <div style={{ margin: "0 20px 12px", padding: "10px 12px",
+              background: `${color}0e`, border: `1px solid ${color}44`, borderRadius: 8 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color, letterSpacing: 3, marginBottom: 4 }}>
+                {"// NEXT SESSION SUGGESTION"}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT }}>
+                  {sugg.reason}
+                </div>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color }}>
+                  {arrow} {Math.round(wtVal(nextWeight))} {wtLabel()}
+                  {sugg.delta !== 0 && (
+                    <span style={{ fontSize: 9, marginLeft: 4, opacity: 0.7 }}>
+                      ({sugg.delta > 0 ? "+" : ""}{Math.round(wtVal(sugg.delta))})
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         </div>{/* end scrollable content */}
         <div style={{ padding: "8px 20px 16px", borderTop: `1px solid ${meta.color}22` }}>
         <button className="btn-gold" onClick={() => {
@@ -3475,6 +3717,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
               reps: parseFloat(r.reps) || 0,
               // Always store in lbs internally; convert from kg if needed
               weight: wtValBack(parseFloat(r.weight) || 0),
+              ...(r.rpe ? { rpe: r.rpe } : {}),
             }));
             const avgWeight = setsDetail.reduce((s, r) => s + r.weight, 0) / setsDetail.length;
             const avgReps   = setsDetail.reduce((s, r) => s + r.reps, 0) / setsDetail.length;
@@ -4073,7 +4316,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   return (
     <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
         {themeLabel(settings,"database","DATABASE")}
         {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
       </div>
@@ -4186,7 +4429,8 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
           const subs = ex.svgTargets ? ex.svgTargets.map(t => MUSCLE_META[t]?.name).filter(Boolean) : [];
           const isBookmarked = bookmarkedSet.has(ex.name);
           return (
-            <div key={i} style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div key={ex.name} className="card-in" style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px",
+              animationDelay: `${Math.min(i, 8) * 45}ms` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                   <button onClick={() => onToggleBookmark?.(ex.name)} title={isBookmarked ? "Remove bookmark" : "Bookmark"} style={{
@@ -4659,10 +4903,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 const mm = MUSCLE_META[ex.muscle] || MUSCLE_META.chest;
                 const alreadyLogged = byDay[selDay].some(w => w.exerciseName === ex.name);
                 return (
-                  <div key={i} style={{ background: BG2,
+                  <div key={i} className="card-in" style={{ background: BG2,
                     border: `1px solid ${alreadyLogged ? GREEN+"44" : mm.color+"22"}`,
                     borderLeft: `3px solid ${alreadyLogged ? GREEN : mm.color}`,
-                    borderRadius: 8, padding: "10px 12px",
+                    borderRadius: 8, padding: "10px 12px", animationDelay: `${Math.min(i, 8) * 55}ms`,
                     display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
@@ -6017,7 +6261,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
+    <div onScroll={e => e.currentTarget.style.setProperty("--sy", e.currentTarget.scrollTop)}
+      style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
       {/* Background effects */}
       <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${ACCENT}0d 0%, transparent 60%)`, pointerEvents: "none" }} />
       {/* Shadow: void tendrils rising from the floor */}
@@ -6048,11 +6293,17 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             animation: "runeFloat 3s ease-in-out infinite" }} />
         </div>
       )}
-      {["⬡", "◈", "⟁"].map((r, i) => (
-        <div key={i} style={{ position: "absolute", fontSize: 16, color: ACCENT, top: `${20 + i * 25}%`,
-          left: i % 2 === 0 ? `${3 + i}%` : `${88 - i * 2}%`,
-          animation: `runeFloat ${3 + i}s ease-in-out ${i * 0.7}s infinite`, opacity: 0.12, pointerEvents: "none" }}>{r}</div>
-      ))}
+      {/* Parallax rune field — sticky layer, each rune drifts up at its own depth while you scroll */}
+      <div style={{ position: "sticky", top: 0, height: 0, zIndex: 0, pointerEvents: "none" }}>
+        {["⬡", "◈", "⟁", "✦", "◇", "⬢"].map((r, i) => (
+          <div key={i} style={{ position: "absolute", top: 120 + i * 115,
+            left: i % 2 === 0 ? `${4 + i}%` : `${86 - i * 2}%`,
+            transform: `translateY(calc(var(--sy, 0) * ${(-0.1 - (i % 3) * 0.14).toFixed(2)}px))` }}>
+            <div style={{ fontSize: 14 + (i % 3) * 4, color: i % 3 === 1 ? GOLD : ACCENT,
+              animation: `runeFloat ${3 + i}s ease-in-out ${i * 0.7}s infinite`, opacity: 0.1 + (i % 3) * 0.04 }}>{r}</div>
+          </div>
+        ))}
+      </div>
 
       {/* Header — System Window */}
       <div style={{
@@ -6065,55 +6316,86 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         {/* Top cyan line */}
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
+        {/* Rising energy orbs */}
+        {[12, 30, 52, 71, 90].map((left, i) => (
+          <div key={i} style={{
+            position: "absolute", bottom: 4, left: `${left}%`, width: 3, height: 3,
+            borderRadius: "50%", background: i % 2 === 0 ? ACCENT : GOLD,
+            boxShadow: `0 0 6px ${i % 2 === 0 ? ACCENT : GOLD}`,
+            "--drift": `${(i % 3 - 1) * 14}px`,
+            animation: `orbRise ${2.6 + i * 0.7}s ease-out ${i * 0.9}s infinite`,
+            pointerEvents: "none",
+          }} />
+        ))}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900, color: GOLD,
-              letterSpacing: 3, textShadow: `0 0 14px ${GOLD}88` }}>{st.name.toUpperCase()}</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <button onClick={() => setSettingsOpen("help")} style={{
-                background: "none", border: `1px solid ${MUTED}44`, borderRadius: "50%",
-                width: 28, height: 28, cursor: "pointer", color: MUTED,
-                fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
-                display: "flex", alignItems: "center", justifyContent: "center"
-              }}>?</button>
-              <button onClick={() => setSettingsOpen("settings")} style={{
-                background: "none", border: "none", cursor: "pointer",
-                color: MUTED, padding: 0, display: "flex", alignItems: "center"
-              }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="3"/>
-                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
-                </svg>
-              </button>
-            </div>
-            <div style={{ textAlign: "right" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {/* Animated rank emblem */}
+            <div style={{ position: "relative", width: 54, height: 54, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ position: "absolute", inset: -5, borderRadius: "50%",
+                background: `conic-gradient(from 0deg, transparent, ${rank.color}55, transparent 32%)`,
+                animation: "auraSpin 5s linear infinite", filter: "blur(5px)" }} />
+              <svg className="emblem-ring" width="54" height="54" viewBox="0 0 54 54"
+                style={{ position: "absolute", inset: 0 }}>
+                <circle cx="27" cy="27" r="25" fill="none" stroke={rank.color} strokeWidth="1"
+                  strokeDasharray="7 9" opacity="0.75" />
+              </svg>
+              <svg className="emblem-ring2" width="54" height="54" viewBox="0 0 54 54"
+                style={{ position: "absolute", inset: 0 }}>
+                <circle cx="27" cy="27" r="20" fill="none" stroke={rank.color} strokeWidth="0.7"
+                  strokeDasharray="2 7" opacity="0.5" />
+              </svg>
               <div style={{
-                fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900, color: rank.color,
-                textShadow: `0 0 20px ${rank.color}, 0 0 40px ${rank.color}66`,
-                lineHeight: 1
+                fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900, color: rank.color,
+                textShadow: `0 0 16px ${rank.color}, 0 0 34px ${rank.color}66`, lineHeight: 1,
+                animation: "emblemPulse 2.8s ease-in-out infinite",
               }}>{rank.rank}</div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: rank.color, letterSpacing: 3, opacity: 0.8 }}>{rank.label.toUpperCase()}</div>
             </div>
+            <div>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
+              <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900, color: GOLD,
+                letterSpacing: 3, textShadow: `0 0 14px ${GOLD}88` }}>{st.name.toUpperCase()}</div>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7, color: rank.color, letterSpacing: 3, opacity: 0.85, marginTop: 2 }}>{rank.label.toUpperCase()}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={() => setSettingsOpen("help")} style={{
+              background: "none", border: `1px solid ${MUTED}44`, borderRadius: "50%",
+              width: 28, height: 28, cursor: "pointer", color: MUTED,
+              fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>?</button>
+            <button onClick={() => setSettingsOpen("settings")} style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: MUTED, padding: 0, display: "flex", alignItems: "center"
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+              </svg>
+            </button>
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
           <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2, textShadow: `0 0 6px ${ACCENT}` }}>LVL {st.overallLevel}</span>
           <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{current.toLocaleString()} / {needed.toLocaleString()} XP</span>
         </div>
-        <XPBar current={current} needed={needed} color={GOLD} height={4} />
+        <div className="shimmer-bar">
+          <XPBar current={current} needed={needed} color={GOLD} height={4} />
+        </div>
       </div>
 
       <div style={{ padding: "20px" }}>
-        {/* Today's mission */}
-        <div style={{
+        {/* Today's mission — tilts in 3D toward your touch, with a tracking glare */}
+        <TiltCard>
+        <div className="card-in card-in-1 breathe" style={{
           background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
           border: `1px solid ${ACCENT}44`, borderTop: `1px solid ${ACCENT}99`,
           clipPath: "polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))",
           padding: "16px", marginBottom: 16, position: "relative"
         }}>
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
+            background: "radial-gradient(circle at var(--gx,50%) var(--gy,50%), #ffffff12, transparent 55%)" }} />
           <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 4, marginBottom: 10,
             textShadow: `0 0 8px ${ACCENT}` }}>{"// DAILY MISSION"}</div>
           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 4 }}>{_isArchitect ? '[ SYSTEM ACTIVE ]' : _isShadow ? '[ SHADOW REALM ONLINE ]' : _isBeast ? '[ DESTRUCTION ENGAGED ]' : today}</div>
@@ -6132,6 +6414,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: MUTED }}>No program selected. Choose a program to get daily quests.</div>
           )}
         </div>
+        </TiltCard>
 
                 {/* ── DAILY TIP ── */}
         {(() => {
@@ -6139,7 +6422,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           const catColors = { TRAINING: ACCENT, RECOVERY: "#00ff88", NUTRITION: GOLD, "APP TIP": "#cc44ff" };
           const col = catColors[tip.category] || ACCENT;
           return (
-            <div onClick={() => setTipExpanded(e => !e)} style={{
+            <div className="card-in card-in-2" onClick={() => setTipExpanded(e => !e)} style={{
               background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
               border: `1px solid ${col}33`, borderLeft: `3px solid ${col}`,
               borderRadius: 10, padding: "12px 14px", marginBottom: 14, cursor: "pointer",
@@ -6181,7 +6464,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         })()}
 
         {/* ── WEIGHT WIDGET ── */}
-        <div style={{
+        <div className="card-in card-in-3" style={{
           background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
           border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}44`,
           clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
@@ -6194,7 +6477,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 20, fontWeight: 900,
                 color: GOLD, textShadow: `0 0 12px ${GOLD}66` }}>
-                {wtVal(st.weightLbs || 0).toFixed(1)}
+                <CountUp value={wtVal(st.weightLbs || 0)} decimals={1} />
               </div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
                 color: MUTED, fontWeight: 700 }}>{wtLabel().toUpperCase()}</div>
@@ -6246,10 +6529,11 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           )}
         </div>
 
-        {/* Quick actions */}}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        {/* Quick actions */}
+        <div className="card-in card-in-4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <button className="btn-primary" onClick={() => setScreen("schedule")}
-            style={{ padding: "16px", fontSize: 14, letterSpacing: 2 }}>
+            style={{ padding: "16px", fontSize: 14, letterSpacing: 2,
+              animation: "borderPulse 3s ease-in-out infinite" }}>
             <span style={{ fontSize: 11 }}>{_isShadow ? "BEGIN THE HUNT" : _isBeast ? "UNLEASH" : _isArchitect ? "INITIATE PROTOCOL" : "START TRAINING"}</span>
           </button>
           <button onClick={() => setScreen("character")} style={{
@@ -6262,7 +6546,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         </div>
 
         {/* Social actions */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div className="card-in card-in-5" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
           <button onClick={() => setScreen("leaderboard")} style={{
             background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
             padding: "12px", cursor: "pointer", transition: "all .2s",
@@ -6308,6 +6592,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           const streak = _computeRitualStreak(completionLog);
           const allDone = DAILY_RITUALS.every(r => doneToday.has(r.id));
           return (
+            <Reveal dir="scale">
             <div style={{ background: `${GOLD}0a`, border: `1px solid ${GOLD}33`,
               borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
@@ -6315,7 +6600,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                   {"// DAILY RITUALS"}
                 </div>
                 <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: streak > 0 ? GOLD : MUTED, letterSpacing: 1 }}>
-                  {streak > 0 ? `${streak}🔥 day streak` : "no streak"}
+                  {streak > 0 ? <>{streak}<span className="streak-flame">🔥</span> day streak</> : "no streak"}
                 </div>
               </div>
               {DAILY_RITUALS.map(r => {
@@ -6325,7 +6610,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                     display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
                     padding: "8px 4px", borderBottom: `1px solid ${ACCENT2}11`,
                   }}>
-                    <div style={{
+                    <div className={done ? "check-pop" : ""} style={{
                       width: 18, height: 18, borderRadius: 4, flexShrink: 0,
                       background: done ? GOLD : "transparent",
                       border: `1.5px solid ${done ? GOLD : MUTED}`,
@@ -6347,11 +6632,13 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </div>
               )}
             </div>
+            </Reveal>
           );
         })()}
 
         {/* Equipped title selector — only show if user has unlocked any */}
         {(st.cosmetics?.unlockedTitles?.length || 0) > 0 && (
+          <Reveal dir="left">
           <div style={{ background: BG2, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>
               {"// EQUIPPED TITLE"}
@@ -6378,24 +6665,31 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               })}
             </div>
           </div>
+          </Reveal>
         )}
 
-        {/* Recent workouts */}
+        {/* Recent workouts — entries slide in from alternating sides on scroll */}
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 4, marginBottom: 10 }}>{_isBeast ? "[ RECENT KILLS ]" : _isShadow ? "[ SHADOW RECORD ]" : _isArchitect ? "[ ACTIVITY LOG ]" : "[ RECENT ACTIVITY ]"}</div>
+          <Reveal>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 4, marginBottom: 10 }}>{_isBeast ? "[ RECENT KILLS ]" : _isShadow ? "[ SHADOW RECORD ]" : _isArchitect ? "[ ACTIVITY LOG ]" : "[ RECENT ACTIVITY ]"}</div>
+          </Reveal>
           {st.workouts.length === 0 ? (
-            <div className="card" style={{ padding: 16, textAlign: "center" }}>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>No battles recorded yet.<br />Begin your first training session.</div>
-            </div>
+            <Reveal delay={80}>
+              <div className="card" style={{ padding: 16, textAlign: "center" }}>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>No battles recorded yet.<br />Begin your first training session.</div>
+              </div>
+            </Reveal>
           ) : (
             st.workouts.slice(-3).reverse().map((w, i) => (
-              <div key={i} className="card" style={{ padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{w.muscle ? MUSCLE_META[w.muscle]?.name : "Training"}</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{new Date(w.date).toLocaleDateString()}</div>
+              <Reveal key={i} dir={i % 2 === 0 ? "left" : "right"} delay={i * 90}>
+                <div className="card" style={{ padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{w.muscle ? MUSCLE_META[w.muscle]?.name : "Training"}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{new Date(w.date).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: GOLD }}>+{w.xp} XP</div>
                 </div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: GOLD }}>+{w.xp} XP</div>
-              </div>
+              </Reveal>
             ))
           )}
         </div>
@@ -7645,11 +7939,12 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             const isActive = p.id === store.activeId;
             const r = getRank(p.overallLevel);
             return (
-              <button key={p.id} onClick={() => onSwitchProfile(p.id)} style={{
+              <button key={p.id} className="card-in" onClick={() => onSwitchProfile(p.id)} style={{
                 background: isActive ? `${ACCENT}22` : BG3,
                 border: `1px solid ${isActive ? ACCENT : ACCENT2 + "44"}`,
                 borderRadius: 10, padding: "8px 14px", cursor: "pointer", flexShrink: 0,
-                textAlign: "center", minWidth: 80, transition: "all .15s"
+                textAlign: "center", minWidth: 80, transition: "all .15s",
+                animationDelay: `${profiles.indexOf(p) * 70}ms`
               }}>
                 <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
                   color: r.color, textShadow: isActive ? `0 0 10px ${r.color}66` : "none" }}>{r.rank}</div>
@@ -7665,16 +7960,40 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
       </div>
 
       <div style={{ padding: "16px 18px" }}>
-        {/* ── RANK CARD ── */}
-        <div style={{ background: `${rank.color}11`, border: `1px solid ${rank.color}44`,
-          borderRadius: 14, padding: "16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start" }}>
+        {/* ── RANK CARD — tilts toward touch, glare tracks the pointer ── */}
+        <TiltCard>
+        <div className="card-in" style={{ background: `${rank.color}11`, border: `1px solid ${rank.color}44`,
+          borderRadius: 14, padding: "16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start",
+          position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
+            background: "radial-gradient(circle at var(--gx,50%) var(--gy,50%), #ffffff10, transparent 55%)" }} />
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3 }}>OVERALL RANK</div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 38, fontWeight: 900,
-                  color: rank.color, textShadow: `0 0 24px ${rank.color}66`, lineHeight: 1 }}>{rank.rank}</div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: rank.color, letterSpacing: 2 }}>{rank.label}</div>
+              <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                {/* Mini animated rank emblem */}
+                <div style={{ position: "relative", width: 64, height: 64, flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ position: "absolute", inset: -6, borderRadius: "50%",
+                    background: `conic-gradient(from 0deg, transparent, ${rank.color}55, transparent 32%)`,
+                    animation: "auraSpin 5s linear infinite", filter: "blur(5px)" }} />
+                  <svg className="emblem-ring" width="64" height="64" viewBox="0 0 64 64"
+                    style={{ position: "absolute", inset: 0 }}>
+                    <circle cx="32" cy="32" r="30" fill="none" stroke={rank.color} strokeWidth="1"
+                      strokeDasharray="8 10" opacity="0.75" />
+                  </svg>
+                  <svg className="emblem-ring2" width="64" height="64" viewBox="0 0 64 64"
+                    style={{ position: "absolute", inset: 0 }}>
+                    <circle cx="32" cy="32" r="24" fill="none" stroke={rank.color} strokeWidth="0.7"
+                      strokeDasharray="2 7" opacity="0.5" />
+                  </svg>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 30, fontWeight: 900,
+                    color: rank.color, textShadow: `0 0 20px ${rank.color}, 0 0 40px ${rank.color}66`,
+                    lineHeight: 1, animation: "emblemPulse 2.8s ease-in-out infinite" }}>{rank.rank}</div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3 }}>OVERALL RANK</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: rank.color, letterSpacing: 2, fontWeight: 700 }}>{rank.label}</div>
+                </div>
               </div>
               <button onClick={() => { setEditMode(!editMode); setEditName(st.name); setEditAge(String(st.age||"")); setEditWeight(String(st.weightLbs||170)); setEditHeightFt(String(Math.floor((st.heightIn||70)/12))); setEditHeightIn(String((st.heightIn||70)%12)); setEditGender(st.gender||"male"); }} style={{
                 background: editMode ? `${GOLD}22` : BG3, border: `1px solid ${editMode ? GOLD : ACCENT2 + "44"}`,
@@ -7686,12 +8005,15 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             <div style={{ marginTop: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: ACCENT }}>LVL {st.overallLevel}</span>
-                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{current.toLocaleString()} / {needed.toLocaleString()} XP</span>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}><CountUp value={current} locale duration={1200} /> / {needed.toLocaleString()} XP</span>
               </div>
-              <XPBar current={current} needed={needed} color={rank.color} height={6} />
+              <div className="shimmer-bar">
+                <XPBar current={current} needed={needed} color={rank.color} height={6} />
+              </div>
             </div>
           </div>
         </div>
+        </TiltCard>
 
         {/* ── EDIT FORM ── */}
         {editMode && (
@@ -7772,8 +8094,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           </div>
         )}
 
-        {/* ── BODY FIGURE ── */}
-        <div style={{ marginBottom: 16, padding: "0 8px" }}>
+        {/* ── BODY FIGURE — holographic scan frame ── */}
+        <div className="card-in card-in-2" style={{ marginBottom: 16, padding: "0 8px" }}>
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
@@ -7872,6 +8194,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         })()}
 
         {/* Progression entry points */}
+        <Reveal dir="left">
         <button onClick={() => setPrHistoryOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 8,
@@ -7888,7 +8211,9 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             {Object.keys(st.prs || {}).length} TRACKED →
           </span>
         </button>
+        </Reveal>
 
+        <Reveal dir="right" delay={80}>
         <button onClick={() => setHeatmapOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: `${ACCENT}10`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
@@ -7913,16 +8238,19 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             13 WEEKS →
           </span>
         </button>
+        </Reveal>
 
         {/* ── STATS ── */}
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-          {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
-        </div>
+        <Reveal dir="scale">
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+            {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
+          </div>
+        </Reveal>
 
-        <VolumeChart workouts={st.workouts || []} />
+        <Reveal><VolumeChart workouts={st.workouts || []} /></Reveal>
 
-        <RecoveryGrid workouts={st.workouts || []} />
+        <Reveal><RecoveryGrid workouts={st.workouts || []} /></Reveal>
 
         {(() => {
           const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
@@ -7965,16 +8293,18 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           );
         })()}
 
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
-        <StatTree
-          tree={STAT_TREE}
-          getGroupXP={getGroupXP}
-          getSuperXP={getSuperXP}
-          subStats={subStats}
-          subLevels={subLevels}
-          selectedMuscle={selectedMuscle}
-          onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
-        />
+        <Reveal>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
+          <StatTree
+            tree={STAT_TREE}
+            getGroupXP={getGroupXP}
+            getSuperXP={getSuperXP}
+            subStats={subStats}
+            subLevels={subLevels}
+            selectedMuscle={selectedMuscle}
+            onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
+          />
+        </Reveal>
       </div>
 
       {prHistoryOpen && (
@@ -8850,6 +9180,28 @@ function FriendsScreen({ account, toast }) {
 
 
 export default function IronRealm() {
+  // v1.9: energy ripple on every button press, spawned at the touch point
+  useEffect(() => {
+    const onDown = e => {
+      const btn = e.target.closest?.("button");
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const size = Math.max(r.width, r.height) * 1.2;
+      const fx = document.createElement("span");
+      fx.className = "ripple-fx";
+      fx.style.width = fx.style.height = `${size}px`;
+      fx.style.left = `${e.clientX - r.left - size / 2}px`;
+      fx.style.top = `${e.clientY - r.top - size / 2}px`;
+      const cs = getComputedStyle(btn);
+      if (cs.position === "static") btn.style.position = "relative";
+      if (cs.overflow !== "hidden") btn.style.overflow = "hidden";
+      btn.appendChild(fx);
+      setTimeout(() => fx.remove(), 600);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, []);
+
   const [store, setStore] = useState(() => {
     try {
       const s = localStorage.getItem("iron_realm_store_v1");
