@@ -2059,6 +2059,35 @@ const CSS = `
   @keyframes screenWipe { from{opacity:0; transform:translateY(12px) scale(.992)} to{opacity:1; transform:none} }
   .screen-wipe { animation: screenWipe .28s cubic-bezier(.16,1,.3,1) both; }
 
+  /* ── v1.9.1 NEXT WAVE ── */
+  @keyframes barRise { from{transform:scaleY(0)} to{transform:scaleY(1)} }
+  @keyframes lineDraw { to{stroke-dashoffset:0} }
+  @keyframes dotIn { from{transform:scale(0);opacity:0} to{transform:scale(1);opacity:1} }
+  .nav-tab { position:relative; }
+  .nav-tab::after {
+    content:''; position:absolute; bottom:6px; left:50%; transform:translateX(-50%) scale(0);
+    width:34px; height:3px; border-radius:2px;
+    background: linear-gradient(90deg, ${ACCENT}, ${GOLD});
+    box-shadow: 0 0 10px ${ACCENT}, 0 0 18px ${ACCENT}66;
+    transition: transform .35s cubic-bezier(.16,1,.3,1), opacity .25s;
+    opacity: 0;
+  }
+  .nav-tab.is-active::after { transform: translateX(-50%) scale(1); opacity: 1; }
+  .nav-tab.is-active { animation: emblemPulse 2.5s ease-in-out infinite; }
+  .magnet-btn { position: relative; will-change: transform; transition: transform .35s cubic-bezier(.16,1,.3,1); }
+  .magnet-glow { position: absolute; inset: -2px; pointer-events: none; border-radius: inherit;
+    opacity: 0; transition: opacity .25s;
+    background: radial-gradient(circle at var(--mgx, 50%) var(--mgy, 50%),
+      ${ACCENT}44 0%, ${ACCENT}11 28%, transparent 60%); }
+  .magnet-btn:hover .magnet-glow, .magnet-btn:focus-visible .magnet-glow { opacity: 1; }
+  @keyframes auroraDrift { 0%{transform:translate(0,0) rotate(0deg)} 50%{transform:translate(-6%, 4%) rotate(2deg)} 100%{transform:translate(0,0) rotate(0deg)} }
+  .aurora-bg { position: fixed; inset: -20%; z-index: -2; pointer-events: none; opacity: .55;
+    background:
+      radial-gradient(ellipse at 22% 32%, ${ACCENT}33 0%, transparent 48%),
+      radial-gradient(ellipse at 78% 22%, #b455ff2a 0%, transparent 50%),
+      radial-gradient(ellipse at 62% 78%, ${GOLD}22 0%, transparent 50%);
+    filter: blur(20px); animation: auroraDrift 22s ease-in-out infinite; }
+
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
   .fade-in  { animation: fadeIn .4s ease-out both; }
@@ -2932,12 +2961,13 @@ function SystemParticles({ accent = "#00d4ff" }) {
     const pos = new Float32Array(N * 3);
     const col = new Float32Array(N * 3);
     const seeds = new Float32Array(N);
-    const cyan = new THREE.Color(accent), gold = new THREE.Color("#e8c44a");
+    const cyan = new THREE.Color(accent), gold = new THREE.Color("#e8c44a"), violet = new THREE.Color("#b455ff");
     for (let i = 0; i < N; i++) {
       pos[i * 3]     = (Math.random() - 0.5) * 950;
       pos[i * 3 + 1] = (Math.random() - 0.5) * 1500;
       pos[i * 3 + 2] = (Math.random() - 0.5) * 850;
-      const c = Math.random() < 0.82 ? cyan : gold;
+      const r = Math.random();
+      const c = r < 0.74 ? cyan : r < 0.9 ? gold : violet;
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
       seeds[i] = Math.random() * Math.PI * 2;
     }
@@ -3005,6 +3035,115 @@ function SystemParticles({ accent = "#00d4ff" }) {
     };
   }, [accent]);
   return <div ref={mountRef} style={{ position: "fixed", inset: 0, zIndex: -1, pointerEvents: "none" }} />;
+}
+
+// Holographic "Soul Core": three.js icosahedron + two orbiting wireframe rings
+// in the wearer's rank color. Rendered into the rank card on the Character
+// screen. Cheap (~one mesh + two rings, no bloom postprocessing) and gated by
+// reduced-motion + WebGL availability.
+function SoulCore({ color = "#00d4ff", size = 84 }) {
+  const mountRef = useRef(null);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const mount = mountRef.current;
+    if (!mount) return;
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" });
+    } catch { return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(size, size);
+    mount.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 50);
+    camera.position.z = 5.4;
+    const col = new THREE.Color(color);
+
+    // Core: wireframe icosahedron with a glowing inner orb
+    const coreGeo = new THREE.IcosahedronGeometry(1.1, 0);
+    const coreEdges = new THREE.EdgesGeometry(coreGeo);
+    const coreMat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
+    const core = new THREE.LineSegments(coreEdges, coreMat);
+    scene.add(core);
+
+    const innerOrb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 18, 18),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.18 }),
+    );
+    scene.add(innerOrb);
+
+    // Two orbiting rings on perpendicular axes
+    const ringGeo = new THREE.TorusGeometry(1.85, 0.018, 8, 96);
+    const ringMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.65 });
+    const ringA = new THREE.Mesh(ringGeo, ringMat);
+    const ringB = new THREE.Mesh(ringGeo, ringMat.clone());
+    ringB.material.opacity = 0.45;
+    ringB.rotation.x = Math.PI / 2;
+    scene.add(ringA); scene.add(ringB);
+
+    // Orbiting shards (small dodecahedra)
+    const shards = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.TetrahedronGeometry(0.16)),
+        new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.85 }),
+      );
+      m.userData = { phase: i * (Math.PI * 2 / 6), radius: 2.2 + (i % 2) * 0.25, speed: 0.6 + (i % 3) * 0.18 };
+      scene.add(m); shards.push(m);
+    }
+
+    let raf, frame = 0;
+    const t0 = performance.now();
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      if (document.hidden || (frame++ & 1)) return;
+      const t = (performance.now() - t0) / 1000;
+      core.rotation.x = t * 0.4; core.rotation.y = t * 0.55;
+      ringA.rotation.z = t * 0.7; ringA.rotation.x = t * 0.2;
+      ringB.rotation.z = -t * 0.5; ringB.rotation.y = t * 0.35;
+      innerOrb.scale.setScalar(1 + Math.sin(t * 2.4) * 0.07);
+      shards.forEach(s => {
+        const a = t * s.userData.speed + s.userData.phase;
+        s.position.set(Math.cos(a) * s.userData.radius, Math.sin(a * 0.7) * 0.6, Math.sin(a) * s.userData.radius);
+        s.rotation.x = a * 1.5; s.rotation.y = a;
+      });
+      renderer.render(scene, camera);
+    };
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      coreEdges.dispose(); coreMat.dispose(); coreGeo.dispose();
+      innerOrb.geometry.dispose(); innerOrb.material.dispose();
+      ringGeo.dispose(); ringMat.dispose(); ringB.material.dispose();
+      shards.forEach(s => { s.geometry.dispose(); s.material.dispose(); });
+      renderer.dispose();
+      if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
+    };
+  }, [color, size]);
+  return <div ref={mountRef} style={{ width: size, height: size, position: "relative" }} />;
+}
+
+// Magnetic button: tracks pointer for subtle translate + a follow-glow.
+// Wraps any node; falls back to a plain div on touch (no pull on tap).
+function MagneticButton({ children, strength = 6, style, onClick, className = "", ...rest }) {
+  const ref = useRef(null);
+  const move = e => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `translate(${(px * strength).toFixed(2)}px, ${(py * strength).toFixed(2)}px)`;
+    el.style.setProperty("--mgx", `${((px + 0.5) * 100).toFixed(1)}%`);
+    el.style.setProperty("--mgy", `${((py + 0.5) * 100).toFixed(1)}%`);
+  };
+  const reset = () => { const el = ref.current; if (el) el.style.transform = ""; };
+  return (
+    <button ref={ref} onClick={onClick} className={`magnet-btn ${className}`} style={style}
+      onPointerMove={move} onPointerLeave={reset} onPointerUp={reset} {...rest}>
+      <span className="magnet-glow" />
+      {children}
+    </button>
+  );
 }
 
 // Full-screen level-up ceremony: vignette, triple shockwave, particle burst,
@@ -5863,23 +6002,23 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
           <button
             key={id}
             onClick={() => setScreen(id)}
+            className={`nav-tab ${active ? "is-active" : ""}`}
             style={{
               flex: 1,
               display: "flex", flexDirection: "column",
               alignItems: "center", justifyContent: "center",
               gap: 4,
-              padding: "10px 0 12px",
-              position: "relative",
+              padding: "10px 0 14px",
               background: isHome && active
-                ? `linear-gradient(180deg, ${ACCENT}18, transparent)`
+                ? `linear-gradient(180deg, ${ACCENT}1f, transparent 70%)`
                 : "none",
               border: "none",
               borderTop: isHome
                 ? `2px solid ${active ? ACCENT : ACCENT + "44"}`
                 : `2px solid transparent`,
               cursor: "pointer",
-              transition: "all .2s",
-              filter: active ? `drop-shadow(0 0 6px ${ACCENT})` : "none",
+              transition: "all .25s cubic-bezier(.16,1,.3,1)",
+              filter: active ? `drop-shadow(0 0 7px ${ACCENT})` : "none",
             }}>
             {badge > 0 && (
               <span style={{
@@ -6685,18 +6824,18 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
         {/* Quick actions */}
         <div className="card-in card-in-4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-          <button className="btn-primary" onClick={() => setScreen("schedule")}
+          <MagneticButton className="btn-primary" onClick={() => setScreen("schedule")}
             style={{ padding: "16px", fontSize: 14, letterSpacing: 2,
               animation: "borderPulse 3s ease-in-out infinite" }}>
             <span style={{ fontSize: 11 }}>{_isShadow ? "BEGIN THE HUNT" : _isBeast ? "UNLEASH" : _isArchitect ? "INITIATE PROTOCOL" : "START TRAINING"}</span>
-          </button>
-          <button onClick={() => setScreen("character")} style={{
+          </MagneticButton>
+          <MagneticButton onClick={() => setScreen("character")} style={{
             background: `${GOLD}11`, border: `1px solid ${GOLD}44`, borderRadius: 8,
-            padding: "16px", cursor: "pointer", transition: "all .2s",
+            padding: "16px", cursor: "pointer",
             fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: GOLD, fontWeight: 700, letterSpacing: 2
           }}>
             <span style={{ fontSize: 11 }}>MY STATS</span>
-          </button>
+          </MagneticButton>
         </div>
 
         {/* Social actions */}
@@ -7959,8 +8098,19 @@ function VolumeChart({ workouts }) {
   const linePath = points.map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`)).join(" ");
   const fillPath = `${linePath} L${W},${H} L0,${H} Z`;
 
+  // Reveal-driven draw-in: bars and line animate when the chart scrolls into view
+  const wrapRef = useRef(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setSeen(true); return; }
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setSeen(true); obs.disconnect(); } }, { threshold: 0.25 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
   return (
-    <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+    <div ref={wrapRef} style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
           [ VOLUME TREND — 12 WEEKS ]
@@ -7975,15 +8125,34 @@ function VolumeChart({ workouts }) {
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: 70, display: "block" }}>
         <defs>
           <linearGradient id="volFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"  stopColor={ACCENT} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={ACCENT} stopOpacity="0" />
+            <stop offset="0%"  stopColor={ACCENT} stopOpacity="0.45" />
+            <stop offset="100%" stopColor="#b455ff" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={fillPath} fill="url(#volFill)" />
-        <path d={linePath} fill="none" stroke={ACCENT} strokeWidth="1.5" />
+        {/* Background bars rising from zero */}
+        {data.map((v, i) => {
+          const bh = (v / peak) * (H - 6);
+          return (
+            <rect key={i} x={i * stepX - 3} y={H - bh - 3} width={6} height={bh}
+              fill={ACCENT} opacity={0.22} rx={1}
+              style={{ transformOrigin: `${i * stepX}px ${H}px`,
+                animation: seen ? `barRise .55s cubic-bezier(.16,1,.3,1) ${i * 35}ms both` : "none",
+                transform: seen ? undefined : "scaleY(0)" }} />
+          );
+        })}
+        <path d={fillPath} fill="url(#volFill)"
+          style={{ opacity: seen ? 1 : 0, transition: "opacity .6s ease-out .55s" }} />
+        <path d={linePath} fill="none" stroke={ACCENT} strokeWidth="1.6" pathLength="1"
+          style={{ filter: `drop-shadow(0 0 4px ${ACCENT})`,
+            strokeDasharray: 1, strokeDashoffset: 1,
+            animation: seen ? "lineDraw 1s cubic-bezier(.4,0,.2,1) .35s forwards" : "none" }} />
         {points.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r={i === points.length - 1 ? 3 : 1.5}
-            fill={i === points.length - 1 ? GOLD : ACCENT} />
+          <circle key={i} cx={x} cy={y} r={i === points.length - 1 ? 3.4 : 1.6}
+            fill={i === points.length - 1 ? GOLD : ACCENT}
+            style={{ transformOrigin: `${x}px ${y}px`,
+              animation: seen ? `dotIn .25s cubic-bezier(.16,1,.3,1) ${0.4 + i * 0.05}s both` : "none",
+              transform: seen ? undefined : "scale(0)",
+              filter: i === points.length - 1 ? `drop-shadow(0 0 6px ${GOLD})` : "none" }} />
         ))}
       </svg>
 
@@ -8124,25 +8293,17 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                {/* Mini animated rank emblem */}
-                <div style={{ position: "relative", width: 64, height: 64, flexShrink: 0,
+                {/* Holographic Soul Core (three.js) */}
+                <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ position: "absolute", inset: -6, borderRadius: "50%",
-                    background: `conic-gradient(from 0deg, transparent, ${rank.color}55, transparent 32%)`,
-                    animation: "auraSpin 5s linear infinite", filter: "blur(5px)" }} />
-                  <svg className="emblem-ring" width="64" height="64" viewBox="0 0 64 64"
-                    style={{ position: "absolute", inset: 0 }}>
-                    <circle cx="32" cy="32" r="30" fill="none" stroke={rank.color} strokeWidth="1"
-                      strokeDasharray="8 10" opacity="0.75" />
-                  </svg>
-                  <svg className="emblem-ring2" width="64" height="64" viewBox="0 0 64 64"
-                    style={{ position: "absolute", inset: 0 }}>
-                    <circle cx="32" cy="32" r="24" fill="none" stroke={rank.color} strokeWidth="0.7"
-                      strokeDasharray="2 7" opacity="0.5" />
-                  </svg>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 30, fontWeight: 900,
-                    color: rank.color, textShadow: `0 0 20px ${rank.color}, 0 0 40px ${rank.color}66`,
-                    lineHeight: 1, animation: "emblemPulse 2.8s ease-in-out infinite" }}>{rank.rank}</div>
+                  <div style={{ position: "absolute", inset: -8, borderRadius: "50%",
+                    background: `radial-gradient(circle, ${rank.color}33 0%, transparent 60%)`,
+                    filter: "blur(8px)" }} />
+                  <SoulCore color={rank.color} size={88} />
+                  <div style={{ position: "absolute", fontFamily: "'Orbitron',sans-serif",
+                    fontSize: 20, fontWeight: 900, color: rank.color, pointerEvents: "none",
+                    textShadow: `0 0 14px ${rank.color}, 0 0 30px ${rank.color}88`,
+                    animation: "emblemPulse 2.8s ease-in-out infinite" }}>{rank.rank}</div>
                 </div>
                 <div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3 }}>OVERALL RANK</div>
@@ -9982,6 +10143,7 @@ export default function IronRealm() {
       <style>{CSS}</style>
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
+      <div className="aurora-bg" />
       <SystemParticles accent={settings?.accentColor || "#00d4ff"} />
       <Toasts toasts={toasts} />
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
