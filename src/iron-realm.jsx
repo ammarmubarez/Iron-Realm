@@ -1,5 +1,6 @@
 /* eslint-disable */
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import * as THREE from "three";
 import * as authService from "./services/auth";
 import * as syncService from "./services/sync";
 import * as friendsService from "./services/friends";
@@ -2051,6 +2052,13 @@ const CSS = `
   .holo-corner { position:absolute; width:18px; height:18px; pointer-events:none;
     border-color: ${ACCENT}88; border-style: solid; border-width: 0; }
 
+  /* ── v1.9 CEREMONY + TRANSITIONS ── */
+  @keyframes shockwave { from{transform:scale(.2);opacity:.9} to{transform:scale(4.5);opacity:0} }
+  @keyframes burst { from{transform:translate(0,0) scale(1);opacity:1} to{transform:translate(var(--tx),var(--ty)) scale(.15);opacity:0} }
+  @keyframes slamIn { 0%{transform:scale(3.2);opacity:0;filter:blur(10px)} 60%{transform:scale(.92);opacity:1;filter:blur(0)} 100%{transform:scale(1)} }
+  @keyframes screenWipe { from{opacity:0; transform:translateY(12px) scale(.992)} to{opacity:1; transform:none} }
+  .screen-wipe { animation: screenWipe .28s cubic-bezier(.16,1,.3,1) both; }
+
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
   .fade-in  { animation: fadeIn .4s ease-out both; }
@@ -2895,6 +2903,152 @@ function CountUp({ value, decimals = 0, duration = 900, locale = false }) {
     return () => cancelAnimationFrame(raf);
   }, [value, duration]);
   return <>{locale ? Math.round(disp).toLocaleString() : disp.toFixed(decimals)}</>;
+}
+
+// Three.js ambient particle depth-field, fixed behind all screens.
+// ~260 additive-blended motes (accent + gold) drifting upward with pointer
+// parallax. Renders at ~30fps, pauses when the tab is hidden, honors
+// prefers-reduced-motion, and degrades to nothing if WebGL is unavailable.
+function SystemParticles({ accent = "#00d4ff" }) {
+  const mountRef = useRef(null);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const mount = mountRef.current;
+    if (!mount) return;
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, powerPreference: "low-power" });
+    } catch { return; }
+    const W = () => window.innerWidth, H = () => window.innerHeight;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.setSize(W(), H());
+    mount.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, W() / H(), 1, 2000);
+    camera.position.z = 420;
+
+    const N = 260;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const seeds = new Float32Array(N);
+    const cyan = new THREE.Color(accent), gold = new THREE.Color("#e8c44a");
+    for (let i = 0; i < N; i++) {
+      pos[i * 3]     = (Math.random() - 0.5) * 950;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 1500;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 850;
+      const c = Math.random() < 0.82 ? cyan : gold;
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+      seeds[i] = Math.random() * Math.PI * 2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+
+    // soft round sprite so points render as glowing motes, not squares
+    const cnv = document.createElement("canvas");
+    cnv.width = cnv.height = 64;
+    const g2 = cnv.getContext("2d");
+    const grad = g2.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.4, "rgba(255,255,255,.45)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g2.fillStyle = grad; g2.fillRect(0, 0, 64, 64);
+    const sprite = new THREE.CanvasTexture(cnv);
+
+    const mat = new THREE.PointsMaterial({
+      size: 6, map: sprite, vertexColors: true, transparent: true, opacity: 0.75,
+      depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+    });
+    const points = new THREE.Points(geo, mat);
+    scene.add(points);
+
+    let px = 0, py = 0;
+    const onPointer = e => {
+      px = (e.clientX / W() - 0.5) * 46;
+      py = (e.clientY / H() - 0.5) * 46;
+    };
+    const onResize = () => {
+      camera.aspect = W() / H();
+      camera.updateProjectionMatrix();
+      renderer.setSize(W(), H());
+    };
+    window.addEventListener("pointermove", onPointer, { passive: true });
+    window.addEventListener("resize", onResize);
+
+    let raf, frame = 0;
+    const t0 = performance.now();
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      if (document.hidden || (frame++ % 2)) return;
+      const t = (performance.now() - t0) / 1000;
+      points.rotation.y = t * 0.02;
+      const arr = geo.attributes.position.array;
+      for (let i = 0; i < N; i++) {
+        arr[i * 3 + 1] += Math.sin(t * 0.7 + seeds[i]) * 0.05 + 0.07;
+        if (arr[i * 3 + 1] > 750) arr[i * 3 + 1] = -750;
+      }
+      geo.attributes.position.needsUpdate = true;
+      camera.position.x += (px - camera.position.x) * 0.03;
+      camera.position.y += (-py - camera.position.y) * 0.03;
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    };
+    tick();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", onPointer);
+      window.removeEventListener("resize", onResize);
+      geo.dispose(); mat.dispose(); sprite.dispose(); renderer.dispose();
+      mount.removeChild(renderer.domElement);
+    };
+  }, [accent]);
+  return <div ref={mountRef} style={{ position: "fixed", inset: 0, zIndex: -1, pointerEvents: "none" }} />;
+}
+
+// Full-screen level-up ceremony: vignette, triple shockwave, particle burst,
+// the new level slamming in. Tap anywhere (or wait) to dismiss.
+function LevelUpCeremony({ level, settings, onDone }) {
+  const rank = getRank(level);
+  useEffect(() => {
+    const t = setTimeout(onDone, 3400);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  const parts = useMemo(() => Array.from({ length: 26 }, () => ({
+    tx: (Math.random() - 0.5) * 360, ty: (Math.random() - 0.5) * 360,
+    d: 0.5 + Math.random() * 0.9, delay: Math.random() * 0.25, gold: Math.random() < 0.4,
+  })), []);
+  return (
+    <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 3000, display: "flex",
+      alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer",
+      background: "radial-gradient(circle at 50% 45%, rgba(3,6,15,.55), rgba(3,6,15,.96))",
+      animation: "fadeIn .25s ease-out both" }}>
+      {[0, 0.18, 0.36].map((d, i) => (
+        <div key={i} style={{ position: "absolute", width: 120, height: 120, borderRadius: "50%",
+          border: `2px solid ${rank.color}`, animation: `shockwave 1.1s cubic-bezier(.2,.7,.3,1) ${d}s both` }} />
+      ))}
+      {parts.map((p, i) => (
+        <span key={i} style={{ position: "absolute", width: 5, height: 5, borderRadius: "50%",
+          background: p.gold ? GOLD : rank.color, boxShadow: `0 0 8px ${p.gold ? GOLD : rank.color}`,
+          "--tx": `${p.tx}px`, "--ty": `${p.ty}px`,
+          animation: `burst ${p.d}s cubic-bezier(.16,1,.3,1) ${0.15 + p.delay}s both` }} />
+      ))}
+      <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, letterSpacing: 7,
+        color: ACCENT, textShadow: `0 0 12px ${ACCENT}`, marginBottom: 10, textAlign: "center", padding: "0 20px" }}>
+        {themeLabel(settings, "levelUp", "LEVEL UP!")}
+      </div>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 84, fontWeight: 900, lineHeight: 1,
+        color: rank.color, textShadow: `0 0 30px ${rank.color}, 0 0 80px ${rank.color}66`,
+        animation: "slamIn .55s cubic-bezier(.16,1,.3,1) .12s both" }}>{level}</div>
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, letterSpacing: 4, color: rank.color,
+        opacity: 0.85, marginTop: 12, animation: "fadeIn .4s ease-out .5s both" }}>
+        {rank.rank}-RANK · {rank.label.toUpperCase()}
+      </div>
+      <div style={{ position: "absolute", bottom: 48, fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
+        color: MUTED, letterSpacing: 3, animation: "fadeIn .4s ease-out 1.2s both" }}>TAP TO CONTINUE</div>
+    </div>
+  );
 }
 
 function XPBar({ current, needed, color = ACCENT, height = 6 }) {
@@ -3881,7 +4035,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const [tab, setTab] = useState("log"); // "log" | "browse"
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 0" }}>
@@ -4315,7 +4469,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
         {themeLabel(settings,"database","DATABASE")}
         {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
@@ -4768,7 +4922,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 14px" }}>
@@ -4897,7 +5051,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
         {!isFree && todayPlan && !todayPlan.rest && todayPlan.exercises?.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-              letterSpacing: 3, marginBottom: 8 }}>{"// TODAY'S PLAN · {todayPlan.label}"}</div>
+              letterSpacing: 3, marginBottom: 8 }}>{`// TODAY'S PLAN · ${todayPlan.label.toUpperCase()}`}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {todayPlan.exercises.map((ex, i) => {
                 const mm = MUSCLE_META[ex.muscle] || MUSCLE_META.chest;
@@ -5473,7 +5627,7 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
   const allPrograms = [FREE_PROGRAM, ...programs];
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
         color: GOLD, letterSpacing: 2, marginBottom: 4 }}>PROGRAMS</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED,
@@ -6262,7 +6416,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
   return (
     <div onScroll={e => e.currentTarget.style.setProperty("--sy", e.currentTarget.scrollTop)}
-      style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
+      style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
       {/* Background effects */}
       <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${ACCENT}0d 0%, transparent 60%)`, pointerEvents: "none" }} />
       {/* Shadow: void tendrils rising from the floor */}
@@ -7923,7 +8077,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   );
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* ── PROFILE SWITCHER ── */}
       <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -9180,6 +9334,9 @@ function FriendsScreen({ account, toast }) {
 
 
 export default function IronRealm() {
+  // v1.9: full-screen ceremony when overall level rises
+  const [ceremonyLevel, setCeremonyLevel] = useState(null);
+
   // v1.9: energy ripple on every button press, spawned at the touch point
   useEffect(() => {
     const onDown = e => {
@@ -9628,7 +9785,7 @@ export default function IronRealm() {
       const netXP = calcNetXP(entry.xp, calsEaten, tdee, proteinEaten, proteinTarget);
       const absorbed = entry.xp - netXP; // XP cancelled by food surplus
       const { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel, statKey } = applyXP(p, entry.exercise, entry.muscle, netXP);
-      if (newOverallLevel > p.overallLevel) { const lvlMsg = themeLabel(store.settings,'levelUp','LEVEL UP!'); setTimeout(() => toast(`${lvlMsg} LVL ${newOverallLevel}`, GOLD), 400); }
+      if (newOverallLevel > p.overallLevel) { setTimeout(() => setCeremonyLevel(newOverallLevel), 350); }
       if (newLevels[statKey] > (p.levels[statKey] || 1)) setTimeout(() => toast(`${MUSCLE_META[statKey]?.name} LVL ${newLevels[statKey]}!`, MUSCLE_META[statKey]?.color), 700);
       if (absorbed > 0) setTimeout(() => toast(`-${absorbed} XP absorbed by food surplus`, RED), 200);
       return { ...p, stats: newStats, subStats: newSubStats, levels: newLevels,
@@ -9825,8 +9982,11 @@ export default function IronRealm() {
       <style>{CSS}</style>
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
+      <SystemParticles accent={settings?.accentColor || "#00d4ff"} />
       <Toasts toasts={toasts} />
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
+      {ceremonyLevel && <LevelUpCeremony level={ceremonyLevel} settings={settings} onDone={() => setCeremonyLevel(null)} />}
+      <div key={screen} className="screen-wipe">
       {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
@@ -9835,6 +9995,7 @@ export default function IronRealm() {
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
       {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}
+      </div>
       </div>
       <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} pendingCount={pendingCount} />
     </>
