@@ -355,12 +355,20 @@ const XP_FOR_MUSCLE_LEVEL  = (lvl) => MUSCLE_THRESHOLDS[Math.min(lvl - 1, 99)];
 // Overall: maps training age / work capacity to real physiological stages
 // Sources: NSCA (2016), Kraemer et al (2002), Moritani & deVries (1979)
 const OVERALL_MILESTONE_NAMES = [
-  "Awakened","Initiate","Recruit","Beginner","Novice",
-  "Iron Disciple","Trained","Iron Veteran","Advanced","S-Rank Hunter",
-  "Iron Blood","Iron Will","Iron Form","Iron Soul","Iron Sovereign",
-  "Iron Disciple","Iron Knight","Iron Lord","Iron Sovereign","Sovereign",
-  "Void Knight","Void Walker","Abyss Knight","Abyss Lord","Arch-Sovereign",
-  "Abyss Sovereign","Abyss Emperor","Obsidian King","Obsidian Sovereign","Transcendent",
+  // E-rank (lvl 1–3)
+  "Awakened","Initiate","Recruit",
+  // D-rank (lvl 4–6)
+  "Apprentice","Trainee","Novice",
+  // C-rank (lvl 7–11)
+  "Iron Disciple","Iron Wielder","Iron Veteran","Iron Champion","Iron Adept",
+  // B-rank (lvl 12–19)
+  "Iron Knight","Iron Form","Iron Will","Iron Soul","Iron Sovereign",
+  "Steel Lord","Steel Sovereign","Void Knight",
+  // A-rank (lvl 20–29)
+  "Void Walker","Void Lord","Abyss Knight","Abyss Lord","Abyss Sovereign",
+  "Arch-Sovereign","Obsidian King","Obsidian Sovereign","Eternal Walker","Transcendent",
+  // S-rank (lvl 30+)
+  "S-Rank Hunter",
 ];
 const OVERALL_MILESTONE_DESC = [
   "Your body begins responding to training stimulus",
@@ -2088,6 +2096,39 @@ const CSS = `
       radial-gradient(ellipse at 62% 78%, ${GOLD}22 0%, transparent 50%);
     filter: blur(20px); animation: auroraDrift 22s ease-in-out infinite; }
 
+  /* ── v1.9.2 POLISH ── */
+  /* Holographic gradient title — chromatic shift through cyan/violet/gold */
+  @keyframes holoText { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  .holo-text {
+    background: linear-gradient(90deg, ${ACCENT}, #b455ff, ${GOLD}, #b455ff, ${ACCENT});
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: holoText 9s linear infinite;
+    filter: drop-shadow(0 0 8px ${ACCENT}55);
+  }
+  /* Section divider — thin line with a glowing pulse that travels across */
+  @keyframes dividerPulse { 0%{left:-10%} 100%{left:110%} }
+  .holo-divider { position: relative; height: 1px; margin: 12px 0;
+    background: linear-gradient(90deg, transparent, ${ACCENT}66 20%, ${ACCENT}88 50%, ${ACCENT}66 80%, transparent);
+    overflow: hidden; }
+  .holo-divider::after { content:''; position: absolute; top: -3px; height: 7px; width: 22%;
+    background: radial-gradient(ellipse at center, ${ACCENT}cc, transparent 70%);
+    animation: dividerPulse 5s linear infinite; filter: blur(2px); }
+  /* Flowing-light XP bar — a moving sheen layered over the fill */
+  @keyframes xpFlow { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
+  .xp-flow { position: relative; overflow: hidden; }
+  .xp-flow::before {
+    content:''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, transparent 20%, #ffffff66 50%, transparent 80%);
+    animation: xpFlow 3s ease-in-out infinite;
+    mix-blend-mode: screen;
+  }
+  /* Tap sparkle: small particles burst from press point */
+  @keyframes sparkOut { from{transform:translate(0,0) scale(1);opacity:1} to{transform:translate(var(--sx),var(--sy)) scale(.2);opacity:0} }
+  .spark-fx { position: absolute; width: 4px; height: 4px; border-radius: 50%;
+    pointer-events: none; z-index: 6; animation: sparkOut .5s cubic-bezier(.2,.7,.3,1) forwards; }
+
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
   .fade-in  { animation: fadeIn .4s ease-out both; }
@@ -3123,6 +3164,70 @@ function SoulCore({ color = "#00d4ff", size = 84 }) {
   return <div ref={mountRef} style={{ width: size, height: size, position: "relative" }} />;
 }
 
+// Companion Orb: tiny three.js sphere with orbiting electron rings, used as a
+// "system familiar" next to the rank emblem on the Home header.
+function CompanionOrb({ color = "#00d4ff", size = 36 }) {
+  const mountRef = useRef(null);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const mount = mountRef.current;
+    if (!mount) return;
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" });
+    } catch { return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(size, size);
+    mount.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 50);
+    camera.position.z = 3.4;
+    const col = new THREE.Color(color);
+
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 22, 22),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.45 }),
+    );
+    scene.add(orb);
+
+    const haloMat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9 });
+    const haloA = new THREE.LineLoop(new THREE.RingGeometry(1.05, 1.05, 64).attributes.position
+      ? new THREE.BufferGeometry().setFromPoints(
+          Array.from({ length: 64 }, (_, i) => {
+            const a = (i / 64) * Math.PI * 2;
+            return new THREE.Vector3(Math.cos(a) * 1.05, Math.sin(a) * 1.05, 0);
+          })
+        )
+      : new THREE.BufferGeometry(), haloMat);
+    const haloB = haloA.clone();
+    haloB.material = haloMat.clone(); haloB.material.opacity = 0.6;
+    haloB.rotation.x = Math.PI / 2.5;
+    scene.add(haloA); scene.add(haloB);
+
+    let raf, frame = 0;
+    const t0 = performance.now();
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      if (document.hidden || (frame++ & 1)) return;
+      const t = (performance.now() - t0) / 1000;
+      haloA.rotation.z = t * 1.1; haloA.rotation.x = Math.sin(t * 0.7) * 0.3;
+      haloB.rotation.z = -t * 0.9; haloB.rotation.y = t * 0.5;
+      orb.scale.setScalar(1 + Math.sin(t * 3) * 0.08);
+      renderer.render(scene, camera);
+    };
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      orb.geometry.dispose(); orb.material.dispose();
+      haloA.geometry.dispose(); haloA.material.dispose();
+      haloB.geometry.dispose(); haloB.material.dispose();
+      renderer.dispose();
+      if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
+    };
+  }, [color, size]);
+  return <div ref={mountRef} style={{ width: size, height: size, position: "relative" }} />;
+}
+
 // Magnetic button: tracks pointer for subtle translate + a follow-glow.
 // Wraps any node; falls back to a plain div on touch (no pull on tap).
 function MagneticButton({ children, strength = 6, style, onClick, className = "", ...rest }) {
@@ -3197,7 +3302,7 @@ function XPBar({ current, needed, color = ACCENT, height = 6 }) {
       background: DARK1, border: `1px solid ${color}33`,
       borderRadius: 0, height: height + 2, overflow: "hidden", position: "relative"
     }}>
-      <div style={{
+      <div className="xp-flow" style={{
         width: `${pct}%`, height: "100%",
         background: `linear-gradient(90deg, ${color}66, ${color}, ${color}cc)`,
         boxShadow: `0 0 8px ${color}, 0 0 16px ${color}44`,
@@ -4609,8 +4714,10 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   return (
     <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
-      <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
-        {themeLabel(settings,"database","DATABASE")}
+      <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="glitch-in holo-text" style={{ fontFamily: "'Orbitron',sans-serif" }}>
+          {themeLabel(settings,"database","DATABASE")}
+        </span>
         {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
       </div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, letterSpacing: 2, marginBottom: 18 }}>EXERCISE COMPENDIUM</div>
@@ -6073,8 +6180,8 @@ function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest 
     <div style={{ minHeight: "100vh", background: BG, display: "flex",
       flexDirection: "column", justifyContent: "center", padding: "40px 24px" }}>
       <div style={{ maxWidth: 420, margin: "0 auto", width: "100%" }}>
-        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900,
-          color: ACCENT, letterSpacing: 6, textAlign: "center", marginBottom: 8 }}>
+        <div className="holo-text" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900,
+          letterSpacing: 6, textAlign: "center", marginBottom: 8 }}>
           IRON REALM
         </div>
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
@@ -6646,12 +6753,14 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             </div>
             <div>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
-              <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900, color: GOLD,
-                letterSpacing: 3, textShadow: `0 0 14px ${GOLD}88` }}>{st.name.toUpperCase()}</div>
+              <div className="glitch-in holo-text" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
+                letterSpacing: 3 }}>{st.name.toUpperCase()}</div>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7, color: rank.color, letterSpacing: 3, opacity: 0.85, marginTop: 2 }}>{rank.label.toUpperCase()}</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {/* Companion familiar — 3D orbiting halos in rank color */}
+            <CompanionOrb color={rank.color} size={36} />
             <button onClick={() => setSettingsOpen("help")} style={{
               background: "none", border: `1px solid ${MUTED}44`, borderRadius: "50%",
               width: 28, height: 28, cursor: "pointer", color: MUTED,
@@ -6877,6 +6986,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           </button>
         </div>
 
+        <div className="holo-divider" />
         {/* Daily Rituals */}
         {(() => {
           const completionLog = st.dailyRituals?.completionLog || {};
@@ -6961,6 +7071,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           </Reveal>
         )}
 
+        <div className="holo-divider" />
         {/* Recent workouts — entries slide in from alternating sides on scroll */}
         <div style={{ marginBottom: 8 }}>
           <Reveal>
@@ -9498,23 +9609,44 @@ export default function IronRealm() {
   // v1.9: full-screen ceremony when overall level rises
   const [ceremonyLevel, setCeremonyLevel] = useState(null);
 
-  // v1.9: energy ripple on every button press, spawned at the touch point
+  // v1.9: energy ripple + sparkle burst on every button press, at the touch point
   useEffect(() => {
     const onDown = e => {
       const btn = e.target.closest?.("button");
       if (!btn) return;
       const r = btn.getBoundingClientRect();
       const size = Math.max(r.width, r.height) * 1.2;
+      const cs = getComputedStyle(btn);
+      if (cs.position === "static") btn.style.position = "relative";
+      if (cs.overflow !== "hidden") btn.style.overflow = "hidden";
+
+      // Ripple
       const fx = document.createElement("span");
       fx.className = "ripple-fx";
       fx.style.width = fx.style.height = `${size}px`;
       fx.style.left = `${e.clientX - r.left - size / 2}px`;
       fx.style.top = `${e.clientY - r.top - size / 2}px`;
-      const cs = getComputedStyle(btn);
-      if (cs.position === "static") btn.style.position = "relative";
-      if (cs.overflow !== "hidden") btn.style.overflow = "hidden";
       btn.appendChild(fx);
       setTimeout(() => fx.remove(), 600);
+
+      // Sparkles — 6 tiny particles flung outward
+      const ox = e.clientX - r.left, oy = e.clientY - r.top;
+      const palette = ["#00d4ff", "#e8c44a", "#b455ff", "#ffffff"];
+      for (let i = 0; i < 6; i++) {
+        const s = document.createElement("span");
+        s.className = "spark-fx";
+        const a = Math.random() * Math.PI * 2, d = 20 + Math.random() * 28;
+        s.style.left = `${ox - 2}px`;
+        s.style.top = `${oy - 2}px`;
+        s.style.setProperty("--sx", `${Math.cos(a) * d}px`);
+        s.style.setProperty("--sy", `${Math.sin(a) * d}px`);
+        const c = palette[Math.floor(Math.random() * palette.length)];
+        s.style.background = c;
+        s.style.boxShadow = `0 0 6px ${c}, 0 0 12px ${c}66`;
+        s.style.animationDelay = `${i * 18}ms`;
+        btn.appendChild(s);
+        setTimeout(() => s.remove(), 600);
+      }
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
