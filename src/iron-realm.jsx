@@ -1855,6 +1855,51 @@ function getRank(level) {
   };
 }
 
+// ─── NAME AURAS ───────────────────────────────────────────────────────────────
+// Animated username effects unlocked by OVERALL level, aligned to rank tiers.
+// Each higher rank unlocks a flashier aura; the top "Prismatic" rainbow is
+// S-rank exclusive (level 30+). Effects are cosmetic and purely client-side.
+const NAME_AURAS = [
+  { id: "static",    label: "Static",    minLevel: 1,  className: "",              rank: "E", desc: "Plain nameplate" },
+  { id: "glow",      label: "Ember Glow", minLevel: 4,  className: "aura-glow",     rank: "D", desc: "Soft pulsing glow" },
+  { id: "pulse",     label: "Pulse",     minLevel: 7,  className: "aura-pulse",    rank: "C", desc: "Breathing halo" },
+  { id: "shimmer",   label: "Shimmer",   minLevel: 12, className: "aura-shimmer",  rank: "B", desc: "Light sweep across your name" },
+  { id: "chroma",    label: "Chroma",    minLevel: 20, className: "aura-chroma",   rank: "A", desc: "Cyan-violet color shift" },
+  { id: "prismatic", label: "Prismatic", minLevel: 30, className: "aura-prismatic", rank: "S", desc: "Full-spectrum rainbow — S-rank only" },
+];
+
+function auraUnlocked(aura, level) { return (level || 1) >= aura.minLevel; }
+
+// Highest aura the level qualifies for.
+function highestAura(level) {
+  let top = NAME_AURAS[0];
+  for (const a of NAME_AURAS) if (auraUnlocked(a, level)) top = a;
+  return top;
+}
+
+// Resolve which aura to actually render: the equipped choice if it's unlocked
+// at this level, otherwise fall back to the highest unlocked (handles switching
+// to a lower-level profile, or "auto").
+function resolveAura(level, equippedId) {
+  if (equippedId && equippedId !== "auto") {
+    const chosen = NAME_AURAS.find(a => a.id === equippedId);
+    if (chosen && auraUnlocked(chosen, level)) return chosen;
+  }
+  return highestAura(level);
+}
+
+// Renders a name with its unlocked aura. `color` seeds the glow-family auras
+// (--aura); gradient auras use their own fixed palettes.
+function AuraName({ name, level, equippedId, color, style, className = "" }) {
+  const aura = resolveAura(level, equippedId);
+  return (
+    <span className={`${aura.className} ${className}`}
+      style={{ "--aura": color || GOLD, ...(aura.className ? {} : { color: color || GOLD }), ...style }}>
+      {name}
+    </span>
+  );
+}
+
 // Muscle rank — uses milestone names
 function getMuscleRank(level) {
   const rankLetter =
@@ -1906,6 +1951,40 @@ const CSS = `
   @keyframes hexPulse { 0%,100%{opacity:.6;transform:scale(1)} 50%{opacity:1;transform:scale(1.04)} }
   @keyframes sysBoot { 0%{clip-path:inset(0 100% 0 0)} 100%{clip-path:inset(0 0% 0 0)} }
   @keyframes cornerBlink { 0%,90%,100%{opacity:1} 95%{opacity:.3} }
+
+  /* ── NAME AURAS (level-gated unlocks) ── */
+  @keyframes auraGlowPulse { 0%,100%{text-shadow:0 0 6px var(--aura,${GOLD})88} 50%{text-shadow:0 0 12px var(--aura,${GOLD}),0 0 22px var(--aura,${GOLD})66} }
+  @keyframes auraBreathe { 0%,100%{text-shadow:0 0 8px var(--aura,${GOLD}),0 0 16px var(--aura,${GOLD})44;transform:scale(1)} 50%{text-shadow:0 0 16px var(--aura,${GOLD}),0 0 34px var(--aura,${GOLD})88;transform:scale(1.03)} }
+  @keyframes auraShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @keyframes auraChroma { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  @keyframes auraPrism { 0%{background-position:0% 50%} 100%{background-position:300% 50%} }
+
+  .aura-glow { animation: auraGlowPulse 2.4s ease-in-out infinite; }
+  .aura-pulse { display:inline-block; animation: auraBreathe 2.2s ease-in-out infinite; transform-origin:left center; }
+  .aura-shimmer {
+    background: linear-gradient(100deg, var(--aura,${GOLD}) 0%, var(--aura,${GOLD}) 38%, #ffffff 50%, var(--aura,${GOLD}) 62%, var(--aura,${GOLD}) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: auraShimmer 3.2s linear infinite;
+    filter: drop-shadow(0 0 6px var(--aura,${GOLD})66);
+  }
+  .aura-chroma {
+    background: linear-gradient(90deg, ${ACCENT}, #a855f7, ${ACCENT});
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: auraChroma 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 7px ${ACCENT}55);
+  }
+  .aura-prismatic {
+    background: linear-gradient(90deg, #ff4d4d, #ffb24d, #ffed4d, #4dff88, ${ACCENT}, #a855f7, #ff4dd8, #ff4d4d);
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: auraPrism 4.5s linear infinite;
+    filter: drop-shadow(0 0 8px ${ACCENT}66);
+  }
 
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
@@ -5775,8 +5854,11 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900, color: GOLD,
-              letterSpacing: 3, textShadow: `0 0 14px ${GOLD}88` }}>{st.name.toUpperCase()}</div>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
+              letterSpacing: 3 }}>
+              <AuraName name={st.name.toUpperCase()} level={st.overallLevel}
+                equippedId={settings?.nameAura} color={GOLD} />
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -6204,6 +6286,56 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </button>
               )}
             </div>
+
+            {/* Name Aura — level-gated username animations (all users) */}
+            {(() => {
+              const equippedAura = settings?.nameAura || "auto";
+              const topId = highestAura(st.overallLevel).id;
+              const auraColor = account.remoteProfile?.banner_color || GOLD;
+              const options = [{ id: "auto", label: "Auto (highest)", minLevel: 1, className: "", desc: "Always show your best unlocked aura" }, ...NAME_AURAS];
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3 }}>{"// NAME AURA"}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>unlocked by overall level</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {options.map(opt => {
+                      const isAuto = opt.id === "auto";
+                      const locked = !isAuto && st.overallLevel < opt.minLevel;
+                      const selected = equippedAura === opt.id;
+                      const isTop = !isAuto && opt.id === topId;
+                      return (
+                        <button key={opt.id} disabled={locked}
+                          onClick={() => onUpdateSettings?.({ nameAura: opt.id })}
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            gap: 10, padding: "9px 12px", cursor: locked ? "not-allowed" : "pointer",
+                            background: selected ? `${ACCENT}18` : BG3,
+                            border: `1px solid ${selected ? ACCENT : (locked ? MUTED + "22" : ACCENT2 + "33")}`,
+                            borderRadius: 8, opacity: locked ? 0.5 : 1, textAlign: "left",
+                          }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 800 }}>
+                              {isAuto
+                                ? <span style={{ color: TEXT }}>{st.name.toUpperCase()}</span>
+                                : <span className={opt.className} style={{ "--aura": auraColor, ...(opt.className ? {} : { color: auraColor }) }}>{st.name.toUpperCase()}</span>}
+                            </div>
+                            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                              {opt.label}{isTop ? " · your current best" : ""} — {opt.desc}
+                            </div>
+                          </div>
+                          <div style={{ flexShrink: 0, fontFamily: "'Orbitron',sans-serif", fontSize: 9, letterSpacing: 1,
+                            color: locked ? MUTED : (selected ? ACCENT : GOLD) }}>
+                            {locked ? `🔒 LVL ${opt.minLevel}` : (selected ? "EQUIPPED" : (isAuto ? "" : opt.rank))}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Profile — banner color picker (signed in only) */}
             {account.session && account.remoteProfile && (
@@ -7980,8 +8112,9 @@ function LeaderboardScreen({ account, toast }) {
                     background: _activityColor(row.updated_at),
                     boxShadow: `0 0 4px ${_activityColor(row.updated_at)}`,
                   }} />
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: isMe ? ACCENT : TEXT, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    @{row.username}{isMe ? " ◈" : ""}
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <AuraName name={`@${row.username}${isMe ? " ◈" : ""}`}
+                      level={row.overall_level} color={isMe ? ACCENT : (row.banner_color || TEXT)} />
                   </div>
                 </div>
                 {row.equipped_title && (
