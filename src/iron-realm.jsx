@@ -1393,6 +1393,9 @@ const MUSCLE_META = {
   calves:      { name: "Calves",       color: "#10b981", glyph: "CV" },
   cardio:      { name: "Endurance",    color: "#ef4444", glyph: "EN" },
   calisthenics:{ name: "Agility",      color: "#f59e0b", glyph: "AG" },
+  // ── Life attributes (leveled from the mind/spirit log, not workouts) ──
+  intelligence:{ name: "Intelligence", color: "#8b8cf6", glyph: "IN" },
+  faith:       { name: "Faith",        color: "#2ecc9b", glyph: "FA" },
   // ── Sub-muscles (match SVG IDs exactly — for exercise tagging) ──
   "upper-pectoralis":    { name: "Upper Chest",         color: "#e05555", parent: "chest"     },
   "mid-lower-pectoralis":{ name: "Mid/Lower Chest",     color: "#c03030", parent: "chest"     },
@@ -1469,6 +1472,7 @@ const newProfile = (id, name = "Hunter") => ({
   weightLog: [],
   bookmarkedExercises: [],   // array of exercise names pinned to top of database
   dailyRituals: { completionLog: {} }, // { 'YYYY-MM-DD': ['pushups','stretch',...] }
+  mindLog: [],  // [{ id, date, stat:'intelligence'|'faith', activity, label, qty, xp }] — mind/spirit growth ledger
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
   createdAt: Date.now(),
 });
@@ -5129,6 +5133,184 @@ function StatBadge({ muscle, level, xp }) {
   );
 }
 
+// ─── MIND & SPIRIT ────────────────────────────────────────────────────────────
+// Two life attributes leveled outside the body-XP system. XP is derived by
+// summing a per-profile `mindLog` ledger, so it survives the workout-stat
+// recompute on load (which only rebuilds muscle stats). Faith XP is framed as
+// engagement points weighted by time/effort — a consistency nudge, not a
+// ranking of spiritual worth.
+//
+// Each activity: xpPer × qty (unit-based) or a flat xp (single act). `custom`
+// lets the user name their own entry (Intelligence is open-ended by design).
+const MIND_ACTIVITIES = {
+  intelligence: [
+    { id: "read",     label: "Read a book",         unit: "min",  xpPer: 8,  defaultQty: 10 },
+    { id: "chapter",  label: "Finished a chapter",  flat: 120 },
+    { id: "study",    label: "Study / course",      unit: "min",  xpPer: 8,  defaultQty: 15 },
+    { id: "skill",    label: "Learned a new skill", flat: 200 },
+    { id: "article",  label: "Article / podcast",   flat: 60 },
+    { id: "custom",   label: "Something else",      flat: 80, custom: true },
+  ],
+  faith: [
+    { id: "quran_read",     label: "Qur'an recitation",   unit: "page",  xpPer: 40,  defaultQty: 1 },
+    { id: "quran_memorize", label: "Qur'an memorization", unit: "āyah",  xpPer: 120, defaultQty: 1 },
+    { id: "hadith",         label: "Hadith study",        flat: 80 },
+    { id: "sunnah",         label: "Sunnah / Nafl prayer",unit: "prayer",xpPer: 60,  defaultQty: 1 },
+    { id: "fasting",        label: "Voluntary fasting",   unit: "day",   xpPer: 300, defaultQty: 1 },
+    { id: "dhikr",          label: "Dhikr / Istighfār",   flat: 50 },
+    { id: "tahajjud",       label: "Tahajjud",            flat: 150 },
+    { id: "sadaqah",        label: "Ṣadaqah (charity)",   flat: 100 },
+  ],
+};
+
+// Cumulative XP for a life attribute, summed from the ledger.
+function mindStatXP(profile, stat) {
+  return (profile?.mindLog || []).reduce((sum, e) => e.stat === stat ? sum + (e.xp || 0) : sum, 0);
+}
+
+// XP a given activity + quantity is worth.
+function activityXP(activity, qty) {
+  if (activity.flat != null) return activity.flat;
+  return Math.max(1, Math.round((activity.xpPer || 0) * (qty || activity.defaultQty || 1)));
+}
+
+// Logging modal: pick attribute → tap an activity → (optional) set quantity → log.
+function MindLogModal({ profile, onLog, onClose }) {
+  const [stat, setStat] = useState("intelligence");
+  const [qty, setQty]   = useState({});         // { activityId: number }
+  const [customLabel, setCustomLabel] = useState("");
+  const meta = MUSCLE_META[stat];
+  const acts = MIND_ACTIVITIES[stat];
+
+  const doLog = (activity) => {
+    const q = activity.unit ? (qty[activity.id] || activity.defaultQty || 1) : null;
+    const label = activity.custom
+      ? (customLabel.trim() || "Learning")
+      : activity.label + (activity.unit ? ` · ${q} ${activity.unit}` : "");
+    onLog({
+      id: `${Date.now()}_${Math.round(profile?.mindLog?.length || 0)}`,
+      date: Date.now(),
+      stat,
+      activity: activity.id,
+      label,
+      qty: q,
+      xp: activityXP(activity, q),
+    });
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1200,
+      background: "rgba(3,6,15,0.94)", backdropFilter: "blur(12px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 96 }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${meta.color}44`, borderTop: `2px solid ${meta.color}`,
+        width: "100%", maxWidth: 480, maxHeight: "82vh", display: "flex", flexDirection: "column",
+        clipPath: "polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%)" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
+          background: `linear-gradient(90deg, transparent, ${meta.color}cc, transparent)` }} />
+        <div style={{ padding: "18px 18px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700,
+              color: meta.color, letterSpacing: 2 }}>LOG MIND & SPIRIT</div>
+            <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+          </div>
+          {/* Attribute tabs */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {["intelligence", "faith"].map(s => {
+              const m = MUSCLE_META[s]; const on = stat === s;
+              const lvl = getMuscleLevel(mindStatXP(profile, s));
+              return (
+                <button key={s} onClick={() => setStat(s)} style={{
+                  flex: 1, padding: "10px", cursor: "pointer",
+                  background: on ? `${m.color}22` : BG3,
+                  border: `1px solid ${on ? m.color : ACCENT2 + "33"}`, borderRadius: 8,
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
+                  color: on ? m.color : MUTED, letterSpacing: 1,
+                }}>{m.name.toUpperCase()} · LVL {lvl}</button>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 24px" }}>
+          {acts.map(a => {
+            const q = a.unit ? (qty[a.id] ?? a.defaultQty ?? 1) : null;
+            const xp = activityXP(a, q);
+            return (
+              <div key={a.id} style={{ background: BG3, border: `1px solid ${meta.color}22`,
+                borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, fontWeight: 700, color: TEXT }}>{a.label}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: meta.color }}>+{xp} XP</div>
+                  </div>
+                  <button onClick={() => doLog(a)} style={{
+                    flexShrink: 0, background: `${meta.color}22`, border: `1px solid ${meta.color}66`,
+                    borderTop: `1px solid ${meta.color}cc`,
+                    clipPath: "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
+                    padding: "8px 16px", cursor: "pointer",
+                    fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+                    color: meta.color, letterSpacing: 1 }}>LOG</button>
+                </div>
+                {/* Quantity stepper for unit-based activities */}
+                {a.unit && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                    <button onClick={() => setQty(s => ({ ...s, [a.id]: Math.max(1, (s[a.id] ?? a.defaultQty ?? 1) - 1) }))}
+                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}44`, borderRadius: 6,
+                        color: TEXT, fontSize: 16, cursor: "pointer" }}>−</button>
+                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, color: TEXT, minWidth: 54, textAlign: "center" }}>{q} {a.unit}</span>
+                    <button onClick={() => setQty(s => ({ ...s, [a.id]: (s[a.id] ?? a.defaultQty ?? 1) + 1 }))}
+                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}44`, borderRadius: 6,
+                        color: TEXT, fontSize: 16, cursor: "pointer" }}>+</button>
+                  </div>
+                )}
+                {/* Custom label field */}
+                {a.custom && (
+                  <input className="input-field" value={customLabel} onChange={e => setCustomLabel(e.target.value)}
+                    placeholder="What did you do? (e.g. documentary, chess)" maxLength={40}
+                    style={{ marginTop: 8, fontSize: 13 }} />
+                )}
+              </div>
+            );
+          })}
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, lineHeight: 1.5, marginTop: 4 }}>
+            {stat === "faith"
+              ? "Points reward consistency and effort — they are not a measure of spiritual worth."
+              : "Log anything you feel sharpens your mind. Effort scales the XP."}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Home card: shows Intelligence + Faith at a glance with a launcher for the log modal.
+function MindSpiritCard({ profile, onLogMind }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
+        border: `1px solid #8b8cf644`, borderTop: `1px solid #8b8cf699`,
+        clipPath: "polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))",
+        padding: "12px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: "#8b8cf6", letterSpacing: 3 }}>{"// MIND & SPIRIT"}</div>
+          <button onClick={() => setOpen(true)} style={{
+            background: "#8b8cf622", border: "1px solid #8b8cf666", borderRadius: 6,
+            padding: "5px 12px", cursor: "pointer",
+            fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: "#a5a6ff", fontWeight: 700, letterSpacing: 1 }}>+ LOG</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {["intelligence", "faith"].map(s => (
+            <StatBadge key={s} muscle={s} level={getMuscleLevel(mindStatXP(profile, s))} xp={mindStatXP(profile, s)} />
+          ))}
+        </div>
+      </div>
+      {open && <MindLogModal profile={profile} onLog={(entry) => onLogMind?.(entry)} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 
 function Toasts({ toasts }) {
@@ -5758,7 +5940,7 @@ const BANNER_PALETTE = [
 
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
                      account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
-                     onUpdateBannerColor, onToggleRitual, onEquipTitle, pendingCount = 0 }) {
+                     onUpdateBannerColor, onToggleRitual, onEquipTitle, onLogMind, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -6088,6 +6270,9 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             )}
           </button>
         </div>
+
+        {/* Mind & Spirit */}
+        <MindSpiritCard profile={st} onLogMind={onLogMind} />
 
         {/* Daily Rituals */}
         {(() => {
@@ -7514,6 +7699,15 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
           {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
+        </div>
+
+        {/* ── MIND & SPIRIT ── */}
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: "#8b8cf6", letterSpacing: 4, marginBottom: 10 }}>[ MIND & SPIRIT ]</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+          {["intelligence", "faith"].map(s => {
+            const xp = mindStatXP(st, s);
+            return <StatBadge key={s} muscle={s} level={getMuscleLevel(xp)} xp={xp} />;
+          })}
         </div>
 
         <VolumeChart workouts={st.workouts || []} />
@@ -8974,6 +9168,21 @@ export default function IronRealm() {
     }
   };
 
+  const handleLogMind = (entry) => {
+    updateActive(p => {
+      const stat = entry.stat;
+      const beforeLvl = getMuscleLevel(mindStatXP(p, stat));
+      const next = { ...p, mindLog: [...(p.mindLog || []), entry] };
+      const afterLvl = getMuscleLevel(mindStatXP(next, stat));
+      const meta = MUSCLE_META[stat];
+      setTimeout(() => toast(`+${entry.xp} ${meta.name} XP`, meta.color), 60);
+      if (afterLvl > beforeLvl) {
+        setTimeout(() => toast(`${meta.name} LVL ${afterLvl}!`, meta.color), 420);
+      }
+      return next;
+    });
+  };
+
   const handleChooseAspect = (aspectId) => {
     const aspect = ASPECTS.find(a => a.id === aspectId);
     if (!aspect) return;
@@ -9047,7 +9256,7 @@ export default function IronRealm() {
       <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
       <Toasts toasts={toasts} />
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
