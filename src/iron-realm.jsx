@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -6089,14 +6089,30 @@ const MIND_ACTIVITIES = {
     { id: "custom",   label: "Something else",      flat: 80, custom: true },
   ],
   faith: [
+    // Daily pillars
+    { id: "fard",           label: "Farḍ prayer on time", unit: "prayer",xpPer: 50,  defaultQty: 1 },
+    { id: "jamaah",         label: "Prayed in congregation", unit: "prayer", xpPer: 75, defaultQty: 1 },
+    { id: "sunnah",         label: "Sunnah / Nafl prayer",unit: "prayer",xpPer: 60,  defaultQty: 1 },
+    { id: "tahajjud",       label: "Tahajjud",            flat: 150 },
+    { id: "adhkar",         label: "Morning / evening adhkār", flat: 60 },
+    { id: "dhikr",          label: "Dhikr / Istighfār",   flat: 50 },
+    { id: "salawat",        label: "Ṣalawāt on the Prophet ﷺ", flat: 40 },
+    { id: "dua",            label: "Heartfelt duʿā",      flat: 30 },
+    // Qur'an & knowledge
     { id: "quran_read",     label: "Qur'an recitation",   unit: "page",  xpPer: 40,  defaultQty: 1 },
     { id: "quran_memorize", label: "Qur'an memorization", unit: "āyah",  xpPer: 120, defaultQty: 1 },
+    { id: "kahf",           label: "Sūrah al-Kahf (Friday)", flat: 100 },
     { id: "hadith",         label: "Hadith study",        flat: 80 },
-    { id: "sunnah",         label: "Sunnah / Nafl prayer",unit: "prayer",xpPer: 60,  defaultQty: 1 },
+    { id: "lecture",        label: "Islamic lecture / ḥalaqah", flat: 90 },
+    { id: "teach",          label: "Taught / shared knowledge", flat: 120 },
+    // Weekly & seasonal
+    { id: "jumuah",         label: "Jumuʿah prayer",      flat: 150 },
     { id: "fasting",        label: "Voluntary fasting",   unit: "day",   xpPer: 300, defaultQty: 1 },
-    { id: "dhikr",          label: "Dhikr / Istighfār",   flat: 50 },
-    { id: "tahajjud",       label: "Tahajjud",            flat: 150 },
+    // Character & community
     { id: "sadaqah",        label: "Ṣadaqah (charity)",   flat: 100 },
+    { id: "parents",        label: "Kindness to parents / kinship", flat: 90 },
+    { id: "sick",           label: "Visited the sick",    flat: 120 },
+    { id: "custom",         label: "Other good deed",     flat: 60, custom: true },
   ],
 };
 
@@ -6122,7 +6138,7 @@ function MindLogModal({ profile, onLog, onClose }) {
   const doLog = (activity) => {
     const q = activity.unit ? (qty[activity.id] || activity.defaultQty || 1) : null;
     const label = activity.custom
-      ? (customLabel.trim() || "Learning")
+      ? (customLabel.trim() || (stat === "faith" ? "Good deed" : "Learning"))
       : activity.label + (activity.unit ? ` · ${q} ${activity.unit}` : "");
     onLog({
       id: `${Date.now()}_${Math.round(profile?.mindLog?.length || 0)}`,
@@ -6204,8 +6220,8 @@ function MindLogModal({ profile, onLog, onClose }) {
                 {/* Custom label field */}
                 {a.custom && (
                   <input className="input-field" value={customLabel} onChange={e => setCustomLabel(e.target.value)}
-                    placeholder="What did you do? (e.g. documentary, chess)" maxLength={40}
-                    style={{ marginTop: 8, fontSize: 13 }} />
+                    placeholder={stat === "faith" ? "What did you do? (e.g. helped a neighbor)" : "What did you do? (e.g. documentary, chess)"}
+                    maxLength={40} style={{ marginTop: 8, fontSize: 13 }} />
                 )}
               </div>
             );
