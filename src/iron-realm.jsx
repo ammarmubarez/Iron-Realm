@@ -1402,6 +1402,9 @@ const MUSCLE_META = {
   calves:      { name: "Calves",       color: "#10b981", glyph: "CV" },
   cardio:      { name: "Endurance",    color: "#ef4444", glyph: "EN" },
   calisthenics:{ name: "Agility",      color: "#f59e0b", glyph: "AG" },
+  // ── Life attributes (leveled from the mind/spirit log, not workouts) ──
+  intelligence:{ name: "Intelligence", color: "#8b8cf6", glyph: "IN" },
+  faith:       { name: "Faith",        color: "#2ecc9b", glyph: "FA" },
   // ── Sub-muscles (match SVG IDs exactly — for exercise tagging) ──
   "upper-pectoralis":    { name: "Upper Chest",         color: "#e05555", parent: "chest"     },
   "mid-lower-pectoralis":{ name: "Mid/Lower Chest",     color: "#c03030", parent: "chest"     },
@@ -1478,6 +1481,7 @@ const newProfile = (id, name = "Hunter") => ({
   weightLog: [],
   bookmarkedExercises: [],   // array of exercise names pinned to top of database
   dailyRituals: { completionLog: {} }, // { 'YYYY-MM-DD': ['pushups','stretch',...] }
+  mindLog: [],  // [{ id, date, stat:'intelligence'|'faith', activity, label, qty, xp }] — mind/spirit growth ledger
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
   patronLift:   null,   // exercise name pinned as signature lift
   createdAt: Date.now(),
@@ -1934,6 +1938,51 @@ function getRank(level) {
   };
 }
 
+// ─── NAME AURAS ───────────────────────────────────────────────────────────────
+// Animated username effects unlocked by OVERALL level, aligned to rank tiers.
+// Each higher rank unlocks a flashier aura; the top "Prismatic" rainbow is
+// S-rank exclusive (level 30+). Effects are cosmetic and purely client-side.
+const NAME_AURAS = [
+  { id: "static",    label: "Static",    minLevel: 1,  className: "",              rank: "E", desc: "Plain nameplate" },
+  { id: "glow",      label: "Ember Glow", minLevel: 4,  className: "aura-glow",     rank: "D", desc: "Soft pulsing glow" },
+  { id: "pulse",     label: "Pulse",     minLevel: 7,  className: "aura-pulse",    rank: "C", desc: "Breathing halo" },
+  { id: "shimmer",   label: "Shimmer",   minLevel: 12, className: "aura-shimmer",  rank: "B", desc: "Light sweep across your name" },
+  { id: "chroma",    label: "Chroma",    minLevel: 20, className: "aura-chroma",   rank: "A", desc: "Cyan-violet color shift" },
+  { id: "prismatic", label: "Prismatic", minLevel: 30, className: "aura-prismatic", rank: "S", desc: "Full-spectrum rainbow — S-rank only" },
+];
+
+function auraUnlocked(aura, level) { return (level || 1) >= aura.minLevel; }
+
+// Highest aura the level qualifies for.
+function highestAura(level) {
+  let top = NAME_AURAS[0];
+  for (const a of NAME_AURAS) if (auraUnlocked(a, level)) top = a;
+  return top;
+}
+
+// Resolve which aura to actually render: the equipped choice if it's unlocked
+// at this level, otherwise fall back to the highest unlocked (handles switching
+// to a lower-level profile, or "auto").
+function resolveAura(level, equippedId) {
+  if (equippedId && equippedId !== "auto") {
+    const chosen = NAME_AURAS.find(a => a.id === equippedId);
+    if (chosen && auraUnlocked(chosen, level)) return chosen;
+  }
+  return highestAura(level);
+}
+
+// Renders a name with its unlocked aura. `color` seeds the glow-family auras
+// (--aura); gradient auras use their own fixed palettes.
+function AuraName({ name, level, equippedId, color, style, className = "" }) {
+  const aura = resolveAura(level, equippedId);
+  return (
+    <span className={`${aura.className} ${className}`}
+      style={{ "--aura": color || GOLD, ...(aura.className ? {} : { color: color || GOLD }), ...style }}>
+      {name}
+    </span>
+  );
+}
+
 // Muscle rank — uses milestone names
 function getMuscleRank(level) {
   const rankLetter =
@@ -2128,6 +2177,40 @@ const CSS = `
   @keyframes sparkOut { from{transform:translate(0,0) scale(1);opacity:1} to{transform:translate(var(--sx),var(--sy)) scale(.2);opacity:0} }
   .spark-fx { position: absolute; width: 4px; height: 4px; border-radius: 50%;
     pointer-events: none; z-index: 6; animation: sparkOut .5s cubic-bezier(.2,.7,.3,1) forwards; }
+
+  /* ── NAME AURAS (level-gated unlocks) ── */
+  @keyframes auraGlowPulse { 0%,100%{text-shadow:0 0 6px var(--aura,${GOLD})88} 50%{text-shadow:0 0 12px var(--aura,${GOLD}),0 0 22px var(--aura,${GOLD})66} }
+  @keyframes auraBreathe { 0%,100%{text-shadow:0 0 8px var(--aura,${GOLD}),0 0 16px var(--aura,${GOLD})44;transform:scale(1)} 50%{text-shadow:0 0 16px var(--aura,${GOLD}),0 0 34px var(--aura,${GOLD})88;transform:scale(1.03)} }
+  @keyframes auraShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @keyframes auraChroma { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  @keyframes auraPrism { 0%{background-position:0% 50%} 100%{background-position:300% 50%} }
+
+  .aura-glow { animation: auraGlowPulse 2.4s ease-in-out infinite; }
+  .aura-pulse { display:inline-block; animation: auraBreathe 2.2s ease-in-out infinite; transform-origin:left center; }
+  .aura-shimmer {
+    background: linear-gradient(100deg, var(--aura,${GOLD}) 0%, var(--aura,${GOLD}) 38%, #ffffff 50%, var(--aura,${GOLD}) 62%, var(--aura,${GOLD}) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: auraShimmer 3.2s linear infinite;
+    filter: drop-shadow(0 0 6px var(--aura,${GOLD})66);
+  }
+  .aura-chroma {
+    background: linear-gradient(90deg, ${ACCENT}, #a855f7, ${ACCENT});
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: auraChroma 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 7px ${ACCENT}55);
+  }
+  .aura-prismatic {
+    background: linear-gradient(90deg, #ff4d4d, #ffb24d, #ffed4d, #4dff88, ${ACCENT}, #a855f7, #ff4dd8, #ff4d4d);
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: auraPrism 4.5s linear infinite;
+    filter: drop-shadow(0 0 8px ${ACCENT}66);
+  }
 
   /* ── BASE CLASSES ── */
   .slide-up { animation: slideUp .3s cubic-bezier(0.16,1,0.3,1) both; }
@@ -5987,6 +6070,184 @@ function StatBadge({ muscle, level, xp }) {
   );
 }
 
+// ─── MIND & SPIRIT ────────────────────────────────────────────────────────────
+// Two life attributes leveled outside the body-XP system. XP is derived by
+// summing a per-profile `mindLog` ledger, so it survives the workout-stat
+// recompute on load (which only rebuilds muscle stats). Faith XP is framed as
+// engagement points weighted by time/effort — a consistency nudge, not a
+// ranking of spiritual worth.
+//
+// Each activity: xpPer × qty (unit-based) or a flat xp (single act). `custom`
+// lets the user name their own entry (Intelligence is open-ended by design).
+const MIND_ACTIVITIES = {
+  intelligence: [
+    { id: "read",     label: "Read a book",         unit: "min",  xpPer: 8,  defaultQty: 10 },
+    { id: "chapter",  label: "Finished a chapter",  flat: 120 },
+    { id: "study",    label: "Study / course",      unit: "min",  xpPer: 8,  defaultQty: 15 },
+    { id: "skill",    label: "Learned a new skill", flat: 200 },
+    { id: "article",  label: "Article / podcast",   flat: 60 },
+    { id: "custom",   label: "Something else",      flat: 80, custom: true },
+  ],
+  faith: [
+    { id: "quran_read",     label: "Qur'an recitation",   unit: "page",  xpPer: 40,  defaultQty: 1 },
+    { id: "quran_memorize", label: "Qur'an memorization", unit: "āyah",  xpPer: 120, defaultQty: 1 },
+    { id: "hadith",         label: "Hadith study",        flat: 80 },
+    { id: "sunnah",         label: "Sunnah / Nafl prayer",unit: "prayer",xpPer: 60,  defaultQty: 1 },
+    { id: "fasting",        label: "Voluntary fasting",   unit: "day",   xpPer: 300, defaultQty: 1 },
+    { id: "dhikr",          label: "Dhikr / Istighfār",   flat: 50 },
+    { id: "tahajjud",       label: "Tahajjud",            flat: 150 },
+    { id: "sadaqah",        label: "Ṣadaqah (charity)",   flat: 100 },
+  ],
+};
+
+// Cumulative XP for a life attribute, summed from the ledger.
+function mindStatXP(profile, stat) {
+  return (profile?.mindLog || []).reduce((sum, e) => e.stat === stat ? sum + (e.xp || 0) : sum, 0);
+}
+
+// XP a given activity + quantity is worth.
+function activityXP(activity, qty) {
+  if (activity.flat != null) return activity.flat;
+  return Math.max(1, Math.round((activity.xpPer || 0) * (qty || activity.defaultQty || 1)));
+}
+
+// Logging modal: pick attribute → tap an activity → (optional) set quantity → log.
+function MindLogModal({ profile, onLog, onClose }) {
+  const [stat, setStat] = useState("intelligence");
+  const [qty, setQty]   = useState({});         // { activityId: number }
+  const [customLabel, setCustomLabel] = useState("");
+  const meta = MUSCLE_META[stat];
+  const acts = MIND_ACTIVITIES[stat];
+
+  const doLog = (activity) => {
+    const q = activity.unit ? (qty[activity.id] || activity.defaultQty || 1) : null;
+    const label = activity.custom
+      ? (customLabel.trim() || "Learning")
+      : activity.label + (activity.unit ? ` · ${q} ${activity.unit}` : "");
+    onLog({
+      id: `${Date.now()}_${Math.round(profile?.mindLog?.length || 0)}`,
+      date: Date.now(),
+      stat,
+      activity: activity.id,
+      label,
+      qty: q,
+      xp: activityXP(activity, q),
+    });
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1200,
+      background: "rgba(3,6,15,0.94)", backdropFilter: "blur(12px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 96 }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
+        border: `1px solid ${meta.color}44`, borderTop: `2px solid ${meta.color}`,
+        width: "100%", maxWidth: 480, maxHeight: "82vh", display: "flex", flexDirection: "column",
+        clipPath: "polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%)" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
+          background: `linear-gradient(90deg, transparent, ${meta.color}cc, transparent)` }} />
+        <div style={{ padding: "18px 18px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700,
+              color: meta.color, letterSpacing: 2 }}>LOG MIND & SPIRIT</div>
+            <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+          </div>
+          {/* Attribute tabs */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {["intelligence", "faith"].map(s => {
+              const m = MUSCLE_META[s]; const on = stat === s;
+              const lvl = getMuscleLevel(mindStatXP(profile, s));
+              return (
+                <button key={s} onClick={() => setStat(s)} style={{
+                  flex: 1, padding: "10px", cursor: "pointer",
+                  background: on ? `${m.color}22` : BG3,
+                  border: `1px solid ${on ? m.color : ACCENT2 + "33"}`, borderRadius: 8,
+                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
+                  color: on ? m.color : MUTED, letterSpacing: 1,
+                }}>{m.name.toUpperCase()} · LVL {lvl}</button>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 24px" }}>
+          {acts.map(a => {
+            const q = a.unit ? (qty[a.id] ?? a.defaultQty ?? 1) : null;
+            const xp = activityXP(a, q);
+            return (
+              <div key={a.id} style={{ background: BG3, border: `1px solid ${meta.color}22`,
+                borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, fontWeight: 700, color: TEXT }}>{a.label}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: meta.color }}>+{xp} XP</div>
+                  </div>
+                  <button onClick={() => doLog(a)} style={{
+                    flexShrink: 0, background: `${meta.color}22`, border: `1px solid ${meta.color}66`,
+                    borderTop: `1px solid ${meta.color}cc`,
+                    clipPath: "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
+                    padding: "8px 16px", cursor: "pointer",
+                    fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+                    color: meta.color, letterSpacing: 1 }}>LOG</button>
+                </div>
+                {/* Quantity stepper for unit-based activities */}
+                {a.unit && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                    <button onClick={() => setQty(s => ({ ...s, [a.id]: Math.max(1, (s[a.id] ?? a.defaultQty ?? 1) - 1) }))}
+                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}44`, borderRadius: 6,
+                        color: TEXT, fontSize: 16, cursor: "pointer" }}>−</button>
+                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, color: TEXT, minWidth: 54, textAlign: "center" }}>{q} {a.unit}</span>
+                    <button onClick={() => setQty(s => ({ ...s, [a.id]: (s[a.id] ?? a.defaultQty ?? 1) + 1 }))}
+                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}44`, borderRadius: 6,
+                        color: TEXT, fontSize: 16, cursor: "pointer" }}>+</button>
+                  </div>
+                )}
+                {/* Custom label field */}
+                {a.custom && (
+                  <input className="input-field" value={customLabel} onChange={e => setCustomLabel(e.target.value)}
+                    placeholder="What did you do? (e.g. documentary, chess)" maxLength={40}
+                    style={{ marginTop: 8, fontSize: 13 }} />
+                )}
+              </div>
+            );
+          })}
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, lineHeight: 1.5, marginTop: 4 }}>
+            {stat === "faith"
+              ? "Points reward consistency and effort — they are not a measure of spiritual worth."
+              : "Log anything you feel sharpens your mind. Effort scales the XP."}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Home card: shows Intelligence + Faith at a glance with a launcher for the log modal.
+function MindSpiritCard({ profile, onLogMind }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
+        border: `1px solid #8b8cf644`, borderTop: `1px solid #8b8cf699`,
+        clipPath: "polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))",
+        padding: "12px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: "#8b8cf6", letterSpacing: 3 }}>{"// MIND & SPIRIT"}</div>
+          <button onClick={() => setOpen(true)} style={{
+            background: "#8b8cf622", border: "1px solid #8b8cf666", borderRadius: 6,
+            padding: "5px 12px", cursor: "pointer",
+            fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: "#a5a6ff", fontWeight: 700, letterSpacing: 1 }}>+ LOG</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {["intelligence", "faith"].map(s => (
+            <StatBadge key={s} muscle={s} level={getMuscleLevel(mindStatXP(profile, s))} xp={mindStatXP(profile, s)} />
+          ))}
+        </div>
+      </div>
+      {open && <MindLogModal profile={profile} onLog={(entry) => onLogMind?.(entry)} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 
 function Toasts({ toasts }) {
@@ -6616,7 +6877,7 @@ const BANNER_PALETTE = [
 
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
                      account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
-                     onUpdateBannerColor, onToggleRitual, onEquipTitle, pendingCount = 0 }) {
+                     onUpdateBannerColor, onToggleRitual, onEquipTitle, onLogMind, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -6753,8 +7014,11 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             </div>
             <div>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
-              <div className="glitch-in holo-text" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
-                letterSpacing: 3 }}>{st.name.toUpperCase()}</div>
+              <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
+                letterSpacing: 3 }}>
+                <AuraName name={st.name.toUpperCase()} level={st.overallLevel}
+                  equippedId={settings?.nameAura} color={GOLD} />
+              </div>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7, color: rank.color, letterSpacing: 3, opacity: 0.85, marginTop: 2 }}>{rank.label.toUpperCase()}</div>
             </div>
           </div>
@@ -6987,6 +7251,10 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         </div>
 
         <div className="holo-divider" />
+
+        {/* Mind & Spirit */}
+        <MindSpiritCard profile={st} onLogMind={onLogMind} />
+
         {/* Daily Rituals */}
         {(() => {
           const completionLog = st.dailyRituals?.completionLog || {};
@@ -7195,6 +7463,56 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 </button>
               )}
             </div>
+
+            {/* Name Aura — level-gated username animations (all users) */}
+            {(() => {
+              const equippedAura = settings?.nameAura || "auto";
+              const topId = highestAura(st.overallLevel).id;
+              const auraColor = account.remoteProfile?.banner_color || GOLD;
+              const options = [{ id: "auto", label: "Auto (highest)", minLevel: 1, className: "", desc: "Always show your best unlocked aura" }, ...NAME_AURAS];
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3 }}>{"// NAME AURA"}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>unlocked by overall level</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {options.map(opt => {
+                      const isAuto = opt.id === "auto";
+                      const locked = !isAuto && st.overallLevel < opt.minLevel;
+                      const selected = equippedAura === opt.id;
+                      const isTop = !isAuto && opt.id === topId;
+                      return (
+                        <button key={opt.id} disabled={locked}
+                          onClick={() => onUpdateSettings?.({ nameAura: opt.id })}
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            gap: 10, padding: "9px 12px", cursor: locked ? "not-allowed" : "pointer",
+                            background: selected ? `${ACCENT}18` : BG3,
+                            border: `1px solid ${selected ? ACCENT : (locked ? MUTED + "22" : ACCENT2 + "33")}`,
+                            borderRadius: 8, opacity: locked ? 0.5 : 1, textAlign: "left",
+                          }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 800 }}>
+                              {isAuto
+                                ? <span style={{ color: TEXT }}>{st.name.toUpperCase()}</span>
+                                : <span className={opt.className} style={{ "--aura": auraColor, ...(opt.className ? {} : { color: auraColor }) }}>{st.name.toUpperCase()}</span>}
+                            </div>
+                            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                              {opt.label}{isTop ? " · your current best" : ""} — {opt.desc}
+                            </div>
+                          </div>
+                          <div style={{ flexShrink: 0, fontFamily: "'Orbitron',sans-serif", fontSize: 9, letterSpacing: 1,
+                            color: locked ? MUTED : (selected ? ACCENT : GOLD) }}>
+                            {locked ? `🔒 LVL ${opt.minLevel}` : (selected ? "EQUIPPED" : (isAuto ? "" : opt.rank))}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Profile — banner color picker (signed in only) */}
             {account.session && account.remoteProfile && (
@@ -8674,6 +8992,15 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           </div>
         </Reveal>
 
+        {/* ── MIND & SPIRIT ── */}
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: "#8b8cf6", letterSpacing: 4, marginBottom: 10 }}>[ MIND & SPIRIT ]</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+          {["intelligence", "faith"].map(s => {
+            const xp = mindStatXP(st, s);
+            return <StatBadge key={s} muscle={s} level={getMuscleLevel(xp)} xp={xp} />;
+          })}
+        </div>
+
         <Reveal><VolumeChart workouts={st.workouts || []} /></Reveal>
 
         <Reveal><RecoveryGrid workouts={st.workouts || []} /></Reveal>
@@ -9288,8 +9615,9 @@ function LeaderboardScreen({ account, toast }) {
                     background: _activityColor(row.updated_at),
                     boxShadow: `0 0 4px ${_activityColor(row.updated_at)}`,
                   }} />
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: isMe ? ACCENT : TEXT, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    @{row.username}{isMe ? " ◈" : ""}
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <AuraName name={`@${row.username}${isMe ? " ◈" : ""}`}
+                      level={row.overall_level} color={isMe ? ACCENT : (row.banner_color || TEXT)} />
                   </div>
                 </div>
                 {row.equipped_title && (
@@ -10195,6 +10523,21 @@ export default function IronRealm() {
     }
   };
 
+  const handleLogMind = (entry) => {
+    updateActive(p => {
+      const stat = entry.stat;
+      const beforeLvl = getMuscleLevel(mindStatXP(p, stat));
+      const next = { ...p, mindLog: [...(p.mindLog || []), entry] };
+      const afterLvl = getMuscleLevel(mindStatXP(next, stat));
+      const meta = MUSCLE_META[stat];
+      setTimeout(() => toast(`+${entry.xp} ${meta.name} XP`, meta.color), 60);
+      if (afterLvl > beforeLvl) {
+        setTimeout(() => toast(`${meta.name} LVL ${afterLvl}!`, meta.color), 420);
+      }
+      return next;
+    });
+  };
+
   const handleChooseAspect = (aspectId) => {
     const aspect = ASPECTS.find(a => a.id === aspectId);
     if (!aspect) return;
@@ -10281,7 +10624,7 @@ export default function IronRealm() {
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
       {ceremonyLevel && <LevelUpCeremony level={ceremonyLevel} settings={settings} onDone={() => setCeremonyLevel(null)} />}
       <div key={screen} className="screen-wipe">
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
