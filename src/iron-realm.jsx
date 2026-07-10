@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.9.2";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -1482,6 +1482,8 @@ const newProfile = (id, name = "Hunter") => ({
   bookmarkedExercises: [],   // array of exercise names pinned to top of database
   dailyRituals: { completionLog: {} }, // { 'YYYY-MM-DD': ['pushups','stretch',...] }
   mindLog: [],  // [{ id, date, stat:'intelligence'|'faith', activity, label, qty, xp }] — mind/spirit growth ledger
+  mindTasks: [],     // pinned daily tasks: [{ id, stat, activity, label, qty, xp }]
+  mindTasksLog: {},  // { 'YYYY-MM-DD': [taskId, ...] } — which daily tasks were completed each day
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
   patronLift:   null,   // exercise name pinned as signature lift
   createdAt: Date.now(),
@@ -6128,27 +6130,35 @@ function activityXP(activity, qty) {
 }
 
 // Logging modal: pick attribute → tap an activity → (optional) set quantity → log.
-function MindLogModal({ profile, onLog, onClose }) {
+function MindLogModal({ profile, onLog, onAddTask, onRemoveTask, onClose }) {
   const [stat, setStat] = useState("intelligence");
   const [qty, setQty]   = useState({});         // { activityId: number }
   const [customLabel, setCustomLabel] = useState("");
   const meta = MUSCLE_META[stat];
   const acts = MIND_ACTIVITIES[stat];
 
-  const doLog = (activity) => {
+  const buildEntry = (activity) => {
     const q = activity.unit ? (qty[activity.id] || activity.defaultQty || 1) : null;
     const label = activity.custom
       ? (customLabel.trim() || (stat === "faith" ? "Good deed" : "Learning"))
       : activity.label + (activity.unit ? ` · ${q} ${activity.unit}` : "");
-    onLog({
-      id: `${Date.now()}_${Math.round(profile?.mindLog?.length || 0)}`,
-      date: Date.now(),
-      stat,
-      activity: activity.id,
-      label,
-      qty: q,
-      xp: activityXP(activity, q),
-    });
+    return { stat, activity: activity.id, label, qty: q, xp: activityXP(activity, q) };
+  };
+
+  const doLog = (activity) => {
+    onLog({ id: `${Date.now()}_${Math.round(profile?.mindLog?.length || 0)}`,
+      date: Date.now(), ...buildEntry(activity) });
+  };
+
+  // A pinned daily task matching this activity (custom tasks match on label too)
+  const pinnedTask = (activity) => (profile?.mindTasks || []).find(t =>
+    t.stat === stat && t.activity === activity.id &&
+    (!activity.custom || t.label === (customLabel.trim() || (stat === "faith" ? "Good deed" : "Learning"))));
+
+  const togglePin = (activity) => {
+    const existing = pinnedTask(activity);
+    if (existing) onRemoveTask?.(existing.id);
+    else onAddTask?.({ id: `t_${Date.now()}`, ...buildEntry(activity) });
   };
 
   return (
@@ -6197,13 +6207,23 @@ function MindLogModal({ profile, onLog, onClose }) {
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, fontWeight: 700, color: TEXT }}>{a.label}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: meta.color }}>+{xp} XP</div>
                   </div>
-                  <button onClick={() => doLog(a)} style={{
-                    flexShrink: 0, background: `${meta.color}22`, border: `1px solid ${meta.color}66`,
-                    borderTop: `1px solid ${meta.color}cc`,
-                    clipPath: "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
-                    padding: "8px 16px", cursor: "pointer",
-                    fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
-                    color: meta.color, letterSpacing: 1 }}>LOG</button>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                    {(() => { const pinned = !!pinnedTask(a); return (
+                      <button onClick={() => togglePin(a)}
+                        title={pinned ? "Remove from daily tasks" : "Pin as daily task"} style={{
+                        width: 34, height: 34, background: pinned ? `${GOLD}22` : "transparent",
+                        border: `1px solid ${pinned ? GOLD : MUTED + "44"}`, borderRadius: 7,
+                        cursor: "pointer", fontSize: 15, lineHeight: 1,
+                        color: pinned ? GOLD : MUTED }}>{pinned ? "★" : "☆"}</button>
+                    ); })()}
+                    <button onClick={() => doLog(a)} style={{
+                      background: `${meta.color}22`, border: `1px solid ${meta.color}66`,
+                      borderTop: `1px solid ${meta.color}cc`,
+                      clipPath: "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
+                      padding: "8px 16px", cursor: "pointer",
+                      fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+                      color: meta.color, letterSpacing: 1 }}>LOG</button>
+                  </div>
                 </div>
                 {/* Quantity stepper for unit-based activities */}
                 {a.unit && (
@@ -6237,8 +6257,8 @@ function MindLogModal({ profile, onLog, onClose }) {
   );
 }
 
-// Home card: shows Intelligence + Faith at a glance with a launcher for the log modal.
-function MindSpiritCard({ profile, onLogMind }) {
+// Home card: Intelligence + Faith badges, the daily task checklist, and the log modal.
+function MindSpiritCard({ profile, onLogMind, onAddTask, onRemoveTask, onToggleTask }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ marginBottom: 16 }}>
@@ -6258,8 +6278,63 @@ function MindSpiritCard({ profile, onLogMind }) {
             <StatBadge key={s} muscle={s} level={getMuscleLevel(mindStatXP(profile, s))} xp={mindStatXP(profile, s)} />
           ))}
         </div>
+
+        {/* Daily task checklist — pinned via ☆ in the logger, resets each day */}
+        {(() => {
+          const tasks = profile?.mindTasks || [];
+          const todayKey = _dateKey(new Date());
+          const doneToday = new Set((profile?.mindTasksLog || {})[todayKey] || []);
+          if (tasks.length === 0) return (
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 10 }}>
+              Tap <span style={{ color: "#a5a6ff", fontWeight: 700 }}>+ LOG</span> and pin activities with ☆ to build your daily task list.
+            </div>
+          );
+          const doneCount = tasks.filter(t => doneToday.has(t.id)).length;
+          return (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: "#8b8cf6", letterSpacing: 3 }}>{"// TODAY'S TASKS"}</div>
+                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: doneCount === tasks.length ? GOLD : MUTED }}>
+                  {doneCount}/{tasks.length}
+                </div>
+              </div>
+              {tasks.map(t => {
+                const m = MUSCLE_META[t.stat];
+                const done = doneToday.has(t.id);
+                return (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10,
+                    padding: "8px 4px", borderBottom: `1px solid ${ACCENT2}11` }}>
+                    <div onClick={() => onToggleTask?.(t.id)} className={done ? "check-pop" : ""} style={{
+                      width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: "pointer",
+                      background: done ? m.color : "transparent",
+                      border: `1.5px solid ${done ? m.color : MUTED}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: BG, fontSize: 12, fontWeight: 900,
+                    }}>{done ? "✓" : ""}</div>
+                    <span onClick={() => onToggleTask?.(t.id)} style={{
+                      fontFamily: "'Rajdhani',sans-serif", fontSize: 13, cursor: "pointer",
+                      color: done ? MUTED : TEXT,
+                      textDecoration: done ? "line-through" : "none", flex: 1, minWidth: 0,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>{t.label}</span>
+                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: m.color, flexShrink: 0 }}>+{t.xp}</span>
+                    <button onClick={() => onRemoveTask?.(t.id)} title="Remove task" style={{
+                      background: "none", border: "none", color: MUTED, fontSize: 14,
+                      cursor: "pointer", padding: "0 2px", flexShrink: 0, opacity: 0.6 }}>×</button>
+                  </div>
+                );
+              })}
+              {doneCount === tasks.length && (
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, marginTop: 8, textAlign: "center" }}>
+                  ✦ All tasks complete. Well done.
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
-      {open && <MindLogModal profile={profile} onLog={(entry) => onLogMind?.(entry)} onClose={() => setOpen(false)} />}
+      {open && <MindLogModal profile={profile} onLog={(entry) => onLogMind?.(entry)}
+        onAddTask={onAddTask} onRemoveTask={onRemoveTask} onClose={() => setOpen(false)} />}
     </div>
   );
 }
@@ -6893,7 +6968,8 @@ const BANNER_PALETTE = [
 
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
                      account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
-                     onUpdateBannerColor, onToggleRitual, onEquipTitle, onLogMind, pendingCount = 0 }) {
+                     onUpdateBannerColor, onToggleRitual, onEquipTitle, onLogMind,
+                     onAddMindTask, onRemoveMindTask, onToggleMindTask, pendingCount = 0 }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -7269,7 +7345,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         <div className="holo-divider" />
 
         {/* Mind & Spirit */}
-        <MindSpiritCard profile={st} onLogMind={onLogMind} />
+        <MindSpiritCard profile={st} onLogMind={onLogMind} onAddTask={onAddMindTask}
+          onRemoveTask={onRemoveMindTask} onToggleTask={onToggleMindTask} />
 
         {/* Daily Rituals */}
         {(() => {
@@ -10539,6 +10616,46 @@ export default function IronRealm() {
     }
   };
 
+  const handleAddMindTask = (task) => {
+    updateActive(p => ({ ...p, mindTasks: [...(p.mindTasks || []), task] }));
+    toast("Added to daily tasks", "#8b8cf6");
+  };
+
+  const handleRemoveMindTask = (taskId) => {
+    updateActive(p => ({ ...p, mindTasks: (p.mindTasks || []).filter(t => t.id !== taskId) }));
+  };
+
+  // Check/uncheck a daily task. XP flows through the same mindLog ledger the
+  // instant logger uses — a deterministic entry id (task + day) lets unchecking
+  // remove exactly the XP that checking granted.
+  const handleToggleMindTask = (taskId) => {
+    updateActive(p => {
+      const task = (p.mindTasks || []).find(t => t.id === taskId);
+      if (!task) return p;
+      const dayKey = _dateKey(new Date());
+      const entryId = `task:${taskId}:${dayKey}`;
+      const log = { ...(p.mindTasksLog || {}) };
+      const todaySet = new Set(log[dayKey] || []);
+      const meta = MUSCLE_META[task.stat];
+      let mindLog;
+      if (todaySet.has(taskId)) {
+        todaySet.delete(taskId);
+        mindLog = (p.mindLog || []).filter(e => e.id !== entryId);
+      } else {
+        todaySet.add(taskId);
+        mindLog = [...(p.mindLog || []), { id: entryId, date: Date.now(),
+          stat: task.stat, activity: task.activity, label: task.label, qty: task.qty, xp: task.xp }];
+        const beforeLvl = getMuscleLevel(mindStatXP(p, task.stat));
+        const afterLvl  = getMuscleLevel((p.mindLog || []).concat([{ stat: task.stat, xp: task.xp }])
+          .reduce((s, e) => e.stat === task.stat ? s + (e.xp || 0) : s, 0));
+        setTimeout(() => toast(`+${task.xp} ${meta.name} XP`, meta.color), 60);
+        if (afterLvl > beforeLvl) setTimeout(() => toast(`${meta.name} LVL ${afterLvl}!`, meta.color), 420);
+      }
+      log[dayKey] = [...todaySet];
+      return { ...p, mindTasksLog: log, mindLog };
+    });
+  };
+
   const handleLogMind = (entry) => {
     updateActive(p => {
       const stat = entry.stat;
@@ -10640,7 +10757,7 @@ export default function IronRealm() {
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
       {ceremonyLevel && <LevelUpCeremony level={ceremonyLevel} settings={settings} onDone={() => setCeremonyLevel(null)} />}
       <div key={screen} className="screen-wipe">
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
