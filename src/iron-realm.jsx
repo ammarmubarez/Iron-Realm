@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.9.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
