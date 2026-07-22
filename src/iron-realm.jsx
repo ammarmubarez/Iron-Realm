@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.9.2";
+const APP_VERSION = "1.9.3";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -6123,6 +6123,15 @@ function mindStatXP(profile, stat) {
   return (profile?.mindLog || []).reduce((sum, e) => e.stat === stat ? sum + (e.xp || 0) : sum, 0);
 }
 
+// Mind & Spirit XP feeds the overall Hunter rank at half weight — growth of
+// the whole person moves the same bar the gym does, without a reading day
+// outranking a squat day. Per-entry rounding keeps incremental updates
+// identical to the from-scratch rebuild on load.
+const MIND_OVERALL_WEIGHT = 0.5;
+function mindOverallBonus(mindLog) {
+  return (mindLog || []).reduce((s, e) => s + Math.round((e.xp || 0) * MIND_OVERALL_WEIGHT), 0);
+}
+
 // XP a given activity + quantity is worth.
 function activityXP(activity, qty) {
   if (activity.flat != null) return activity.flat;
@@ -6250,6 +6259,7 @@ function MindLogModal({ profile, onLog, onAddTask, onRemoveTask, onClose }) {
             {stat === "faith"
               ? "Points reward consistency and effort — they are not a measure of spiritual worth."
               : "Log anything you feel sharpens your mind. Effort scales the XP."}
+            {" "}Mind & Spirit XP also feeds your overall Hunter rank at half weight.
           </div>
         </div>
       </div>
@@ -10083,11 +10093,15 @@ export default function IronRealm() {
       const repairedProfiles = Object.fromEntries(
         Object.entries(loaded.profiles || {}).map(([id, p]) => {
           // Always recompute — even empty workouts should zero out stats
-          if (!p.workouts?.length) return [id, { ...p,
-            stats: Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0])),
-            subStats: {},
-            levels: Object.fromEntries(Object.keys(p.levels || {}).map(k => [k, 1])),
-            overallXP: 0, overallLevel: 1 }];
+          // (mind/spirit XP still counts toward overall at half weight)
+          if (!p.workouts?.length) {
+            const mindXP = mindOverallBonus(p.mindLog);
+            return [id, { ...p,
+              stats: Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0])),
+              subStats: {},
+              levels: Object.fromEntries(Object.keys(p.levels || {}).map(k => [k, 1])),
+              overallXP: mindXP, overallLevel: getLevelFromXP(mindXP).level }];
+          }
           const newStats = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
           let newOverallXP = 0;
           for (const w of p.workouts) {
@@ -10128,6 +10142,7 @@ export default function IronRealm() {
               });
             }
           }
+          newOverallXP += mindOverallBonus(p.mindLog);
           return [id, { ...p, stats: newStats, subStats: newSubStats2, levels: newLevels,
             overallXP: newOverallXP, overallLevel: getLevelFromXP(newOverallXP).level }];
         })
@@ -10443,6 +10458,7 @@ export default function IronRealm() {
       }
       newOverallXP += xp;
     }
+    newOverallXP += mindOverallBonus(p.mindLog);
     const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
     return { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level };
   };
@@ -10637,22 +10653,28 @@ export default function IronRealm() {
       const log = { ...(p.mindTasksLog || {}) };
       const todaySet = new Set(log[dayKey] || []);
       const meta = MUSCLE_META[task.stat];
-      let mindLog;
+      const bonus = Math.round(task.xp * MIND_OVERALL_WEIGHT);
+      let mindLog, newOverallXP;
       if (todaySet.has(taskId)) {
         todaySet.delete(taskId);
         mindLog = (p.mindLog || []).filter(e => e.id !== entryId);
+        newOverallXP = Math.max(0, (p.overallXP || 0) - bonus);
       } else {
         todaySet.add(taskId);
         mindLog = [...(p.mindLog || []), { id: entryId, date: Date.now(),
           stat: task.stat, activity: task.activity, label: task.label, qty: task.qty, xp: task.xp }];
+        newOverallXP = (p.overallXP || 0) + bonus;
         const beforeLvl = getMuscleLevel(mindStatXP(p, task.stat));
         const afterLvl  = getMuscleLevel((p.mindLog || []).concat([{ stat: task.stat, xp: task.xp }])
           .reduce((s, e) => e.stat === task.stat ? s + (e.xp || 0) : s, 0));
         setTimeout(() => toast(`+${task.xp} ${meta.name} XP`, meta.color), 60);
         if (afterLvl > beforeLvl) setTimeout(() => toast(`${meta.name} LVL ${afterLvl}!`, meta.color), 420);
+        const newOverallLevel = getLevelFromXP(newOverallXP).level;
+        if (newOverallLevel > p.overallLevel) setTimeout(() => setCeremonyLevel(newOverallLevel), 600);
       }
       log[dayKey] = [...todaySet];
-      return { ...p, mindTasksLog: log, mindLog };
+      return { ...p, mindTasksLog: log, mindLog,
+        overallXP: newOverallXP, overallLevel: getLevelFromXP(newOverallXP).level };
     });
   };
 
@@ -10660,13 +10682,18 @@ export default function IronRealm() {
     updateActive(p => {
       const stat = entry.stat;
       const beforeLvl = getMuscleLevel(mindStatXP(p, stat));
-      const next = { ...p, mindLog: [...(p.mindLog || []), entry] };
+      const bonus = Math.round(entry.xp * MIND_OVERALL_WEIGHT);
+      const newOverallXP = (p.overallXP || 0) + bonus;
+      const newOverallLevel = getLevelFromXP(newOverallXP).level;
+      const next = { ...p, mindLog: [...(p.mindLog || []), entry],
+        overallXP: newOverallXP, overallLevel: newOverallLevel };
       const afterLvl = getMuscleLevel(mindStatXP(next, stat));
       const meta = MUSCLE_META[stat];
       setTimeout(() => toast(`+${entry.xp} ${meta.name} XP`, meta.color), 60);
       if (afterLvl > beforeLvl) {
         setTimeout(() => toast(`${meta.name} LVL ${afterLvl}!`, meta.color), 420);
       }
+      if (newOverallLevel > p.overallLevel) setTimeout(() => setCeremonyLevel(newOverallLevel), 600);
       return next;
     });
   };
