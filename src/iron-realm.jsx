@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.9.3";
+const APP_VERSION = "1.10.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -2115,6 +2115,7 @@ const CSS = `
   @keyframes shockwave { from{transform:scale(.2);opacity:.9} to{transform:scale(4.5);opacity:0} }
   @keyframes burst { from{transform:translate(0,0) scale(1);opacity:1} to{transform:translate(var(--tx),var(--ty)) scale(.15);opacity:0} }
   @keyframes slamIn { 0%{transform:scale(3.2);opacity:0;filter:blur(10px)} 60%{transform:scale(.92);opacity:1;filter:blur(0)} 100%{transform:scale(1)} }
+  @keyframes relicGlowPulse { 0%,100%{box-shadow:0 0 12px var(--relic)55} 50%{box-shadow:0 0 26px var(--relic), 0 0 46px var(--relic)44} }
   @keyframes screenWipe { from{opacity:0; transform:translateY(12px) scale(.992)} to{opacity:1; transform:none} }
   .screen-wipe { animation: screenWipe .28s cubic-bezier(.16,1,.3,1) both; }
 
@@ -6091,24 +6092,29 @@ const MIND_ACTIVITIES = {
     { id: "custom",   label: "Something else",      flat: 80, custom: true },
   ],
   faith: [
-    // Daily pillars
-    { id: "fard",           label: "Farḍ prayer on time", unit: "prayer",xpPer: 50,  defaultQty: 1 },
-    { id: "jamaah",         label: "Prayed in congregation", unit: "prayer", xpPer: 75, defaultQty: 1 },
+    // Daily pillars — farḍ-tagged acts are obligations, not extra credit.
+    // They're hidden unless settings.faithScope === "all" (opt-in), so the
+    // default XP economy rewards voluntary devotion only.
+    { id: "fard",           label: "Farḍ prayer on time", unit: "prayer",xpPer: 50,  defaultQty: 1, fard: true },
+    { id: "jamaah",         label: "Prayed in congregation", unit: "prayer", xpPer: 75, defaultQty: 1, fard: true },
     { id: "sunnah",         label: "Sunnah / Nafl prayer",unit: "prayer",xpPer: 60,  defaultQty: 1 },
     { id: "tahajjud",       label: "Tahajjud",            flat: 150 },
     { id: "adhkar",         label: "Morning / evening adhkār", flat: 60 },
     { id: "dhikr",          label: "Dhikr / Istighfār",   flat: 50 },
     { id: "salawat",        label: "Ṣalawāt on the Prophet ﷺ", flat: 40 },
     { id: "dua",            label: "Heartfelt duʿā",      flat: 30 },
-    // Qur'an & knowledge
-    { id: "quran_read",     label: "Qur'an recitation",   unit: "page",  xpPer: 40,  defaultQty: 1 },
+    // Qur'an & knowledge — recitation XP mirrors the ḥasanāt of the hadith:
+    // one ḥasanah per letter, multiplied by ten (Tirmidhī 2910). A standard
+    // madanī muṣḥaf page ≈ 540 letters → ≈5,400 ḥasanāt per page.
+    { id: "quran_read",     label: "Qur'an recitation",   unit: "page",  xpPer: 5400, defaultQty: 1,
+      note: "1 ḥasanah per letter ×10 (Tirmidhī) · ≈540 letters/page" },
     { id: "quran_memorize", label: "Qur'an memorization", unit: "āyah",  xpPer: 120, defaultQty: 1 },
     { id: "kahf",           label: "Sūrah al-Kahf (Friday)", flat: 100 },
     { id: "hadith",         label: "Hadith study",        flat: 80 },
     { id: "lecture",        label: "Islamic lecture / ḥalaqah", flat: 90 },
     { id: "teach",          label: "Taught / shared knowledge", flat: 120 },
     // Weekly & seasonal
-    { id: "jumuah",         label: "Jumuʿah prayer",      flat: 150 },
+    { id: "jumuah",         label: "Jumuʿah prayer",      flat: 150, fard: true },
     { id: "fasting",        label: "Voluntary fasting",   unit: "day",   xpPer: 300, defaultQty: 1 },
     // Character & community
     { id: "sadaqah",        label: "Ṣadaqah (charity)",   flat: 100 },
@@ -6138,13 +6144,20 @@ function activityXP(activity, qty) {
   return Math.max(1, Math.round((activity.xpPer || 0) * (qty || activity.defaultQty || 1)));
 }
 
+// Whether a faith activity is an obligation (farḍ) rather than voluntary.
+function isFardActivity(stat, activityId) {
+  if (stat !== "faith") return false;
+  return !!MIND_ACTIVITIES.faith.find(a => a.id === activityId)?.fard;
+}
+
 // Logging modal: pick attribute → tap an activity → (optional) set quantity → log.
-function MindLogModal({ profile, onLog, onAddTask, onRemoveTask, onClose }) {
+function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, onRemoveTask, onClose }) {
   const [stat, setStat] = useState("intelligence");
   const [qty, setQty]   = useState({});         // { activityId: number }
   const [customLabel, setCustomLabel] = useState("");
   const meta = MUSCLE_META[stat];
-  const acts = MIND_ACTIVITIES[stat];
+  const includeFard = settings?.faithScope === "all";
+  const acts = MIND_ACTIVITIES[stat].filter(a => stat !== "faith" || includeFard || !a.fard);
 
   const buildEntry = (activity) => {
     const q = activity.unit ? (qty[activity.id] || activity.defaultQty || 1) : null;
@@ -6205,6 +6218,30 @@ function MindLogModal({ profile, onLog, onAddTask, onRemoveTask, onClose }) {
           </div>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 24px" }}>
+          {stat === "faith" && (
+            <div onClick={() => onUpdateSettings?.({ faithScope: includeFard ? "sunnah" : "all" })} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "10px 12px", marginBottom: 10, cursor: "pointer",
+              background: BG3, border: `1px solid ${includeFard ? meta.color : MUTED + "33"}`, borderRadius: 8,
+            }}>
+              <div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, fontWeight: 700, color: TEXT }}>
+                  Include obligatory (farḍ) acts
+                </div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                  Off = only voluntary (sunnah) deeds earn XP
+                </div>
+              </div>
+              <div style={{ width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+                background: includeFard ? meta.color : MUTED + "44",
+                border: `1px solid ${includeFard ? meta.color + "88" : MUTED + "44"}`,
+                position: "relative", transition: "all .2s" }}>
+                <div style={{ position: "absolute", top: 2, left: includeFard ? 18 : 2,
+                  width: 14, height: 14, borderRadius: "50%",
+                  background: includeFard ? "#fff" : MUTED, transition: "left .2s" }} />
+              </div>
+            </div>
+          )}
           {acts.map(a => {
             const q = a.unit ? (qty[a.id] ?? a.defaultQty ?? 1) : null;
             const xp = activityXP(a, q);
@@ -6214,7 +6251,10 @@ function MindLogModal({ profile, onLog, onAddTask, onRemoveTask, onClose }) {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, fontWeight: 700, color: TEXT }}>{a.label}</div>
-                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: meta.color }}>+{xp} XP</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: meta.color }}>+{xp.toLocaleString()} XP{a.id === "quran_read" ? " · ḥasanāt" : ""}</div>
+                    {a.note && (
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 1, lineHeight: 1.3 }}>{a.note}</div>
+                    )}
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
                     {(() => { const pinned = !!pinnedTask(a); return (
@@ -6268,7 +6308,7 @@ function MindLogModal({ profile, onLog, onAddTask, onRemoveTask, onClose }) {
 }
 
 // Home card: Intelligence + Faith badges, the daily task checklist, and the log modal.
-function MindSpiritCard({ profile, onLogMind, onAddTask, onRemoveTask, onToggleTask }) {
+function MindSpiritCard({ profile, settings, onUpdateSettings, onLogMind, onAddTask, onRemoveTask, onToggleTask }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ marginBottom: 16 }}>
@@ -6291,7 +6331,8 @@ function MindSpiritCard({ profile, onLogMind, onAddTask, onRemoveTask, onToggleT
 
         {/* Daily task checklist — pinned via ☆ in the logger, resets each day */}
         {(() => {
-          const tasks = profile?.mindTasks || [];
+          const includeFard = settings?.faithScope === "all";
+          const tasks = (profile?.mindTasks || []).filter(t => includeFard || !isFardActivity(t.stat, t.activity));
           const todayKey = _dateKey(new Date());
           const doneToday = new Set((profile?.mindTasksLog || {})[todayKey] || []);
           if (tasks.length === 0) return (
@@ -6343,7 +6384,8 @@ function MindSpiritCard({ profile, onLogMind, onAddTask, onRemoveTask, onToggleT
           );
         })()}
       </div>
-      {open && <MindLogModal profile={profile} onLog={(entry) => onLogMind?.(entry)}
+      {open && <MindLogModal profile={profile} settings={settings} onUpdateSettings={onUpdateSettings}
+        onLog={(entry) => onLogMind?.(entry)}
         onAddTask={onAddTask} onRemoveTask={onRemoveTask} onClose={() => setOpen(false)} />}
     </div>
   );
@@ -6912,6 +6954,101 @@ const DAILY_RITUALS = [
   { id: "water",   label: "8 glasses of water" },
 ];
 
+// ─── RELICS ───────────────────────────────────────────────────────────────────
+// Cosmetic card frames that drop when you set a genuine PR (beat a previously
+// recorded e1RM). Rarity is rolled per drop; duplicates are avoided by rolling
+// within unowned relics, escalating rarity when a tier is complete.
+const RELIC_RARITIES = {
+  common:    { name: "Common",    color: "#9aa7b8", weight: 60 },
+  rare:      { name: "Rare",      color: "#00d4ff", weight: 30 },
+  epic:      { name: "Epic",      color: "#a855f7", weight: 9 },
+  legendary: { name: "Legendary", color: "#ffd700", weight: 1 },
+};
+const RELIC_POOL = [
+  { id: "iron_frame",    name: "Iron Frame",      rarity: "common" },
+  { id: "bronze_edge",   name: "Bronze Edge",     rarity: "common" },
+  { id: "steel_plating", name: "Steel Plating",   rarity: "common" },
+  { id: "azure_circuit", name: "Azure Circuit",   rarity: "rare" },
+  { id: "gilded_trim",   name: "Gilded Trim",     rarity: "rare" },
+  { id: "frost_sigil",   name: "Frost Sigil",     rarity: "rare" },
+  { id: "violet_storm",  name: "Violet Storm",    rarity: "epic" },
+  { id: "ember_crown",   name: "Ember Crown",     rarity: "epic" },
+  { id: "monarch_sigil", name: "Monarch's Sigil", rarity: "legendary" },
+];
+const RELIC_FRAME_COLORS = {
+  iron_frame: "#9aa7b8", bronze_edge: "#cd7f32", steel_plating: "#c0c8d4",
+  azure_circuit: "#00d4ff", gilded_trim: "#e8c44a", frost_sigil: "#9ad9ff",
+  violet_storm: "#a855f7", ember_crown: "#ff6b35", monarch_sigil: "#ffd700",
+};
+// Style applied to the rank card when a relic is equipped.
+function relicStyle(relicId) {
+  if (!relicId) return null;
+  const relic = RELIC_POOL.find(r => r.id === relicId);
+  if (!relic) return null;
+  const c = RELIC_FRAME_COLORS[relicId];
+  const base = { border: `2px solid ${c}`, boxShadow: `0 0 14px ${c}44` };
+  if (relic.rarity === "epic" || relic.rarity === "legendary") {
+    return { ...base, "--relic": c, animation: "relicGlowPulse 2.6s ease-in-out infinite" };
+  }
+  return base;
+}
+// Weighted rarity roll, then pick an unowned relic in that tier; if the tier is
+// complete, escalate upward (then downward) so drops stay meaningful.
+function rollRelic(ownedIds) {
+  const owned = new Set(ownedIds || []);
+  const order = ["common", "rare", "epic", "legendary"];
+  const total = order.reduce((s, r) => s + RELIC_RARITIES[r].weight, 0);
+  let roll = Math.random() * total, rarity = "common";
+  for (const r of order) { roll -= RELIC_RARITIES[r].weight; if (roll <= 0) { rarity = r; break; } }
+  const tierIdx = order.indexOf(rarity);
+  const tiers = [...order.slice(tierIdx), ...order.slice(0, tierIdx).reverse()];
+  for (const t of tiers) {
+    const candidates = RELIC_POOL.filter(r => r.rarity === t && !owned.has(r.id));
+    if (candidates.length) return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  return null; // full collection
+}
+
+// Full-screen drop reveal, ceremony-style, tinted by rarity.
+function RelicDropModal({ relic, onEquip, onClose }) {
+  const rar = RELIC_RARITIES[relic.rarity];
+  const c = RELIC_FRAME_COLORS[relic.id];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 3200, display: "flex",
+      alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer",
+      background: "radial-gradient(circle at 50% 45%, rgba(3,6,15,.6), rgba(3,6,15,.97))",
+      animation: "fadeIn .25s ease-out both" }}>
+      {[0, 0.2].map((d, i) => (
+        <div key={i} style={{ position: "absolute", width: 120, height: 120, borderRadius: "50%",
+          border: `2px solid ${c}`, animation: `shockwave 1.2s cubic-bezier(.2,.7,.3,1) ${d}s both` }} />
+      ))}
+      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, letterSpacing: 6,
+        color: rar.color, textShadow: `0 0 10px ${rar.color}`, marginBottom: 12,
+        animation: "fadeIn .4s ease-out .1s both" }}>RELIC DROP — {rar.name.toUpperCase()}</div>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 190, padding: "26px 18px", textAlign: "center",
+        background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f4)`,
+        border: `2px solid ${c}`, borderRadius: 14,
+        "--relic": c, animation: "relicGlowPulse 2.2s ease-in-out infinite, slamIn .5s cubic-bezier(.16,1,.3,1) .15s both" }}>
+        <div style={{ fontSize: 34, marginBottom: 8 }}>{relic.rarity === "legendary" ? "👑" : relic.rarity === "epic" ? "🔮" : relic.rarity === "rare" ? "💠" : "🛡️"}</div>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 900, color: c,
+          letterSpacing: 1, textShadow: `0 0 12px ${c}` }}>{relic.name}</div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6 }}>
+          Card frame · earned by PR
+        </div>
+        <button onClick={onEquip} style={{
+          marginTop: 14, width: "100%", padding: "10px", cursor: "pointer",
+          background: `${c}22`, border: `1px solid ${c}88`, borderRadius: 8,
+          fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+          color: c, letterSpacing: 2 }}>EQUIP NOW</button>
+      </div>
+      <div style={{ position: "absolute", bottom: 48, fontFamily: "'Rajdhani',sans-serif",
+        fontSize: 11, color: MUTED, letterSpacing: 3,
+        animation: "fadeIn .4s ease-out 1s both" }}>TAP ANYWHERE TO STASH</div>
+    </div>
+  );
+}
+
 const COSMETIC_TITLES = [
   { id: "ritual_7",   name: "Daily Hunter",   criteria: "7-day ritual streak",   threshold: 7 },
   { id: "ritual_30",  name: "Iron Apostle",   criteria: "30-day ritual streak",  threshold: 30 },
@@ -7355,7 +7492,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         <div className="holo-divider" />
 
         {/* Mind & Spirit */}
-        <MindSpiritCard profile={st} onLogMind={onLogMind} onAddTask={onAddMindTask}
+        <MindSpiritCard profile={st} settings={settings} onUpdateSettings={onUpdateSettings}
+          onLogMind={onLogMind} onAddTask={onAddMindTask}
           onRemoveTask={onRemoveMindTask} onToggleTask={onToggleMindTask} />
 
         {/* Daily Rituals */}
@@ -8594,6 +8732,71 @@ function _weeklyTonnage(workouts, weeks = 12) {
   return buckets;
 }
 
+// ─── SHADOW RACE ──────────────────────────────────────────────────────────────
+// Race your past self: cumulative tonnage this month vs the pace last-month
+// you had set by this same day of the month.
+function ShadowRace({ workouts }) {
+  const d = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth(), day = now.getDate();
+    const startThis = new Date(y, m, 1).getTime();
+    const startPrev = new Date(y, m - 1, 1).getTime();
+    const endPrevSameDay = new Date(y, m - 1, day, 23, 59, 59).getTime();
+    let cur = 0, ghost = 0, prevTotal = 0;
+    for (const w of workouts || []) {
+      if (!w?.date) continue;
+      const t = _workoutTonnage(w);
+      if (w.date >= startThis) cur += t;
+      else if (w.date >= startPrev && w.date < startThis) {
+        prevTotal += t;
+        if (w.date <= endPrevSameDay) ghost += t;
+      }
+    }
+    return { cur, ghost, prevTotal };
+  }, [workouts]);
+  if (d.cur === 0 && d.prevTotal === 0) return null;
+  const max = Math.max(d.cur, d.ghost, 1);
+  const pctYou = Math.max(4, (d.cur / max) * 100);
+  const pctGhost = Math.max(4, (d.ghost / max) * 100);
+  const ahead = d.cur - d.ghost;
+  const ghostMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
+    .toLocaleDateString("en", { month: "long" });
+  const lane = (label, pct, color, glyph, value) => (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+        <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color, letterSpacing: 2 }}>{glyph} {label}</span>
+        <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{Math.round(wtVal(value)).toLocaleString()} {wtLabel()}</span>
+      </div>
+      <div style={{ position: "relative", height: 10, background: DARK1, borderRadius: 5, overflow: "hidden", border: `1px solid ${color}22` }}>
+        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`,
+          background: `linear-gradient(90deg, ${color}22, ${color}88)`,
+          transition: "width 1s cubic-bezier(.16,1,.3,1)" }} />
+        <div style={{ position: "absolute", left: `calc(${pct}% - 5px)`, top: 1, width: 8, height: 8,
+          borderRadius: "50%", background: color, boxShadow: `0 0 8px ${color}, 0 0 16px ${color}66` }} />
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ background: BG2, border: `1px solid #a855f722`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: "#a855f7", letterSpacing: 4 }}>
+          [ SHADOW RACE — THIS MONTH ]
+        </div>
+        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ahead >= 0 ? GREEN : RED, letterSpacing: 1 }}>
+          {ahead >= 0 ? "AHEAD" : "BEHIND"} {Math.round(wtVal(Math.abs(ahead))).toLocaleString()} {wtLabel()}
+        </div>
+      </div>
+      {lane("YOU", pctYou, ACCENT, "⚡", d.cur)}
+      {lane(`${ghostMonth.toUpperCase()} YOU`, pctGhost, "#a855f7", "👻", d.ghost)}
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, lineHeight: 1.4 }}>
+        {ahead >= 0
+          ? `Your shadow lifted ${Math.round(wtVal(d.prevTotal)).toLocaleString()} ${wtLabel()} total in ${ghostMonth}. Stay ahead of it.`
+          : `Your ${ghostMonth} self is outpacing you. Close the gap.`}
+      </div>
+    </div>
+  );
+}
+
 function VolumeChart({ workouts }) {
   const data = useMemo(() => _weeklyTonnage(workouts, 12), [workouts]);
   const peak = Math.max(...data, 1);
@@ -8738,6 +8941,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const [prHistoryOpen, setPrHistoryOpen]     = useState(false);
   const [heatmapOpen, setHeatmapOpen]         = useState(false);
   const [patronPickerOpen, setPatronPickerOpen] = useState(false);
+  const [relicVaultOpen, setRelicVaultOpen]     = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -8819,7 +9023,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         <TiltCard>
         <div className="card-in" style={{ background: `${rank.color}11`, border: `1px solid ${rank.color}44`,
           borderRadius: 14, padding: "16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start",
-          position: "relative", overflow: "hidden" }}>
+          position: "relative", overflow: "hidden",
+          ...(relicStyle(st.cosmetics?.equippedRelic) || {}) }}>
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
             background: "radial-gradient(circle at var(--gx,50%) var(--gy,50%), #ffffff10, transparent 55%)" }} />
           <div style={{ flex: 1 }}>
@@ -9060,6 +9265,23 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </button>
         </Reveal>
 
+        <Reveal dir="left" delay={40}>
+        <button onClick={() => setRelicVaultOpen(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "#a855f710", border: "1px solid #a855f755", borderRadius: 8,
+          padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+          fontFamily: "'Rajdhani',sans-serif",
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 15 }}>💎</span>
+            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: "#a855f7", letterSpacing: 2, fontWeight: 700 }}>RELIC VAULT</span>
+          </span>
+          <span style={{ fontSize: 10, color: "#a855f7", opacity: 0.6 }}>
+            {(st.cosmetics?.relics || []).length}/{RELIC_POOL.length} →
+          </span>
+        </button>
+        </Reveal>
+
         <Reveal dir="right" delay={80}>
         <button onClick={() => setHeatmapOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -9105,6 +9327,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </div>
 
         <Reveal><VolumeChart workouts={st.workouts || []} /></Reveal>
+
+        <Reveal><ShadowRace workouts={st.workouts || []} /></Reveal>
 
         <Reveal><RecoveryGrid workouts={st.workouts || []} /></Reveal>
 
@@ -9163,6 +9387,50 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </Reveal>
       </div>
 
+      {relicVaultOpen && (
+        <div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 300,
+          background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)",
+          display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+            background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+            border: "1px solid #a855f733", borderTop: "2px solid #a855f7",
+            width: "100%", maxWidth: 480, padding: "20px 18px 40px",
+            maxHeight: "70vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: "#a855f7", letterSpacing: 3 }}>RELIC VAULT</div>
+              <button onClick={() => setRelicVaultOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginBottom: 14 }}>
+              Card frames dropped by setting new PRs. Tap to equip.
+            </div>
+            {RELIC_POOL.map(r => {
+              const owned = (st.cosmetics?.relics || []).some(x => x.id === r.id);
+              const equipped = st.cosmetics?.equippedRelic === r.id;
+              const rar = RELIC_RARITIES[r.rarity];
+              const c = RELIC_FRAME_COLORS[r.id];
+              return (
+                <button key={r.id} disabled={!owned}
+                  onClick={() => onUpdateProfile(store.activeId, { cosmetics: { ...(st.cosmetics || {}), equippedRelic: equipped ? null : r.id } })}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                    background: equipped ? `${c}18` : (owned ? BG3 : "transparent"),
+                    border: `1px solid ${equipped ? c : (owned ? c + "44" : MUTED + "22")}`,
+                    borderRadius: 8, padding: "10px 12px", marginBottom: 8,
+                    cursor: owned ? "pointer" : "default", opacity: owned ? 1 : 0.45, textAlign: "left" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 16 }}>{r.rarity === "legendary" ? "👑" : r.rarity === "epic" ? "🔮" : r.rarity === "rare" ? "💠" : "🛡️"}</span>
+                    <span>
+                      <span style={{ display: "block", fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: owned ? c : MUTED, letterSpacing: 1 }}>{r.name}</span>
+                      <span style={{ display: "block", fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: rar.color, letterSpacing: 1 }}>{rar.name.toUpperCase()}</span>
+                    </span>
+                  </span>
+                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 1,
+                    color: equipped ? c : MUTED }}>{equipped ? "EQUIPPED" : (owned ? "TAP TO EQUIP" : "🔒 SET A PR")}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {prHistoryOpen && (
         <PRHistoryModal
           workouts={st.workouts}
@@ -10039,6 +10307,8 @@ function FriendsScreen({ account, toast }) {
 export default function IronRealm() {
   // v1.9: full-screen ceremony when overall level rises
   const [ceremonyLevel, setCeremonyLevel] = useState(null);
+  // v1.10: relic drop reveal after a PR
+  const [relicDrop, setRelicDrop] = useState(null);
 
   // v1.9: energy ripple + sparkle burst on every button press, at the touch point
   useEffect(() => {
@@ -10143,7 +10413,10 @@ export default function IronRealm() {
             }
           }
           newOverallXP += mindOverallBonus(p.mindLog);
-          return [id, { ...p, stats: newStats, subStats: newSubStats2, levels: newLevels,
+          // Rebuild stored PRs from the workout log (they were never persisted before)
+          const tl = getPRTimeline(p.workouts);
+          const rebuiltPrs = Object.fromEntries(Object.entries(tl).map(([name, evts]) => [name, evts[evts.length - 1].e1rm]));
+          return [id, { ...p, stats: newStats, subStats: newSubStats2, levels: newLevels, prs: rebuiltPrs,
             overallXP: newOverallXP, overallLevel: getLevelFromXP(newOverallXP).level }];
         })
       );
@@ -10460,7 +10733,9 @@ export default function IronRealm() {
     }
     newOverallXP += mindOverallBonus(p.mindLog);
     const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
-    return { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level };
+    const tl = getPRTimeline(p.workouts);
+    const newPrs = Object.fromEntries(Object.entries(tl).map(([name, evts]) => [name, evts[evts.length - 1].e1rm]));
+    return { newStats, newSubStats, newLevels, newPrs, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level };
   };
 
   const applyXP = (p, exercise, muscle, xp) => {
@@ -10518,8 +10793,27 @@ export default function IronRealm() {
       if (newOverallLevel > p.overallLevel) { setTimeout(() => setCeremonyLevel(newOverallLevel), 350); }
       if (newLevels[statKey] > (p.levels[statKey] || 1)) setTimeout(() => toast(`${MUSCLE_META[statKey]?.name} LVL ${newLevels[statKey]}!`, MUSCLE_META[statKey]?.color), 700);
       if (absorbed > 0) setTimeout(() => toast(`-${absorbed} XP absorbed by food surplus`, RED), 200);
+      // Persist PRs (fixes prs never being written) and roll a relic on a
+      // genuine PR — a previously recorded e1RM that just got beaten.
+      const exName = entry.exerciseName || entry.exercise?.name;
+      let newPrs = p.prs || {};
+      let newCosmetics = p.cosmetics || {};
+      if (exName && Number.isFinite(entry.newE1RM) && entry.newE1RM > 0) {
+        const prevPR = (p.prs || {})[exName] || 0;
+        if (entry.newE1RM > prevPR) {
+          newPrs = { ...(p.prs || {}), [exName]: Math.round(entry.newE1RM) };
+          if (prevPR > 0) {
+            const relic = rollRelic((p.cosmetics?.relics || []).map(r => r.id));
+            if (relic) {
+              newCosmetics = { ...(p.cosmetics || {}),
+                relics: [...(p.cosmetics?.relics || []), { id: relic.id, date: Date.now(), source: exName }] };
+              setTimeout(() => setRelicDrop(relic), 1600);
+            }
+          }
+        }
+      }
       return { ...p, stats: newStats, subStats: newSubStats, levels: newLevels,
-        overallXP: newOverallXP, overallLevel: newOverallLevel,
+        overallXP: newOverallXP, overallLevel: newOverallLevel, prs: newPrs, cosmetics: newCosmetics,
         workouts: [...p.workouts, { ...entry, xp: netXP, rawXP: entry.xp, absorbed,
           date: entry.targetDate || entry.date || Date.now() }] };
     });
@@ -10534,7 +10828,7 @@ export default function IronRealm() {
       const rebuilt = recomputeStats({ ...p, workouts: newWorkouts });
       return { ...p, workouts: newWorkouts,
         stats: rebuilt.newStats, subStats: rebuilt.newSubStats,
-        levels: rebuilt.newLevels, overallXP: rebuilt.newOverallXP,
+        levels: rebuilt.newLevels, prs: rebuilt.newPrs, overallXP: rebuilt.newOverallXP,
         overallLevel: rebuilt.newOverallLevel };
     });
     toast(`${entry.exerciseName} removed`, MUTED);
@@ -10783,6 +11077,9 @@ export default function IronRealm() {
       <Toasts toasts={toasts} />
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
       {ceremonyLevel && <LevelUpCeremony level={ceremonyLevel} settings={settings} onDone={() => setCeremonyLevel(null)} />}
+      {relicDrop && <RelicDropModal relic={relicDrop}
+        onEquip={() => { const id = relicDrop.id; updateActive(p => ({ ...p, cosmetics: { ...(p.cosmetics || {}), equippedRelic: id } })); toast(`${relicDrop.name} equipped`, RELIC_FRAME_COLORS[id]); setRelicDrop(null); }}
+        onClose={() => setRelicDrop(null)} />}
       <div key={screen} className="screen-wipe">
       {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} pendingCount={pendingCount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
