@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.10.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -6103,11 +6103,11 @@ const MIND_ACTIVITIES = {
     { id: "dhikr",          label: "Dhikr / Istighfār",   flat: 50 },
     { id: "salawat",        label: "Ṣalawāt on the Prophet ﷺ", flat: 40 },
     { id: "dua",            label: "Heartfelt duʿā",      flat: 30 },
-    // Qur'an & knowledge — recitation XP mirrors the ḥasanāt of the hadith:
-    // one ḥasanah per letter, multiplied by ten (Tirmidhī 2910). A standard
-    // madanī muṣḥaf page ≈ 540 letters → ≈5,400 ḥasanāt per page.
-    { id: "quran_read",     label: "Qur'an recitation",   unit: "page",  xpPer: 5400, defaultQty: 1,
-      note: "1 ḥasanah per letter ×10 (Tirmidhī) · ≈540 letters/page" },
+    // Qur'an & knowledge — recitation XP tracks the ḥasanāt of the hadith
+    // (1 ḥasanah/letter ×10, Tirmidhī 2910; ≈540 letters/page ≈ 5,400
+    // ḥasanāt), diluted ÷100 so it stays balanced against other acts.
+    { id: "quran_read",     label: "Qur'an recitation",   unit: "page",  xpPer: 54, defaultQty: 1,
+      hasanatPer: 5400, note: "≈5,400 ḥasanāt per page (Tirmidhī) · XP = ḥasanāt ÷100" },
     { id: "quran_memorize", label: "Qur'an memorization", unit: "āyah",  xpPer: 120, defaultQty: 1 },
     { id: "kahf",           label: "Sūrah al-Kahf (Friday)", flat: 100 },
     { id: "hadith",         label: "Hadith study",        flat: 80 },
@@ -6136,6 +6136,22 @@ function mindStatXP(profile, stat) {
 const MIND_OVERALL_WEIGHT = 0.5;
 function mindOverallBonus(mindLog) {
   return (mindLog || []).reduce((s, e) => s + Math.round((e.xp || 0) * MIND_OVERALL_WEIGHT), 0);
+}
+
+// ─── ATROPHY ──────────────────────────────────────────────────────────────────
+// Muscles detrain. After a 14-day grace window (strength holds ~2 weeks of
+// inactivity — Mujika & Padilla 2000), earned muscle XP decays 1% per day,
+// floored at 40% (muscle memory: you never lose it all). Retention is a pure
+// function of days-since-last-trained, applied during the stat rebuild — so
+// training a muscle again restores it to full on the next rebuild: one
+// session reawakens the muscle. Overall Hunter XP and Mind & Spirit do not
+// decay; atrophy is a body mechanic.
+const ATROPHY_GRACE_DAYS = 14, ATROPHY_RATE = 0.01, ATROPHY_FLOOR = 0.4;
+function atrophyRetention(lastTrainedDate) {
+  if (!lastTrainedDate) return 1;
+  const days = (Date.now() - lastTrainedDate) / 86400000;
+  if (days <= ATROPHY_GRACE_DAYS) return 1;
+  return Math.max(ATROPHY_FLOOR, 1 - ATROPHY_RATE * (days - ATROPHY_GRACE_DAYS));
 }
 
 // XP a given activity + quantity is worth.
@@ -6251,7 +6267,7 @@ function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, o
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, fontWeight: 700, color: TEXT }}>{a.label}</div>
-                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: meta.color }}>+{xp.toLocaleString()} XP{a.id === "quran_read" ? " · ḥasanāt" : ""}</div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: meta.color }}>+{xp.toLocaleString()} XP{a.hasanatPer ? ` · ≈${((q || 1) * a.hasanatPer).toLocaleString()} ḥasanāt` : ""}</div>
                     {a.note && (
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 1, lineHeight: 1.3 }}>{a.note}</div>
                     )}
@@ -9151,6 +9167,30 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
+        {/* ── ATROPHY WARNING ── */}
+        {(() => {
+          const lastByMuscle = {};
+          for (const w of st.workouts || []) {
+            const m = w.muscle || w.exercise?.primary;
+            if (m && w.date && (!lastByMuscle[m] || w.date > lastByMuscle[m])) lastByMuscle[m] = w.date;
+          }
+          const decaying = Object.entries(lastByMuscle).filter(([, d]) => atrophyRetention(d) < 1);
+          if (!decaying.length) return null;
+          const worstDays = Math.floor((Date.now() - Math.min(...decaying.map(([, d]) => d))) / 86400000);
+          return (
+            <div style={{ background: `${RED}0d`, border: `1px solid ${RED}44`, borderLeft: `3px solid ${RED}`,
+              borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: RED, letterSpacing: 2, marginBottom: 3 }}>
+                ⚠ ATROPHY ACTIVE
+              </div>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, lineHeight: 1.5 }}>
+                {decaying.length} muscle group{decaying.length > 1 ? "s" : ""} decaying — longest untrained {worstDays} days.
+                XP fades 1%/day after 14 days rest (never below 40%). One session restores a muscle fully.
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── PATRON LIFT ── */}
         {(() => {
           const prs = st.prs || {};
@@ -10365,6 +10405,9 @@ export default function IronRealm() {
           // Always recompute — even empty workouts should zero out stats
           // (mind/spirit XP still counts toward overall at half weight)
           if (!p.workouts?.length) {
+            p = { ...p, mindLog: (p.mindLog || []).map(e =>
+              e.activity === "quran_read" && e.xp > 54 * (e.qty || 1) * 1.5
+                ? { ...e, xp: 54 * (e.qty || 1) } : e) };
             const mindXP = mindOverallBonus(p.mindLog);
             return [id, { ...p,
               stats: Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0])),
@@ -10373,6 +10416,8 @@ export default function IronRealm() {
               overallXP: mindXP, overallLevel: getLevelFromXP(mindXP).level }];
           }
           const newStats = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
+          const lastTrained = {};
+          const touch = (key, date) => { if (date && (!lastTrained[key] || date > lastTrained[key])) lastTrained[key] = date; };
           let newOverallXP = 0;
           for (const w of p.workouts) {
             const xp = w.xp || 0;
@@ -10381,23 +10426,31 @@ export default function IronRealm() {
             const emg = ex.emg || EXERCISE_EMG[ex.name];
             if (ex.type === "cardio") {
               newStats.cardio = (newStats.cardio || 0) + xp;
+              touch("cardio", w.date);
             } else if (emg) {
               const total = Object.values(emg).reduce((s,v) => s+v, 0);
               Object.entries(emg).forEach(([svgId, activation]) => {
                 const xpShare = Math.round(xp * activation / total);
                 const stat = SVG_TO_STAT[svgId] || muscle;
                 newStats[stat] = (newStats[stat] || 0) + xpShare;
+                touch(stat, w.date);
               });
             } else {
               const statKey = ex.type === "calisthenics" &&
                 !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
               newStats[statKey] = (newStats[statKey] || 0) + xp;
-              if (statKey !== muscle) newStats[muscle] = (newStats[muscle] || 0) + Math.round(xp * 0.4);
+              touch(statKey, w.date);
+              if (statKey !== muscle) { newStats[muscle] = (newStats[muscle] || 0) + Math.round(xp * 0.4); touch(muscle, w.date); }
             }
             newOverallXP += xp;
           }
+          // Atrophy: decay each muscle by time since it was last trained
+          Object.keys(newStats).forEach(k => {
+            newStats[k] = Math.round((newStats[k] || 0) * atrophyRetention(lastTrained[k]));
+          });
           const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
           const newSubStats2 = {};
+          const lastSub = {};
           for (const w of p.workouts) {
             const xp2 = w.xp || 0; const ex2 = w.exercise || {};
             const emg2 = ex2.emg || EXERCISE_EMG[ex2.name];
@@ -10405,13 +10458,23 @@ export default function IronRealm() {
               const total2 = Object.values(emg2).reduce((s,v)=>s+v,0);
               Object.entries(emg2).forEach(([svgId,act]) => {
                 newSubStats2[svgId] = (newSubStats2[svgId]||0) + Math.round(xp2*act/total2);
+                if (w.date && (!lastSub[svgId] || w.date > lastSub[svgId])) lastSub[svgId] = w.date;
               });
             } else {
               (ex2.svgTargets||[]).forEach(svgId => {
                 newSubStats2[svgId] = (newSubStats2[svgId]||0) + Math.round(xp2/((ex2.svgTargets||[1]).length));
+                if (w.date && (!lastSub[svgId] || w.date > lastSub[svgId])) lastSub[svgId] = w.date;
               });
             }
           }
+          Object.keys(newSubStats2).forEach(k => {
+            newSubStats2[k] = Math.round((newSubStats2[k] || 0) * atrophyRetention(lastSub[k]));
+          });
+          // Migrate v1.10.0 quran entries logged at undiluted hasanat rates
+          const mindLogM = (p.mindLog || []).map(e =>
+            e.activity === "quran_read" && e.xp > 54 * (e.qty || 1) * 1.5
+              ? { ...e, xp: 54 * (e.qty || 1) } : e);
+          p = { ...p, mindLog: mindLogM };
           newOverallXP += mindOverallBonus(p.mindLog);
           // Rebuild stored PRs from the workout log (they were never persisted before)
           const tl = getPRTimeline(p.workouts);
@@ -10702,6 +10765,8 @@ export default function IronRealm() {
   const recomputeStats = (p) => {
     const newStats    = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
     const newSubStats = {};
+    const lastT = {}, lastS = {};
+    const touch = (m, key, date) => { if (date && (!m[key] || date > m[key])) m[key] = date; };
     let newOverallXP  = 0;
     for (const w of (p.workouts || [])) {
       const xp    = w.xp || 0;
@@ -10710,6 +10775,7 @@ export default function IronRealm() {
       const emg   = ex.emg || EXERCISE_EMG[ex.name];
       if (ex.type === "cardio") {
         newStats.cardio = (newStats.cardio || 0) + xp;
+        touch(lastT, "cardio", w.date);
       } else if (emg) {
         const total = Object.values(emg).reduce((s,v) => s+v, 0);
         Object.entries(emg).forEach(([svgId, activation]) => {
@@ -10717,20 +10783,24 @@ export default function IronRealm() {
           const stat = SVG_TO_STAT[svgId] || muscle;
           newStats[stat]    = (newStats[stat]    || 0) + xpShare;
           newSubStats[svgId] = (newSubStats[svgId] || 0) + xpShare;
+          touch(lastT, stat, w.date); touch(lastS, svgId, w.date);
         });
       } else {
         const targets = ex.svgTargets || [];
         if (targets.length > 0) {
           const share = Math.round(xp / targets.length);
-          targets.forEach(svgId => { newSubStats[svgId] = (newSubStats[svgId] || 0) + share; });
+          targets.forEach(svgId => { newSubStats[svgId] = (newSubStats[svgId] || 0) + share; touch(lastS, svgId, w.date); });
         }
         const statKey = ex.type === "calisthenics" &&
           !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
         newStats[statKey] = (newStats[statKey] || 0) + xp;
-        if (statKey !== muscle) newStats[muscle] = (newStats[muscle] || 0) + Math.round(xp * 0.4);
+        touch(lastT, statKey, w.date);
+        if (statKey !== muscle) { newStats[muscle] = (newStats[muscle] || 0) + Math.round(xp * 0.4); touch(lastT, muscle, w.date); }
       }
       newOverallXP += xp;
     }
+    Object.keys(newStats).forEach(k => { newStats[k] = Math.round((newStats[k] || 0) * atrophyRetention(lastT[k])); });
+    Object.keys(newSubStats).forEach(k => { newSubStats[k] = Math.round((newSubStats[k] || 0) * atrophyRetention(lastS[k])); });
     newOverallXP += mindOverallBonus(p.mindLog);
     const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
     const tl = getPRTimeline(p.workouts);
