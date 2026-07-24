@@ -395,6 +395,23 @@ await t('[landscape] navbar visible', async () => {
   }), 'navbar off-screen in landscape');
 });
 
+await t('[fix] modal from scrolled screen: viewport-anchored + above navbar', async () => {
+  await nav('Hunter');
+  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /RELIC VAULT/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /RELIC VAULT/.test(x.innerText)); if (b) b.click(); });
+  await page.waitForTimeout(700);
+  const r = await page.evaluate(() => {
+    const ovl = [...document.querySelectorAll('div')].find(d => getComputedStyle(d).position === 'fixed' && /Monarch/.test(d.innerText));
+    if (!ovl) return null;
+    const rect = ovl.getBoundingClientRect();
+    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), vh: window.innerHeight, z: parseInt(getComputedStyle(ovl).zIndex) };
+  });
+  ok(r && r.top === 0 && r.bottom === r.vh, `overlay misanchored: ${JSON.stringify(r)}`);
+  ok(r.z > 1000, `overlay z ${r.z} below navbar (1000)`);
+  await closeTopModal();
+});
+
 await t('[global] zero page errors across run', async () => ok(pageErrors.length === 0, pageErrors.slice(0, 3).join(' | ')));
 
 const pass = results.filter(r => r.ok).length;

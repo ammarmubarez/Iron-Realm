@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.10.4";
+const APP_VERSION = "1.10.5";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -2118,7 +2118,11 @@ const CSS = `
   @keyframes slamIn { 0%{transform:scale(3.2);opacity:0;filter:blur(10px)} 60%{transform:scale(.92);opacity:1;filter:blur(0)} 100%{transform:scale(1)} }
   @keyframes relicGlowPulse { 0%,100%{box-shadow:0 0 12px var(--relic)55} 50%{box-shadow:0 0 26px var(--relic), 0 0 46px var(--relic)44} }
   @keyframes screenWipe { from{opacity:0; transform:translateY(12px) scale(.992)} to{opacity:1; transform:none} }
-  .screen-wipe { animation: screenWipe .28s cubic-bezier(.16,1,.3,1) both; }
+  /* fill must be 'backwards', not 'both': a retained transform animation turns
+     this wrapper into a containing block, which re-anchors every position:fixed
+     modal inside it to the wrapper instead of the viewport — shifting modals up
+     by the screen's scroll offset (the relic-vault scrolling bug). */
+  .screen-wipe { animation: screenWipe .28s cubic-bezier(.16,1,.3,1) backwards; }
 
   /* ── v1.9.1 NEXT WAVE ── */
   @keyframes barRise { from{transform:scaleY(0)} to{transform:scaleY(1)} }
@@ -4230,7 +4234,7 @@ function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
   const durationMin = sessionStart ? Math.max(1, Math.round((Date.now() - sessionStart) / 60000)) : null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 400, background: "rgba(3,6,15,0.96)", backdropFilter: "blur(14px)", display: "flex", alignItems: "safe center", justifyContent: "center", padding: 16 }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150, background: "rgba(3,6,15,0.96)", backdropFilter: "blur(14px)", display: "flex", alignItems: "safe center", justifyContent: "center", padding: 16 }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
@@ -6918,7 +6922,7 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 310, background: "rgba(3,6,15,0.95)",
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150, background: "rgba(3,6,15,0.95)",
       backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
@@ -8298,7 +8302,7 @@ function PRHistoryModal({ workouts, prs, onClose }) {
     .sort((a, b) => b.e1rm - a.e1rm);
 
   return (
-    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
@@ -8491,7 +8495,7 @@ function HeatmapModal({ workouts, onClose }) {
   const CELL = 13, GAP = 2;
 
   return (
-    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
@@ -8626,7 +8630,7 @@ function HeatmapModal({ workouts, onClose }) {
 function AwakeningModal({ onChoose }) {
   return (
     <div style={{
-      position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 400,
+      position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
       background: "rgba(3,6,15,0.95)", backdropFilter: "blur(16px)",
       display: "flex", alignItems: "safe center", justifyContent: "center",
       padding: "24px",
@@ -9299,7 +9303,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           const prs = st.prs || {};
           const sorted = Object.entries(prs).sort((a, b) => b[1] - a[1]);
           return (
-            <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+            <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150, background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
               onClick={() => setPatronPickerOpen(false)}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
@@ -9484,7 +9488,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
       </div>
 
       {relicVaultOpen && (
-        <div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300,
+        <div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
           background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)",
           display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
@@ -9760,7 +9764,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
