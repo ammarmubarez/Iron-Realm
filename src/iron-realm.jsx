@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.10.3";
+const APP_VERSION = "1.10.4";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -3351,7 +3351,7 @@ function LevelUpCeremony({ level, settings, onDone }) {
     d: 0.5 + Math.random() * 0.9, delay: Math.random() * 0.25, gold: Math.random() < 0.4,
   })), []);
   return (
-    <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 3000, display: "flex",
+    <div onClick={onDone} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 3000, display: "flex",
       alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer",
       background: "radial-gradient(circle at 50% 45%, rgba(3,6,15,.55), rgba(3,6,15,.96))",
       animation: "fadeIn .25s ease-out both" }}>
@@ -3897,7 +3897,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
     : null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.92)",
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1100, background: "rgba(7,11,20,0.92)",
       backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
       paddingBottom: "96px" }}
       onClick={onClose}>
@@ -4230,7 +4230,7 @@ function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
   const durationMin = sessionStart ? Math.max(1, Math.round((Date.now() - sessionStart) / 60000)) : null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(3,6,15,0.96)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 400, background: "rgba(3,6,15,0.96)", backdropFilter: "blur(14px)", display: "flex", alignItems: "safe center", justifyContent: "center", padding: 16 }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
@@ -4399,7 +4399,9 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               const count   = byDay[i].length;
               const active  = selDay === i;
               return (
-                <button key={d} onClick={() => setSelDay(i)} style={{
+                <button key={d} onClick={() => setSelDay(i)}
+              ref={active ? (el) => { if (el && !el._centered) { el._centered = 1; el.scrollIntoView({ inline: "center", block: "nearest" }); } } : null}
+              style={{
                   flexShrink: 0, background: active ? `${ACCENT}22` : BG2,
                   border: `1px solid ${active ? ACCENT : isToday ? GOLD+"44" : ACCENT2+"33"}`,
                   borderRadius: 8, padding: "7px 12px", cursor: "pointer",
@@ -5094,7 +5096,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
       {/* Randomizer modal */}
       {randoMode && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "96px" }} onClick={() => setRandoMode(false)}>
+        <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "96px" }} onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`, border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480, padding: "24px 20px 36px", clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)" }}>
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>RANDOM WORKOUT</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>Pick any muscle groups. I will build a hypertrophy-optimised session.</div>
@@ -5671,7 +5673,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
         if (modal.fromEmpty) {
           // Show muscle picker then exercise
           return (
-            <div style={{ position: "fixed", inset: 0, zIndex: 1100,
+            <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1100,
               background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
               display: "flex", alignItems: "flex-end", justifyContent: "center",
               paddingBottom: "96px" }}
@@ -5715,7 +5717,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             ? allExs.filter(e => e.name.toLowerCase().includes(exPickSearch.toLowerCase()))
             : allExs;
           return (
-            <div style={{ position: "fixed", inset: 0, zIndex: 1100,
+            <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1100,
               background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
               display: "flex", alignItems: "flex-end", justifyContent: "center",
               paddingBottom: "96px" }}
@@ -5830,7 +5832,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
 
       {/* Randomizer muscle picker */}
       {randoMode && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(7,11,20,0.93)",
+        <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1100, background: "rgba(7,11,20,0.93)",
           backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
           paddingBottom: "96px" }}
           onClick={() => setRandoMode(false)}>
@@ -6242,7 +6244,7 @@ function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, o
   };
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1200,
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1200,
       background: "rgba(3,6,15,0.94)", backdropFilter: "blur(12px)",
       display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 96 }}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
@@ -6916,7 +6918,7 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 310, background: "rgba(3,6,15,0.95)",
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 310, background: "rgba(3,6,15,0.95)",
       backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
@@ -7072,7 +7074,7 @@ function RelicDropModal({ relic, onEquip, onClose }) {
   const rar = RELIC_RARITIES[relic.rarity];
   const c = RELIC_FRAME_COLORS[relic.id];
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 3200, display: "flex",
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 3200, display: "flex",
       alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer",
       background: "radial-gradient(circle at 50% 45%, rgba(3,6,15,.6), rgba(3,6,15,.97))",
       animation: "fadeIn .25s ease-out both" }}>
@@ -7667,7 +7669,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
       </div>
       {/* ── SETTINGS MODAL ── */}
       {settingsOpen === "settings" && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
+        <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1200, background: "rgba(3,6,15,0.95)",
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
           paddingBottom: "96px" }}
           onClick={() => setSettingsOpen(null)}>
@@ -8177,7 +8179,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
       {/* ── HELP MODAL ── */}
       {settingsOpen === "help" && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(3,6,15,0.95)",
+        <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1200, background: "rgba(3,6,15,0.95)",
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
           paddingBottom: "96px" }}
           onClick={() => setSettingsOpen(null)}>
@@ -8296,7 +8298,7 @@ function PRHistoryModal({ workouts, prs, onClose }) {
     .sort((a, b) => b.e1rm - a.e1rm);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
@@ -8489,7 +8491,7 @@ function HeatmapModal({ workouts, onClose }) {
   const CELL = 13, GAP = 2;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
@@ -8624,9 +8626,9 @@ function HeatmapModal({ workouts, onClose }) {
 function AwakeningModal({ onChoose }) {
   return (
     <div style={{
-      position: "fixed", inset: 0, zIndex: 400,
+      position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 400,
       background: "rgba(3,6,15,0.95)", backdropFilter: "blur(16px)",
-      display: "flex", alignItems: "center", justifyContent: "center",
+      display: "flex", alignItems: "safe center", justifyContent: "center",
       padding: "24px",
     }}>
       <div style={{
@@ -9297,7 +9299,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           const prs = st.prs || {};
           const sorted = Object.entries(prs).sort((a, b) => b[1] - a[1]);
           return (
-            <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+            <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
               onClick={() => setPatronPickerOpen(false)}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
@@ -9482,7 +9484,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
       </div>
 
       {relicVaultOpen && (
-        <div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 300,
+        <div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300,
           background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)",
           display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
@@ -9758,7 +9760,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 300, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
