@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.10.2";
+const APP_VERSION = "1.10.3";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -2011,6 +2011,7 @@ function getMuscleRank(level) {
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { overscroll-behavior-y: none; }
   body { background: ${BG}; }
   /* Push content below Android/iOS status bar */
   #iron-realm-root {
@@ -4365,7 +4366,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
   const [tab, setTab] = useState("log"); // "log" | "browse"
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 0" }}>
@@ -4799,7 +4800,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
+    <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
         <span className="glitch-in holo-text" style={{ fontFamily: "'Orbitron',sans-serif" }}>
           {themeLabel(settings,"database","DATABASE")}
@@ -5254,7 +5255,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 14px" }}>
@@ -5959,7 +5960,7 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
   const allPrograms = [FREE_PROGRAM, ...programs];
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
+    <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
         color: GOLD, letterSpacing: 2, marginBottom: 4 }}>PROGRAMS</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED,
@@ -6247,7 +6248,7 @@ function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, o
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
         border: `1px solid ${meta.color}44`, borderTop: `2px solid ${meta.color}`,
-        width: "100%", maxWidth: 480, maxHeight: "82vh", display: "flex", flexDirection: "column",
+        width: "100%", maxWidth: 480, maxHeight: "82dvh", display: "flex", flexDirection: "column",
         clipPath: "polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%)" }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${meta.color}cc, transparent)` }} />
@@ -6452,7 +6453,7 @@ function MindSpiritCard({ profile, settings, onUpdateSettings, onLogMind, onAddT
 
 function Toasts({ toasts }) {
   return (
-    <div style={{ position: "fixed", top: 16, right: 16, zIndex: 1300, display: "flex", flexDirection: "column", gap: 8, maxWidth: 300 }}>
+    <div style={{ position: "fixed", top: 16, right: 16, zIndex: 1300, display: "flex", flexDirection: "column", gap: 8, maxWidth: 300, pointerEvents: "none" }}>
       {toasts.map(t => (
         <div key={t.id} style={{
           background: `linear-gradient(90deg, ${DARK1}f8, ${BG2}f0)`,
@@ -6638,7 +6639,7 @@ function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest 
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, display: "flex",
+    <div style={{ minHeight: "100dvh", background: BG, display: "flex",
       flexDirection: "column", justifyContent: "center", padding: "40px 24px" }}>
       <div style={{ maxWidth: 420, margin: "0 auto", width: "100%" }}>
         <div className="holo-text" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900,
@@ -6693,7 +6694,7 @@ function OnboardScreen({ onComplete }) {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, display: "flex", flexDirection: "column",
+    <div style={{ minHeight: "100dvh", background: BG, display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center", padding: "32px 22px", position: "relative", overflow: "hidden" }}>
       <Rune char="⬡" top="8%" left="5%" size={28} delay={0} />
       <Rune char="◈" top="15%" left="80%" size={22} delay={1} />
@@ -6922,7 +6923,7 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
         border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
         width: "100%", maxWidth: 480, padding: "24px 20px 40px",
-        maxHeight: "85vh", overflowY: "auto",
+        maxHeight: "85dvh", overflowY: "auto",
         clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
@@ -7219,7 +7220,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
   return (
     <div onScroll={e => e.currentTarget.style.setProperty("--sy", e.currentTarget.scrollTop)}
-      style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
+      style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))", position: "relative" }}>
       {/* Background effects */}
       <div style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse at 50% 0%, ${ACCENT}0d 0%, transparent 60%)`, pointerEvents: "none" }} />
       {/* Shadow: void tendrils rising from the floor */}
@@ -7674,7 +7675,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
             width: "100%", maxWidth: 480,
-            maxHeight: "85vh", display: "flex", flexDirection: "column",
+            maxHeight: "85dvh", display: "flex", flexDirection: "column",
             position: "relative",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
@@ -8184,7 +8185,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
             border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
             width: "100%", maxWidth: 480,
-            maxHeight: "85vh", display: "flex", flexDirection: "column",
+            maxHeight: "85dvh", display: "flex", flexDirection: "column",
             position: "relative",
             clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
           }}>
@@ -9039,7 +9040,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   );
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* ── PROFILE SWITCHER ── */}
       <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -9210,10 +9211,20 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
         {/* ── ATROPHY WARNING ── */}
         {(() => {
+          // EMG-aware: a bench press keeps front delts trained, so credit every
+          // stat a workout actually touches — same mapping the rebuild uses.
           const lastByMuscle = {};
+          const creditB = (m, d) => { if (m && d && (!lastByMuscle[m] || d > lastByMuscle[m])) lastByMuscle[m] = d; };
           for (const w of st.workouts || []) {
-            const m = w.muscle || w.exercise?.primary;
-            if (m && w.date && (!lastByMuscle[m] || w.date > lastByMuscle[m])) lastByMuscle[m] = w.date;
+            const ex = w.exercise || {};
+            const muscle = w.muscle || ex.primary || "chest";
+            const emg = ex.emg || EXERCISE_EMG[ex.name];
+            if (ex.type === "cardio") creditB("cardio", w.date);
+            else if (emg) Object.keys(emg).forEach(svgId => creditB(SVG_TO_STAT[svgId] || muscle, w.date));
+            else {
+              const statKey = ex.type === "calisthenics" && !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
+              creditB(statKey, w.date); if (statKey !== muscle) creditB(muscle, w.date);
+            }
           }
           const decaying = Object.entries(lastByMuscle).filter(([m, d]) =>
             (Date.now() - d) / 86400000 > atrophyParams(m).grace);
@@ -9292,7 +9303,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
                 background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
                 border: `1px solid ${GOLD}33`, borderTop: `2px solid ${GOLD}`,
                 width: "100%", maxWidth: 480, padding: "20px 18px 40px",
-                maxHeight: "70vh", overflowY: "auto",
+                maxHeight: "70dvh", overflowY: "auto",
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                   <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD, letterSpacing: 3 }}>SELECT SIGNATURE LIFT</div>
@@ -9478,7 +9489,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
             border: "1px solid #a855f733", borderTop: "2px solid #a855f7",
             width: "100%", maxWidth: 480, padding: "20px 18px 40px",
-            maxHeight: "70vh", overflowY: "auto" }}>
+            maxHeight: "70dvh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: "#a855f7", letterSpacing: 3 }}>RELIC VAULT</div>
               <button onClick={() => setRelicVaultOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
@@ -9952,7 +9963,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
 
 function _signInPrompt(title, body) {
   return (
-    <div style={{ minHeight: "100vh", background: BG, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px 120px" }}>
+    <div style={{ minHeight: "100dvh", background: BG, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px 120px" }}>
       <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900, color: ACCENT, letterSpacing: 4, marginBottom: 12 }}>{title}</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED, textAlign: "center", lineHeight: 1.6 }}>{body}</div>
       <div style={{ marginTop: 20, fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2 }}>
@@ -10009,7 +10020,7 @@ function LeaderboardScreen({ account, toast }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
+    <div style={{ minHeight: "100dvh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
 
       <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
         <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
@@ -10239,7 +10250,7 @@ function FriendsScreen({ account, toast }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
+    <div style={{ minHeight: "100dvh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
 
       <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
         <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
@@ -11171,7 +11182,7 @@ export default function IronRealm() {
     <>
       <style>{CSS}</style>
       <style>{dynCSS}</style>
-      <div id="iron-realm-root" style={{ minHeight: "100vh" }}>
+      <div id="iron-realm-root" style={{ minHeight: "100dvh" }}>
       <div className="aurora-bg" />
       <SystemParticles accent={settings?.accentColor || "#00d4ff"} />
       <Toasts toasts={toasts} />
