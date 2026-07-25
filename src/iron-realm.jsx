@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.10.5";
+const APP_VERSION = "1.10.6";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -10590,7 +10590,10 @@ export default function IronRealm() {
             const keys = await caches.keys();
             await Promise.all(keys.map(k => caches.delete(k)));
           }
-          window.location.reload(true);
+          // Navigate with a version query so the HTML itself bypasses the
+          // browser HTTP cache (GitHub Pages serves index.html with
+          // max-age=600 — a plain reload can restore the stale build).
+          window.location.replace(`${BASE}/?v=${encodeURIComponent(version)}`);
         }
       } catch {}
     };
