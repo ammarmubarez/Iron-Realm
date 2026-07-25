@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.10.6";
+const APP_VERSION = "1.10.7";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -1514,6 +1514,7 @@ const INIT_STORE = {
 
 const EQUIPMENT_CATEGORIES = [
   { id: "BODYWEIGHT", name: "Bodyweight / bench" },
+  { id: "PULLUP_BAR", name: "Pull-up bar / rings / dip station" },
   { id: "DUMBBELL",   name: "Dumbbells" },
   { id: "KETTLEBELL", name: "Kettlebells" },
   { id: "CARDIO",     name: "Cardio (treadmill, bike, etc.)" },
@@ -1527,9 +1528,19 @@ const MACHINE_NAME_PATTERNS = [
   "leg curl", "pec deck", "hack squat", "smith", "preacher",
 ];
 
+// Calisthenics that need something to hang from or press between — a floor
+// and body weight are not enough for these.
+const BAR_NAME_PATTERNS = [
+  "pull-up", "pullup", "chin-up", "hanging", "muscle-up", "toes to bar",
+  "inverted row", "dead hang", "front lever", "back lever", "scapular pull",
+];
 function exerciseEquipment(exercise) {
   if (!exercise) return null;
-  if (exercise.type === "calisthenics") return "BODYWEIGHT";
+  if (exercise.type === "calisthenics") {
+    const n = (exercise.name || "").toLowerCase();
+    if (n === "dips" || BAR_NAME_PATTERNS.some(p => n.includes(p))) return "PULLUP_BAR";
+    return "BODYWEIGHT";
+  }
   if (exercise.type === "cardio")       return "CARDIO";
   if (exercise.type !== "strength")     return null;
   const name = (exercise.name || "").toLowerCase();
@@ -3664,9 +3675,16 @@ const _ANGLE_GROUP_LABELS = {
   forearms:  { flexors:"Flexors", extensors:"Extensors" },
 };
 
-function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, diffFilter = null) {
+function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, diffFilter = null, travelEquipment = null) {
   let allDB = [...(EXERCISE_DB[muscle] || []), ...(customExercises||[]).filter(e=>e.primary===muscle)];
   if (!allDB.length) return [];
+  // Travel mode: hard-filter to exercises doable with the equipment on hand.
+  // A muscle with zero matches returns an empty plan — surfacing exercises
+  // the user can't perform is worse than skipping the muscle.
+  if (Array.isArray(travelEquipment)) {
+    allDB = allDB.filter(e => isTravelFriendly(e, travelEquipment));
+    if (!allDB.length) return [];
+  }
   // Apply difficulty filter — fall back to next difficulty up if slot would be empty
   if (diffFilter && diffFilter !== "all") {
     // const ORDER unused
@@ -4740,7 +4758,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   const runRandomizer = () => {
     if (randoMuscles.length === 0) return;
-    const plans = randoMuscles.map(m => generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, randoDiff));
+    const plans = randoMuscles.map(m => generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, randoDiff, settings?.travelMode ? (settings?.travelEquipment || []) : null));
     const combined = [];
     const maxLen = Math.max(...plans.map(p => p.length));
     for (let i = 0; i < maxLen; i++) { plans.forEach(p => { if (p[i]) combined.push(p[i]); }); }
@@ -5203,7 +5221,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   const runRandomizer = () => {
     if (!randoMuscles.length) return;
     const plans = randoMuscles.map(m =>
-      generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, randoDiff));
+      generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, randoDiff, settings?.travelMode ? (settings?.travelEquipment || []) : null));
     const combined = [];
     const maxLen = Math.max(...plans.map(p => p.length));
     for (let i = 0; i < maxLen; i++)
