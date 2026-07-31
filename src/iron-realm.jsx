@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.10.7";
+const APP_VERSION = "1.11.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -713,7 +713,7 @@ const EXERCISE_DB = {
     { name: "Jump Squats",                  diff: "intermediate", type: "calisthenics", primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","inner-quadricep","gluteus-maximus","gastrocnemius"] },
     { name: "Pistol Squat",                 diff: "elite",        type: "calisthenics", primary: "legs",      svgTargets: ["rectus-femoris","outer-quadricep","inner-quadricep","gluteus-maximus"] },
     { name: "Nordic Curl",                  diff: "advanced",     type: "calisthenics", primary: "legs",      svgTargets: ["medial-hamstrings","lateral-hamstrings","gluteus-maximus"] },
-    { name: "Wall Sit",                     diff: "beginner",     type: "calisthenics", primary: "legs",      svgTargets: ["rectus-femoris","outer-quadricep","inner-quadricep"] },
+    { name: "Wall Sit",                     diff: "beginner",     type: "calisthenics", iso: true, primary: "legs",      svgTargets: ["rectus-femoris","outer-quadricep","inner-quadricep"] },
     { name: "Step-ups",                     diff: "beginner",     type: "calisthenics", primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","gluteus-maximus","lateral-hamstrings"] },
     { name: "Box Jumps",                    diff: "intermediate", type: "calisthenics", primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","gluteus-maximus","gastrocnemius"] },
     { name: "Broad Jumps",                  diff: "intermediate", type: "calisthenics", primary: "legs",      svgTargets: ["outer-quadricep","rectus-femoris","gluteus-maximus","gastrocnemius","lateral-hamstrings"] },
@@ -811,7 +811,7 @@ const EXERCISE_DB = {
     { name: "Tricep Dips",                  diff: "intermediate", type: "calisthenics", primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps","anterior-deltoid"] },
     { name: "Bench Dips",                   diff: "beginner",     type: "calisthenics", primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps"] },
     { name: "Diamond Push-ups",             diff: "intermediate", type: "calisthenics", primary: "tricep",    svgTargets: ["medial-head-triceps","lateral-head-triceps","long-head-triceps","mid-lower-pectoralis"] },
-    { name: "Pike Push-up Hold",            diff: "intermediate", type: "calisthenics", primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps","anterior-deltoid"] },
+    { name: "Pike Push-up Hold",            diff: "intermediate", type: "calisthenics", iso: true, primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps","anterior-deltoid"] },
     { name: "JM Press",                     diff: "advanced",     type: "strength",     primary: "tricep",    svgTargets: ["medial-head-triceps","lateral-head-triceps","long-head-triceps"] },
     { name: "California Press", angle: "Flat (0°)",             diff: "intermediate", type: "strength",     primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps","lateral-head-triceps"] },
     { name: "Rolling Tricep Extension",     diff: "intermediate", type: "strength",     primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps"] },
@@ -825,7 +825,7 @@ const EXERCISE_DB = {
     { name: "Reverse Wrist Curls",          diff: "beginner",     type: "strength",     primary: "forearms",  svgTargets: ["wrist-extensors"] },
     { name: "Farmer's Walk",                diff: "intermediate", type: "strength",     primary: "forearms",  svgTargets: ["wrist-flexors","wrist-extensors"] },
     { name: "Plate Pinch",                  diff: "beginner",     type: "strength",     primary: "forearms",  svgTargets: ["wrist-flexors","wrist-extensors"] },
-    { name: "Dead Hang",                    diff: "beginner",     type: "calisthenics", primary: "forearms",  svgTargets: ["wrist-flexors","long-head-bicep","lats"] },
+    { name: "Dead Hang",                    diff: "beginner",     type: "calisthenics", iso: true, primary: "forearms",  svgTargets: ["wrist-flexors","long-head-bicep","lats"] },
     { name: "Towel Pull-ups",               diff: "advanced",     type: "calisthenics", primary: "forearms",  svgTargets: ["wrist-flexors","long-head-bicep","lats"] },
     { name: "Hammer Curl",                  diff: "beginner",     type: "strength",     primary: "forearms",  svgTargets: ["long-head-bicep","wrist-flexors","wrist-extensors"] },
     { name: "Reverse Curl",                 diff: "beginner",     type: "strength",     primary: "forearms",  svgTargets: ["wrist-extensors","long-head-bicep"] },
@@ -849,19 +849,19 @@ const EXERCISE_DB = {
     { name: "V-ups",                        diff: "intermediate", type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals"] },
     { name: "Toes to Bar",                  diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["lower-abdominals","upper-abdominals","lats"] },
     { name: "Dragon Flag",                  diff: "elite",        type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques","lats"] },
-    { name: "L-Sit",                        diff: "elite",        type: "calisthenics", primary: "core",      svgTargets: ["lower-abdominals","upper-abdominals","outer-quadricep"] },
+    { name: "L-Sit",                        diff: "elite",        type: "calisthenics", iso: true, primary: "core",      svgTargets: ["lower-abdominals","upper-abdominals","outer-quadricep"] },
     // ── OBLIQUES ─────────────────────────────────────────────────────────────
     { name: "Russian Twists",               diff: "beginner",     type: "calisthenics", primary: "core",      svgTargets: ["obliques","upper-abdominals"] },
     { name: "Weighted Russian Twists",      diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["obliques","upper-abdominals"] },
-    { name: "Side Plank",                   diff: "beginner",     type: "calisthenics", primary: "core",      svgTargets: ["obliques","upper-abdominals"] },
+    { name: "Side Plank",                   diff: "beginner",     type: "calisthenics", iso: true, primary: "core",      svgTargets: ["obliques","upper-abdominals"] },
     { name: "Side Plank with Rotation",     diff: "intermediate", type: "calisthenics", primary: "core",      svgTargets: ["obliques","upper-abdominals","lower-abdominals"] },
     { name: "Woodchop",                     diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["obliques","upper-abdominals"] },
     { name: "Pallof Press",                 diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["obliques","upper-abdominals","lower-abdominals"] },
     { name: "Bicycle Crunch",               diff: "beginner",     type: "calisthenics", primary: "core",      svgTargets: ["obliques","upper-abdominals","lower-abdominals"] },
     // ── PLANK VARIATIONS ─────────────────────────────────────────────────────
-    { name: "Plank",                        diff: "beginner",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques","lowerback"] },
-    { name: "Long-Lever Plank",             diff: "intermediate", type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques"] },
-    { name: "Weighted Plank",               diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques","lowerback"] },
+    { name: "Plank",                        diff: "beginner",     type: "calisthenics", iso: true, primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques","lowerback"] },
+    { name: "Long-Lever Plank",             diff: "intermediate", type: "calisthenics", iso: true, primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques"] },
+    { name: "Weighted Plank",               diff: "intermediate", type: "strength", iso: true,     primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques","lowerback"] },
     { name: "Plank Reach",                  diff: "intermediate", type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques"] },
     { name: "Dead Bug",                     diff: "beginner",     type: "calisthenics", primary: "core",      svgTargets: ["lower-abdominals","upper-abdominals","lowerback"] },
     { name: "Bird Dog",                     diff: "beginner",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","lowerback","gluteus-maximus"] },
@@ -869,11 +869,11 @@ const EXERCISE_DB = {
     { name: "Cable Woodchop (High)",        diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["obliques","upper-abdominals"] },
     { name: "Cable Woodchop (Low)",         diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["obliques","lower-abdominals"] },
     { name: "Landmine Rotation",            diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["obliques","upper-abdominals"] },
-    { name: "Copenhagen Plank",             diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["inner-thigh","obliques","upper-abdominals"] },
+    { name: "Copenhagen Plank",             diff: "advanced",     type: "calisthenics", iso: true, primary: "core",      svgTargets: ["inner-thigh","obliques","upper-abdominals"] },
     { name: "Stir the Pot",                 diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques"] },
     { name: "Cable Crunch (Kneeling)",      diff: "beginner",     type: "strength",     primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals"] },
     { name: "Weighted Decline Crunch", angle: "15–30°",      diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals"] },
-    { name: "Hollow Body Hold",             diff: "intermediate", type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","lats"] },
+    { name: "Hollow Body Hold",             diff: "intermediate", type: "calisthenics", iso: true, primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","lats"] },
     { name: "Hollow Body Rock",             diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals"] },
     { name: "GHD Sit-up", angle: "GHD at 0° (parallel)",                   diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","rectus-femoris"] },
     { name: "Suitcase Carry",               diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["obliques","upper-abdominals","wrist-flexors"] },
@@ -933,8 +933,8 @@ const EXERCISE_DB = {
   calisthenics: [
     { name: "Muscle-up",                    diff: "elite",        type: "calisthenics", primary: "back",      svgTargets: ["lats","short-head-bicep","long-head-bicep","medial-head-triceps","lateral-head-triceps","upper-pectoralis","anterior-deltoid"] },
     { name: "Handstand",                    diff: "elite",        type: "calisthenics", primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","upper-trapezius","upper-abdominals","obliques"] },
-    { name: "Front Lever",                  diff: "elite",        type: "calisthenics", primary: "back",      svgTargets: ["lats","lower-trapezius","upper-abdominals","lower-abdominals","long-head-bicep"] },
-    { name: "Back Lever",                   diff: "elite",        type: "calisthenics", primary: "back",      svgTargets: ["lats","mid-lower-pectoralis","long-head-triceps","posterior-deltoid"] },
+    { name: "Front Lever",                  diff: "elite",        type: "calisthenics", iso: true, primary: "back",      svgTargets: ["lats","lower-trapezius","upper-abdominals","lower-abdominals","long-head-bicep"] },
+    { name: "Back Lever",                   diff: "elite",        type: "calisthenics", iso: true, primary: "back",      svgTargets: ["lats","mid-lower-pectoralis","long-head-triceps","posterior-deltoid"] },
     { name: "Planche",                      diff: "elite",        type: "calisthenics", primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid","medial-head-triceps","upper-abdominals"] },
     { name: "Human Flag",                   diff: "elite",        type: "calisthenics", primary: "back",      svgTargets: ["lats","obliques","upper-abdominals","lateral-deltoid","short-head-bicep"] },
     { name: "Burpees",                      diff: "intermediate", type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","outer-quadricep","gluteus-maximus","anterior-deltoid","mid-lower-pectoralis"] },
@@ -1743,6 +1743,16 @@ function getPRTimeline(workouts) {
 
 // XP for a single strength set with all modifiers applied
 function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
+  // Isometric holds: the logged value is SECONDS of tension, not reps. Duration
+  // is the hold time itself — no rep→time conversion, and no e1RM (an Epley
+  // estimate from a hold time is meaningless).
+  if (exercise.iso) {
+    const seconds = reps || 0;
+    const table = exercise.type === "strength" ? MET_VALUES.strength : MET_VALUES.calisthenics;
+    const isoMet = table[exercise.diff] || 5.5;
+    const totalKg = (bodyWeightLbs + (setWeightLbs || 0)) * 0.453592;
+    return Math.round(isoMet * totalKg * (seconds / 3600));
+  }
   const weightKg = bodyWeightLbs * 0.453592;
   const met = MET_VALUES.strength[exercise.diff] || 5.0;
   // Pure rep-volume: ~6s per controlled strength rep, no per-set overhead.
@@ -3795,11 +3805,14 @@ const _CUSTOM_SUB_OPTIONS = {
 
 
 // ─── QUICK ADD BAR ────────────────────────────────────────────────────────────
-function QuickAddBar({ onAdd }) {
+function QuickAddBar({ onAdd, isIso = false, repUnit = "reps", bodyweight = false }) {
   const [qCount, setQCount] = useState("2");
   const [qReps, setQReps] = useState("");
   const [qWeight, setQWeight] = useState("");
-  const valid = parseInt(qCount) > 0 && parseFloat(qReps) > 0 && parseFloat(qWeight) > 0;
+  // Bodyweight movements (calisthenics / isometric holds) legitimately carry no
+  // added load, so 0 must count as valid there.
+  const valid = parseInt(qCount) > 0 && parseFloat(qReps) > 0 &&
+    (bodyweight ? (qWeight === "" || parseFloat(qWeight) >= 0) : parseFloat(qWeight) > 0);
   const handleAdd = () => {
     if (!valid) return;
     onAdd(parseInt(qCount), parseFloat(qReps), parseFloat(qWeight));
@@ -3816,12 +3829,12 @@ function QuickAddBar({ onAdd }) {
         </div>
         <div style={{ position: "relative" }}>
           <input className="input-field" type="number" value={qReps} onChange={e => setQReps(e.target.value)}
-            placeholder="10" style={{ textAlign: "center", color: ACCENT, padding: "9px 4px" }} />
-          <div style={{ position: "absolute", bottom: -12, left: 0, right: 0, fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, textAlign: "center" }}>reps</div>
+            placeholder={isIso ? "30" : "10"} style={{ textAlign: "center", color: ACCENT, padding: "9px 4px" }} />
+          <div style={{ position: "absolute", bottom: -12, left: 0, right: 0, fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, textAlign: "center" }}>{repUnit}</div>
         </div>
         <div style={{ position: "relative" }}>
           <input className="input-field" type="number" value={qWeight} onChange={e => setQWeight(e.target.value)}
-            placeholder="135" style={{ textAlign: "center", color: GOLD, padding: "9px 6px" }} />
+            placeholder={bodyweight ? "0" : "135"} style={{ textAlign: "center", color: GOLD, padding: "9px 6px" }} />
           <div style={{ position: "absolute", bottom: -12, left: 0, right: 0, fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, textAlign: "center" }}>{wtLabel()}</div>
         </div>
         <button onClick={handleAdd} style={{
@@ -3833,7 +3846,7 @@ function QuickAddBar({ onAdd }) {
       </div>
       {valid && (
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 14 }}>
-          → {qCount}× {qReps} reps @ {wtVal(qWeight)} {wtLabel()}
+          → {qCount}× {qReps} {repUnit}{parseFloat(qWeight) > 0 ? ` @ ${wtVal(qWeight)} ${wtLabel()}` : ""}
         </div>
       )}
     </div>
@@ -3845,7 +3858,9 @@ function QuickAddBar({ onAdd }) {
 function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onClose }) {
   const isCardio = exercise.type === "cardio";
   const isCali   = exercise.type === "calisthenics";
+  const isIso    = !!exercise.iso;          // hold-for-time, logged in seconds
   const isSpeed  = isCardio && exercise.cardioMode === "speed";
+  const repUnit  = isIso ? "sec" : "reps";
 
   const defaultSet = { reps: "", weight: "", rpe: null };
   const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
@@ -3889,7 +3904,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         return sum + calcSetXP(exercise, reps, w, weightLbs, storedE1RM);
       }, 0);
 
-  const sessionBestE1RM = isCali || isCardio ? null : validSets.reduce((best, r) => {
+  const sessionBestE1RM = isCali || isCardio || isIso ? null : validSets.reduce((best, r) => {
     const reps = parseFloat(r.reps) || 0;
     const w    = parseFloat(r.weight) || 0;
     if (reps < 1 || reps > 12 || w <= 0) return best;
@@ -3970,7 +3985,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {lastSession.sets_detail.map((s, i) => (
                 <div key={i} style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 5, padding: "4px 10px", textAlign: "center" }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: TEXT, fontWeight: 700 }}>{s.reps}<span style={{ color: MUTED, fontSize: 7 }}> reps</span></div>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: TEXT, fontWeight: 700 }}>{s.reps}<span style={{ color: MUTED, fontSize: 7 }}> {repUnit}</span></div>
                   {parseFloat(s.weight) > 0 && !isCali && (
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT }}>{wtVal(s.weight)} {wtLabel()}</div>
                   )}
@@ -3979,7 +3994,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             </div>
             {lastBest && !isCali && (
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, marginTop: 5 }}>
-                BEST SET — {lastBest.reps} reps @ {wtVal(lastBest.weight)} {wtLabel()}
+                BEST SET — {lastBest.reps} {repUnit}{isIso && !(lastBest.weight > 0) ? "" : ` @ ${wtVal(lastBest.weight)} ${wtLabel()}`}
               </div>
             )}
           </div>
@@ -4029,7 +4044,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           </div>
         ) : (
           <div style={{ marginBottom: 14 }}>
-            {!isCali && <QuickAddBar onAdd={(count, reps, weight) => {
+            {(!isCali || isIso) && <QuickAddBar isIso={isIso} repUnit={repUnit} bodyweight={isCali || isIso} onAdd={(count, reps, weight) => {
               const newRows = Array.from({ length: count }, () => ({ reps: String(reps), weight: String(weight) }));
               setSetRows(s => [...s, ...newRows]);
             }} />}
@@ -4037,7 +4052,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 4, marginTop: 16 }}>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, textAlign: "center" }}>#</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>REPS</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isIso ? "HOLD (SEC)" : "REPS"}</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isCali ? `ADDED WT (${wtLabel().toUpperCase()})` : `WEIGHT (${wtLabel().toUpperCase()})`}</div>
                   <div />
                 </div>
@@ -4062,7 +4077,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                         <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: repsN > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
                         <input className="input-field" type="number" value={row.reps}
                           onChange={e => updateSet(i, "reps", e.target.value)}
-                          placeholder={lastRow ? lastRow.reps + " last" : "10"}
+                          placeholder={lastRow ? lastRow.reps + " last" : (isIso ? "30" : "10")}
                           style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
                         <input className="input-field" type="number" value={row.weight}
                           onChange={e => updateSet(i, "weight", e.target.value)}
