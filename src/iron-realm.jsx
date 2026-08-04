@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.11.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -809,7 +809,7 @@ const EXERCISE_DB = {
     { name: "Cable Overhead Tricep Ext",    diff: "beginner",     type: "strength",     primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps"] },
     // ── CALISTHENICS ─────────────────────────────────────────────────────────
     { name: "Tricep Dips",                  diff: "intermediate", type: "calisthenics", primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps","anterior-deltoid"] },
-    { name: "Bench Dips",                   diff: "beginner",     type: "calisthenics", primary: "tricep",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps"] },
+    { name: "Bench Dips",                   diff: "beginner",     type: "calisthenics", primary: "tricep",  swap: "Use a chair, table edge, bed, step or curb",    svgTargets: ["lateral-head-triceps","medial-head-triceps","long-head-triceps"] },
     { name: "Diamond Push-ups",             diff: "intermediate", type: "calisthenics", primary: "tricep",    svgTargets: ["medial-head-triceps","lateral-head-triceps","long-head-triceps","mid-lower-pectoralis"] },
     { name: "Pike Push-up Hold",            diff: "intermediate", type: "calisthenics", iso: true, primary: "tricep",    svgTargets: ["long-head-triceps","medial-head-triceps","anterior-deltoid"] },
     { name: "JM Press",                     diff: "advanced",     type: "strength",     primary: "tricep",    svgTargets: ["medial-head-triceps","lateral-head-triceps","long-head-triceps"] },
@@ -1513,7 +1513,7 @@ const INIT_STORE = {
 // the exercise type.
 
 const EQUIPMENT_CATEGORIES = [
-  { id: "BODYWEIGHT", name: "Bodyweight / bench" },
+  { id: "BODYWEIGHT", name: "Bodyweight (floor, wall, chair/step)" },
   { id: "PULLUP_BAR", name: "Pull-up bar / rings / dip station" },
   { id: "DUMBBELL",   name: "Dumbbells" },
   { id: "KETTLEBELL", name: "Kettlebells" },
@@ -1538,7 +1538,11 @@ function exerciseEquipment(exercise) {
   if (!exercise) return null;
   if (exercise.type === "calisthenics") {
     const n = (exercise.name || "").toLowerCase();
-    if (n === "dips" || BAR_NAME_PATTERNS.some(p => n.includes(p))) return "PULLUP_BAR";
+    // Rings always need rings; every dip needs a station EXCEPT bench dips,
+    // which only need an edge to sit on (chair, bed, step — see BODYWEIGHT).
+    if (n.includes("ring")) return "PULLUP_BAR";
+    if (n.includes("dip") && !n.includes("bench")) return "PULLUP_BAR";
+    if (BAR_NAME_PATTERNS.some(p => n.includes(p))) return "PULLUP_BAR";
     return "BODYWEIGHT";
   }
   if (exercise.type === "cardio")       return "CARDIO";
@@ -1549,6 +1553,25 @@ function exerciseEquipment(exercise) {
   if (name.includes("cable"))      return "CABLE";
   if (MACHINE_NAME_PATTERNS.some(p => name.includes(p))) return "MACHINE";
   return "BARBELL"; // default for strength exercises
+}
+
+// Travel mode: a fixed program day can contain exercises the user can't do
+// (a hotel room has no dip station). Rather than leave a hole in the plan,
+// swap in the closest doable exercise for the same muscle — preferring the
+// same movement type and difficulty — so the session stays complete.
+function travelSubstitute(planEx, availableEquipment, customExercises = []) {
+  if (isTravelFriendly(planEx, availableEquipment)) return null;
+  const muscle = planEx.muscle || planEx.primary || "chest";
+  const pool = [...(EXERCISE_DB[muscle] || []),
+                ...(customExercises || []).filter(e => e.primary === muscle)]
+    .filter(e => e.name !== planEx.name && isTravelFriendly(e, availableEquipment));
+  if (!pool.length) return null;
+  const DIFFS = ["beginner", "intermediate", "advanced", "elite"];
+  const want = DIFFS.indexOf(planEx.diff || "intermediate");
+  const score = e =>
+    (e.type === planEx.type ? 0 : 10) +
+    Math.abs(DIFFS.indexOf(e.diff) - (want < 0 ? 1 : want));
+  return [...pool].sort((a, b) => score(a) - score(b))[0];
 }
 
 function isTravelFriendly(exercise, availableEquipment) {
@@ -4976,6 +4999,12 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                   {subs.join(" · ")}
                 </div>
               )}
+              {ex.swap && (
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GREEN,
+                  marginBottom: 6, opacity: 0.9 }}>
+                  ⇄ {ex.swap}
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", gap: 12 }}>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD }}>{ex.diff} effort</span>
@@ -5210,6 +5239,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
 
 function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, onLogFood, settings, toast }) {
+  const travelMode = settings?.travelMode === true;
   const DAYS = ["MON","TUE","WED","THU","FRI","SAT","SUN"];
   const todayIdx = (new Date().getDay() + 6) % 7;
   const [selDay, setSelDay] = useState(todayIdx);
@@ -5425,7 +5455,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
               letterSpacing: 3, marginBottom: 8 }}>{`// TODAY'S PLAN · ${todayPlan.label.toUpperCase()}`}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {todayPlan.exercises.map((ex, i) => {
+              {todayPlan.exercises.map((planned, i) => {
+                // Travel mode: substitute anything the user can't perform today
+                const sub = travelMode
+                  ? travelSubstitute(planned, settings?.travelEquipment || [], st.customExercises)
+                  : null;
+                const ex = sub ? { ...sub, muscle: planned.muscle || sub.primary } : planned;
                 const mm = MUSCLE_META[ex.muscle] || MUSCLE_META.chest;
                 const alreadyLogged = byDay[selDay].some(w => w.exerciseName === ex.name);
                 return (
@@ -5439,6 +5474,16 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                         fontWeight: 700, color: alreadyLogged ? GREEN : TEXT }}>{ex.name}</div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                         color: mm.color }}>{mm.name}</div>
+                      {sub && (
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
+                          color: GREEN, opacity: 0.85, marginTop: 1 }}>
+                          ⇄ travel swap for {planned.name}
+                        </div>
+                      )}
+                      {ex.swap && (
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
+                          color: MUTED, marginTop: 1 }}>{ex.swap}</div>
+                      )}
                     </div>
                     {!alreadyLogged && (
                       <button onClick={() => setLogModal({ exercise: ex, muscle: ex.muscle || ex.primary || "chest" })}
