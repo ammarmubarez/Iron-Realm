@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.11.1";
+const APP_VERSION = "1.11.2";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -481,6 +481,7 @@ const EXERCISE_EMG = {
   "Rear Delt Flyes": {"posterior-deltoid": 100, "traps-middle": 60, "lateral-deltoid": 35},
   "Upright Row": {"lateral-deltoid": 100, "anterior-deltoid": 75, "upper-trapezius": 80, "short-head-bicep": 45},
   "Cable Lateral Raise": {"lateral-deltoid": 100, "anterior-deltoid": 30},
+  "Shoulder Tap Push-ups": {"mid-lower-pectoralis": 100, "upper-pectoralis": 65, "obliques": 60, "anterior-deltoid": 55, "lateral-head-triceps": 50, "upper-abdominals": 45},
   "Pike Push-ups": {"anterior-deltoid": 100, "lateral-deltoid": 65, "medial-head-triceps": 55, "upper-trapezius": 40},
   "Barbell Curl": {"short-head-bicep": 100, "long-head-bicep": 85, "wrist-flexors": 30},
   "Hammer Curl": {"long-head-bicep": 100, "short-head-bicep": 70, "wrist-flexors": 40},
@@ -566,6 +567,7 @@ const EXERCISE_DB = {
     { name: "Wide Push-ups",                diff: "beginner",     type: "calisthenics", primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid"] },
     { name: "Diamond Push-ups",             diff: "intermediate", type: "calisthenics", primary: "chest",     svgTargets: ["medial-head-triceps","lateral-head-triceps","long-head-triceps","mid-lower-pectoralis"] },
     { name: "Decline Push-ups",             diff: "intermediate", type: "calisthenics", primary: "chest",     svgTargets: ["upper-pectoralis","anterior-deltoid","lateral-head-triceps"] },
+    { name: "Shoulder Tap Push-ups",        diff: "intermediate", type: "calisthenics", primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid","lateral-head-triceps","obliques","upper-abdominals"] },
     { name: "Incline Push-ups",             diff: "beginner",     type: "calisthenics", primary: "chest",     svgTargets: ["mid-lower-pectoralis","anterior-deltoid","lateral-head-triceps"] },
     { name: "Dips",                         diff: "advanced",     type: "calisthenics", primary: "chest",     svgTargets: ["mid-lower-pectoralis","lateral-head-triceps","medial-head-triceps","anterior-deltoid"] },
     { name: "Archer Push-ups",              diff: "advanced",     type: "calisthenics", primary: "chest",     svgTargets: ["mid-lower-pectoralis","upper-pectoralis","anterior-deltoid","lateral-head-triceps"] },
@@ -660,7 +662,6 @@ const EXERCISE_DB = {
     { name: "Pike Push-ups",                diff: "intermediate", type: "calisthenics", primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","medial-head-triceps"] },
     { name: "Handstand Push-ups",           diff: "elite",        type: "calisthenics", primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","upper-trapezius","medial-head-triceps","lateral-head-triceps"] },
     { name: "Wall Handstand Push-ups",      diff: "advanced",     type: "calisthenics", primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","upper-trapezius","medial-head-triceps"] },
-    { name: "Shoulder Tap Push-ups",        diff: "intermediate", type: "calisthenics", primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","upper-abdominals","obliques"] },
     // Additional shoulder exercises
     { name: "Military Press",               diff: "advanced",     type: "strength",     primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","upper-trapezius","medial-head-triceps","lateral-head-triceps"] },
     { name: "Seated Dumbbell Press", angle: "90° upright",        diff: "intermediate", type: "strength",     primary: "shoulders", svgTargets: ["anterior-deltoid","lateral-deltoid","upper-trapezius","medial-head-triceps"] },
@@ -873,6 +874,7 @@ const EXERCISE_DB = {
     { name: "Stir the Pot",                 diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","obliques"] },
     { name: "Cable Crunch (Kneeling)",      diff: "beginner",     type: "strength",     primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals"] },
     { name: "Weighted Decline Crunch", angle: "15–30°",      diff: "intermediate", type: "strength",     primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals"] },
+    { name: "Shoulder Tap Push-ups",        diff: "intermediate", type: "calisthenics", primary: "core",      svgTargets: ["obliques","upper-abdominals","mid-lower-pectoralis","anterior-deltoid"] },
     { name: "Hollow Body Hold",             diff: "intermediate", type: "calisthenics", iso: true, primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","lats"] },
     { name: "Hollow Body Rock",             diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals"] },
     { name: "GHD Sit-up", angle: "GHD at 0° (parallel)",                   diff: "advanced",     type: "calisthenics", primary: "core",      svgTargets: ["upper-abdominals","lower-abdominals","rectus-femoris"] },

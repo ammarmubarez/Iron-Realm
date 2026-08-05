@@ -30,7 +30,17 @@ async function scrollScreenToBottom() {
       horiz: document.documentElement.scrollWidth - window.innerWidth };
   });
 }
+// A relic drop fires ~1.6s after a PR and covers the screen until tapped.
+// Clear it before interacting so it can't swallow a test's tap.
+async function dismissRelicDrop() {
+  const open = await page.evaluate(() => /RELIC DROP/.test(document.body.innerText));
+  if (!open) return false;
+  await page.mouse.click(195, 800);
+  await page.waitForTimeout(500);
+  return true;
+}
 async function nav(label) {
+  await dismissRelicDrop();
   await page.getByText(label, { exact: true }).last().click();
   await page.waitForTimeout(700);
 }
@@ -392,6 +402,7 @@ await t('sched: nutrition inputs log food', async () => {
   ok(f.length > 0 && f[f.length - 1].calories === 650, 'food not logged');
 });
 await t('sched: randomizer opens', async () => {
+  await dismissRelicDrop();
   await page.getByText('RANDOMIZE', { exact: true }).first().click();
   await page.waitForTimeout(600);
   ok(await has(/RANDOM WORKOUT/));
