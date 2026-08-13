@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.11.2";
+const APP_VERSION = "1.12.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -900,7 +900,7 @@ const EXERCISE_DB = {
     { name: "Incline Walking",              diff: "intermediate", type: "cardio",       cardioMode: "speed",  defaultSpeed: 3.5 },
     { name: "Running",                      diff: "intermediate", type: "cardio",       cardioMode: "speed",  defaultSpeed: 6.0 },
     { name: "Treadmill",                    diff: "beginner",     type: "cardio",       cardioMode: "speed",  defaultSpeed: 3.5 },
-    { name: "Stairmaster",                  diff: "intermediate", type: "cardio",       cardioMode: "timed",  met: 9.0 },
+    { name: "Stairmaster",                  diff: "intermediate", type: "cardio",       cardioMode: "spm",  defaultSpm: 60,  met: 9.0 },
     { name: "Elliptical",                   diff: "beginner",     type: "cardio",       cardioMode: "timed",  met: 5.0 },
     { name: "Cycling",                      diff: "intermediate", type: "cardio",       cardioMode: "timed",  met: 7.5 },
     { name: "Stationary Bike",              diff: "beginner",     type: "cardio",       cardioMode: "timed",  met: 6.0 },
@@ -913,8 +913,8 @@ const EXERCISE_DB = {
     { name: "SkiErg",                       diff: "advanced",     type: "cardio",       cardioMode: "timed",  met: 9.5 },
     { name: "Sled Push",                    diff: "advanced",     type: "cardio",       cardioMode: "timed",  met: 10.5 },
     { name: "Sled Pull",                    diff: "advanced",     type: "cardio",       cardioMode: "timed",  met: 10.0 },
-    { name: "Jacob's Ladder",               diff: "advanced",     type: "cardio",       cardioMode: "timed",  met: 11.5 },
-    { name: "Versaclimber",                 diff: "advanced",     type: "cardio",       cardioMode: "timed",  met: 11.0 },
+    { name: "Jacob's Ladder",               diff: "advanced",     type: "cardio",       cardioMode: "spm",  defaultSpm: 55,  met: 11.5 },
+    { name: "Versaclimber",                 diff: "advanced",     type: "cardio",       cardioMode: "spm",  defaultSpm: 55,  met: 11.0 },
     { name: "Spin Class",                   diff: "intermediate", type: "cardio",       cardioMode: "timed",  met: 8.5 },
     { name: "Hiking",                       diff: "intermediate", type: "cardio",       cardioMode: "timed",  met: 6.5 },
     { name: "Burpees",                      diff: "intermediate", type: "cardio",       cardioMode: "timed",  met: 8.0 },
@@ -1642,6 +1642,15 @@ function metFromSpeed(mph) {
 // Strength: Calories = MET × weight_kg × set_duration  (base)
 //           then multiplied by intensity + RIR modifiers per set
 
+// Stepping machines: intensity is set by step rate, not just duration. Anchored
+// on the Compendium of Physical Activities value for a stair-treadmill ergometer
+// (9.0 METs, ~50 steps/min), scaling linearly with rate and clamped to the range
+// the machines actually cover.
+function metFromStepRate(spm) {
+  const rate = Math.max(0, parseFloat(spm) || 0);
+  return Math.min(17, Math.max(4, 4.5 + 0.09 * rate));
+}
+
 function calcCalories(exercise, sets, repsOrTime, weightLbs = 170, extraData = {}) {
   const weightKg = weightLbs * 0.453592;
   const val = parseFloat(repsOrTime) || 0;
@@ -1652,6 +1661,10 @@ function calcCalories(exercise, sets, repsOrTime, weightLbs = 170, extraData = {
       const mph = parseFloat(extraData.speedMph) || exercise.defaultSpeed || 3.5;
       const met = metFromSpeed(mph);
       return Math.round(met * weightKg * durationHours);
+    }
+    if (exercise.cardioMode === "spm") {
+      const spm = parseFloat(extraData.stepsPerMin) || exercise.defaultSpm || 50;
+      return Math.round(metFromStepRate(spm) * weightKg * durationHours);
     }
     const met = exercise.met || MET_VALUES.cardio[exercise.diff] || 7.0;
     return Math.round(met * weightKg * durationHours);
@@ -3885,6 +3898,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const isCali   = exercise.type === "calisthenics";
   const isIso    = !!exercise.iso;          // hold-for-time, logged in seconds
   const isSpeed  = isCardio && exercise.cardioMode === "speed";
+  const isSpm    = isCardio && exercise.cardioMode === "spm";   // stepping machines
   const repUnit  = isIso ? "sec" : "reps";
 
   const defaultSet = { reps: "", weight: "", rpe: null };
@@ -3905,6 +3919,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
 
   const [cardioMinutes, setCardioMinutes] = useState("");
   const [speedMph, setSpeedMph] = useState(String(exercise.defaultSpeed || 3.5));
+  const [stepsPerMin, setStepsPerMin] = useState(String(exercise.defaultSpm || 60));
 
   const lastSession = (() => {
     if (!profile?.workouts) return null;
@@ -3918,10 +3933,12 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
 
   const parsedMins  = parseFloat(cardioMinutes) || 0;
   const parsedSpeed = parseFloat(speedMph) || exercise.defaultSpeed || 3.5;
+  const parsedSpm   = parseFloat(stepsPerMin) || exercise.defaultSpm || 60;
   const validSets   = setRows.filter(r => parseFloat(r.reps) > 0);
 
   const totalXP = isCardio
-    ? (parsedMins > 0 ? calcXP(exercise, 1, parsedMins, weightLbs, isSpeed ? { speedMph: parsedSpeed } : {}) : 0)
+    ? (parsedMins > 0 ? calcXP(exercise, 1, parsedMins, weightLbs,
+        isSpeed ? { speedMph: parsedSpeed } : isSpm ? { stepsPerMin: parsedSpm } : {}) : 0)
     : validSets.reduce((sum, r) => {
         const reps = parseFloat(r.reps) || 0;
         const w    = parseFloat(r.weight) || 0;
@@ -4028,13 +4045,21 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         {/* Inputs */}
         {isCardio ? (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: isSpeed ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: (isSpeed || isSpm) ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 10 }}>
               <div>
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>TIME (MIN)</div>
                 <input className="input-field" type="number" value={cardioMinutes}
                   onChange={e => setCardioMinutes(e.target.value)} placeholder="30"
                   style={{ color: ACCENT, fontWeight: 700, fontSize: 16, textAlign: "center" }} />
               </div>
+              {isSpm && (
+                <div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>STEPS / MIN</div>
+                  <input className="input-field" type="number" value={stepsPerMin}
+                    onChange={e => setStepsPerMin(e.target.value)} placeholder={String(exercise.defaultSpm || 60)}
+                    style={{ color: RED, fontWeight: 700, fontSize: 16, textAlign: "center" }} />
+                </div>
+              )}
               {isSpeed && (
                 <div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>SPEED (MPH)</div>
@@ -4061,9 +4086,31 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                 </div>
               </div>
             )}
+            {isSpm && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2, marginBottom: 6 }}>QUICK SELECT</div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  {[{label:"40",sub:"easy"},{label:"50",sub:"steady"},{label:"60",sub:"moderate"},{label:"75",sub:"brisk"},{label:"90",sub:"hard"},{label:"110",sub:"very hard"},{label:"130",sub:"max"}].map(s => (
+                    <button key={s.label} onClick={() => setStepsPerMin(s.label)} style={{
+                      background: stepsPerMin === s.label ? `${RED}22` : BG3,
+                      border: `1px solid ${stepsPerMin === s.label ? RED : ACCENT2 + "33"}`,
+                      borderRadius: 6, padding: "6px 10px", cursor: "pointer", textAlign: "center", flex: "0 0 auto"
+                    }}>
+                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: stepsPerMin === s.label ? RED : TEXT }}>{s.label}</div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>{s.sub}</div>
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 6 }}>
+                  Machine only shows a level? level × 8 is a close estimate.
+                </div>
+              </div>
+            )}
             {parsedMins > 0 && (
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, padding: "7px 10px", background: `${ACCENT}08`, border: `1px solid ${ACCENT}22`, borderRadius: 4 }}>
-                {isSpeed ? `MET(${parsedSpeed} mph) × ${(weightLbs * 0.453592).toFixed(0)} kg × ${(parsedMins / 60).toFixed(2)} h` : `MET ${exercise.met} × ${(weightLbs * 0.453592).toFixed(0)} kg × ${(parsedMins / 60).toFixed(2)} h`}
+                {isSpeed ? `MET(${parsedSpeed} mph) × ${(weightLbs * 0.453592).toFixed(0)} kg × ${(parsedMins / 60).toFixed(2)} h`
+                 : isSpm ? `MET ${metFromStepRate(parsedSpm).toFixed(1)} (${parsedSpm} steps/min) × ${(weightLbs * 0.453592).toFixed(0)} kg × ${(parsedMins / 60).toFixed(2)} h`
+                 : `MET ${exercise.met} × ${(weightLbs * 0.453592).toFixed(0)} kg × ${(parsedMins / 60).toFixed(2)} h`}
               </div>
             )}
           </div>
@@ -4258,7 +4305,9 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           if (!canLog) return;
           if (isCardio) {
             onConfirm({ sets: 1, reps: parsedMins, weight: weightLbs, xp: totalXP, cals: totalXP,
-              cardioData: { minutes: parsedMins, speedMph: isSpeed ? parsedSpeed : null, met: exercise.met } });
+              cardioData: { minutes: parsedMins, speedMph: isSpeed ? parsedSpeed : null,
+                stepsPerMin: isSpm ? parsedSpm : null,
+                met: isSpm ? metFromStepRate(parsedSpm) : exercise.met } });
           } else {
             const setsDetail = validSets.map(r => ({
               reps: parseFloat(r.reps) || 0,
@@ -4750,7 +4799,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
             const entry = { exerciseName: modal.exercise.name, muscle: modal.muscle,
               exercise: modal.exercise, sets: data.sets, reps: data.reps,
               weight: data.weight, sets_detail: data.sets_detail,
-              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals,
+              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, cardioData: data.cardioData,
               supersetGroup, date: Date.now() };
             if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
             onLogExercise(entry);
@@ -5878,7 +5927,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               onLogExercise({ exerciseName: modal.exercise.name, muscle: modal.muscle,
                 exercise: modal.exercise, sets: data.sets, reps: data.reps,
                 weight: data.weight, sets_detail: data.sets_detail,
-                newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals,
+                newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, cardioData: data.cardioData,
                 date: entryDate });
               // If editing, unlog the original entry first
               if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
@@ -11007,7 +11056,7 @@ export default function IronRealm() {
             if (relic) {
               newCosmetics = { ...(p.cosmetics || {}),
                 relics: [...(p.cosmetics?.relics || []), { id: relic.id, date: Date.now(), source: exName }] };
-              setTimeout(() => setRelicDrop(relic), 1600);
+              setTimeout(() => setRelicDrop(relic), 400);
             }
           }
         }
@@ -11277,7 +11326,7 @@ export default function IronRealm() {
       <Toasts toasts={toasts} />
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
       {ceremonyLevel && <LevelUpCeremony level={ceremonyLevel} settings={settings} onDone={() => setCeremonyLevel(null)} />}
-      {relicDrop && <RelicDropModal relic={relicDrop}
+      {relicDrop && !ceremonyLevel && <RelicDropModal relic={relicDrop}
         onEquip={() => { const id = relicDrop.id; updateActive(p => ({ ...p, cosmetics: { ...(p.cosmetics || {}), equippedRelic: id } })); toast(`${relicDrop.name} equipped`, RELIC_FRAME_COLORS[id]); setRelicDrop(null); }}
         onClose={() => setRelicDrop(null)} />}
       <div key={screen} className="screen-wipe">

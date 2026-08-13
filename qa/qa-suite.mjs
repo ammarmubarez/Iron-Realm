@@ -33,6 +33,11 @@ async function scrollScreenToBottom() {
 // A relic drop fires ~1.6s after a PR and covers the screen until tapped.
 // Clear it before interacting so it can't swallow a test's tap.
 async function dismissRelicDrop() {
+  // the drop can still be in flight — give it a beat to appear first
+  for (let i = 0; i < 6; i++) {
+    if (await page.evaluate(() => /RELIC DROP/.test(document.body.innerText))) break;
+    await page.waitForTimeout(150);
+  }
   const open = await page.evaluate(() => /RELIC DROP/.test(document.body.innerText));
   if (!open) return false;
   await page.mouse.click(195, 800);
@@ -393,6 +398,8 @@ await t('sched: confirm log writes workout', async () => {
   ok(((await profile()).workouts || []).length === before + 1, 'workout not logged');
 });
 await t('sched: logged entry appears with EDIT/DEL', async () => ok(await has(/EDIT/) && await has(/DEL/)));
+// a PR in the step above can trigger a relic drop reveal — clear it before continuing
+await dismissRelicDrop();
 await t('sched: nutrition inputs log food', async () => {
   await page.getByPlaceholder(/Calories/i).fill('650');
   await page.getByPlaceholder(/Protein/i).fill('45');
