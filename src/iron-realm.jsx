@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.12.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -6286,10 +6286,14 @@ function mindOverallBonus(mindLog) {
 //    (VO₂max declines measurably within 2–4 weeks).
 //  · Floors (muscle 40%, endurance 30%) reflect long-lived neural
 //    adaptations and retained myonuclei — you never return to zero.
-//  · MUSCLE MEMORY: each session on a detrained muscle recovers ~35% of
+//  · MUSCLE MEMORY: a session on a detrained muscle recovers up to ~35% of
 //    the remaining deficit — several sessions over 2–3 weeks to fully
 //    restore, roughly 3–4× faster than the loss (Staron 1991), not an
-//    instant snap-back.
+//    instant snap-back. The recovery is scaled by how much of the session
+//    actually loaded THIS muscle: a hip thrust (79% of its work is glutes)
+//    nearly fully reawakens them, a deadlift (17%) barely does, and a
+//    barbell row (13% biceps) maintains rather than rebuilds. Without this,
+//    any compound lift fully reset every muscle it brushed.
 //
 // Effective XP = earned XP × condition, computed chronologically from the
 // workout ledger — deterministic, self-correcting, nothing destroyed.
@@ -6321,7 +6325,8 @@ function atrophiedXP(events, prm) {
       // single session must not stack the muscle-memory bonus.
       if (gapDays > 0.25) {
         c = decayCondition(c, gapDays, prm);
-        c = c + ATROPHY.REGAIN * (1 - c);
+        const share = Math.min(1, Math.max(0, e.share == null ? 1 : e.share));
+        c = c + ATROPHY.REGAIN * share * (1 - c);
       }
     }
     earned += e.xp || 0;
@@ -10605,7 +10610,7 @@ export default function IronRealm() {
               overallXP: mindXP, overallLevel: getLevelFromXP(mindXP).level }];
           }
           const statEvents = {};
-          const addEvt = (key, date, xp) => { (statEvents[key] = statEvents[key] || []).push({ date, xp }); };
+          const addEvt = (key, date, xp, share = 1) => { (statEvents[key] = statEvents[key] || []).push({ date, xp, share }); };
           let newOverallXP = 0;
           for (const w of p.workouts) {
             const xp = w.xp || 0;
@@ -10616,15 +10621,20 @@ export default function IronRealm() {
               addEvt("cardio", w.date, xp);
             } else if (emg) {
               const total = Object.values(emg).reduce((s,v) => s+v, 0);
+              // several svg heads can map to one stat — sum their shares
+              const byStat = {};
               Object.entries(emg).forEach(([svgId, activation]) => {
-                const xpShare = Math.round(xp * activation / total);
-                addEvt(SVG_TO_STAT[svgId] || muscle, w.date, xpShare);
+                const stat = SVG_TO_STAT[svgId] || muscle;
+                byStat[stat] = (byStat[stat] || 0) + activation;
+              });
+              Object.entries(byStat).forEach(([stat, act]) => {
+                addEvt(stat, w.date, Math.round(xp * act / total), act / total);
               });
             } else {
               const statKey = ex.type === "calisthenics" &&
                 !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
-              addEvt(statKey, w.date, xp);
-              if (statKey !== muscle) addEvt(muscle, w.date, Math.round(xp * 0.4));
+              addEvt(statKey, w.date, xp, 1);
+              if (statKey !== muscle) addEvt(muscle, w.date, Math.round(xp * 0.4), 0.4);
             }
             newOverallXP += xp;
           }
@@ -10635,13 +10645,13 @@ export default function IronRealm() {
           });
           const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
           const subEvents = {};
-          const addSub = (svgId, date, xp) => { (subEvents[svgId] = subEvents[svgId] || []).push({ date, xp }); };
+          const addSub = (svgId, date, xp, share = 1) => { (subEvents[svgId] = subEvents[svgId] || []).push({ date, xp, share }); };
           for (const w of p.workouts) {
             const xp2 = w.xp || 0; const ex2 = w.exercise || {};
             const emg2 = ex2.emg || EXERCISE_EMG[ex2.name];
             if (emg2) {
               const total2 = Object.values(emg2).reduce((s,v)=>s+v,0);
-              Object.entries(emg2).forEach(([svgId,act]) => addSub(svgId, w.date, Math.round(xp2*act/total2)));
+              Object.entries(emg2).forEach(([svgId,act]) => addSub(svgId, w.date, Math.round(xp2*act/total2), act/total2));
             } else {
               (ex2.svgTargets||[]).forEach(svgId => addSub(svgId, w.date, Math.round(xp2/((ex2.svgTargets||[1]).length))));
             }
@@ -10947,7 +10957,7 @@ export default function IronRealm() {
   // Rebuild stats/subStats/XP from scratch using the workout log as source of truth
   const recomputeStats = (p) => {
     const statEvents = {}, subEvents = {};
-    const addE = (m, key, date, xp) => { (m[key] = m[key] || []).push({ date, xp }); };
+    const addE = (m, key, date, xp, share = 1) => { (m[key] = m[key] || []).push({ date, xp, share }); };
     let newOverallXP  = 0;
     for (const w of (p.workouts || [])) {
       const xp    = w.xp || 0;
@@ -10958,10 +10968,14 @@ export default function IronRealm() {
         addE(statEvents, "cardio", w.date, xp);
       } else if (emg) {
         const total = Object.values(emg).reduce((s,v) => s+v, 0);
+        const byStat = {};
         Object.entries(emg).forEach(([svgId, activation]) => {
-          const xpShare = Math.round(xp * activation / total);
-          addE(statEvents, SVG_TO_STAT[svgId] || muscle, w.date, xpShare);
-          addE(subEvents, svgId, w.date, xpShare);
+          const stat = SVG_TO_STAT[svgId] || muscle;
+          byStat[stat] = (byStat[stat] || 0) + activation;
+          addE(subEvents, svgId, w.date, Math.round(xp * activation / total), activation / total);
+        });
+        Object.entries(byStat).forEach(([stat, act]) => {
+          addE(statEvents, stat, w.date, Math.round(xp * act / total), act / total);
         });
       } else {
         const targets = ex.svgTargets || [];
@@ -10971,8 +10985,8 @@ export default function IronRealm() {
         }
         const statKey = ex.type === "calisthenics" &&
           !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
-        addE(statEvents, statKey, w.date, xp);
-        if (statKey !== muscle) addE(statEvents, muscle, w.date, Math.round(xp * 0.4));
+        addE(statEvents, statKey, w.date, xp, 1);
+        if (statKey !== muscle) addE(statEvents, muscle, w.date, Math.round(xp * 0.4), 0.4);
       }
       newOverallXP += xp;
     }
