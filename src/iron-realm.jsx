@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.12.2";
+const APP_VERSION = "1.13.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -6334,7 +6334,8 @@ function decayCondition(c, gapDays, prm) {
 // Fold a muscle's chronological XP events into (earned × final condition).
 function atrophyState(events, prm) {
   const xp = atrophiedXP(events, prm);
-  if (!events || events.length === 0) return { xp: 0, condition: 1, last: null };
+  if (!events || events.length === 0) return { xp: 0, earned: 0, condition: 1, last: null };
+  const earned = events.reduce((s, e) => s + (e.xp || 0), 0);
   const sorted = [...events].sort((a, b) => (a.date || 0) - (b.date || 0));
   let c = 1, last = null;
   for (const e of sorted) {
@@ -6349,7 +6350,26 @@ function atrophyState(events, prm) {
     last = e.date || last;
   }
   if (last != null) c = decayCondition(c, (Date.now() - last) / 86400000, prm);
-  return { xp, condition: c, last };
+  return { xp, earned, condition: c, last };
+}
+
+// Where condition lands after `extraDays` more rest, accounting for any grace
+// window still unspent.
+function projectCondition(c, daysIdle, extraDays, prm) {
+  const decayedSoFar = Math.max(0, daysIdle - prm.grace);
+  const decayedThen  = Math.max(0, daysIdle + extraDays - prm.grace);
+  const add = decayedThen - decayedSoFar;
+  if (add <= 0) return c;
+  return prm.floor + (c - prm.floor) * Math.exp(-_LN2 * add / prm.halfLife);
+}
+
+// Plain-language state for a muscle's condition.
+function conditionStatus(c) {
+  if (c >= 0.995) return { label: "FRESH",     color: GREEN };
+  if (c >= 0.95)  return { label: "HOLDING",   color: GREEN };
+  if (c >= 0.85)  return { label: "SLIPPING",  color: GOLD };
+  if (c >= 0.65)  return { label: "FADING",    color: "#ff8c42" };
+  return { label: "DETRAINED", color: RED };
 }
 
 function atrophiedXP(events, prm) {
@@ -8461,6 +8481,122 @@ function PRSparkline({ events, color = GOLD }) {
   );
 }
 
+// ─── CONDITION REPORT ─────────────────────────────────────────────────────────
+// Every muscle's current condition, what has faded, how long it has been idle,
+// and what a session would win back — the decay badge answers "how much", this
+// answers "which, why, and what now".
+function ConditionReportModal({ profile, onClose }) {
+  const condition   = profile?.condition || {};
+  const lastTrained = profile?.lastTrained || {};
+  const earnedStats = profile?.earnedStats || {};
+  const stats       = profile?.stats || {};
+
+  const rows = Object.keys(MUSCLE_META)
+    .filter(k => MUSCLE_META[k] && (earnedStats[k] > 0 || stats[k] > 0))
+    .map(k => {
+      const prm = atrophyParams(k);
+      const c = condition[k] == null ? 1 : condition[k];
+      const last = lastTrained[k] || null;
+      const daysIdle = last ? Math.floor((Date.now() - last) / 86400000) : null;
+      const earned = earnedStats[k] || stats[k] || 0;
+      const now = stats[k] || 0;
+      return { key: k, meta: MUSCLE_META[k], prm, c, last, daysIdle, earned,
+        now, lost: Math.max(0, earned - now),
+        status: conditionStatus(c),
+        inGrace: daysIdle != null && daysIdle <= prm.grace,
+        in30: projectCondition(c, daysIdle == null ? 0 : daysIdle, 30, prm),
+        regain: c + ATROPHY.REGAIN * (1 - c) };
+    })
+    .sort((a, b) => a.c - b.c);
+
+  const totalLost = rows.reduce((s, r) => s + r.lost, 0);
+  const decaying  = rows.filter(r => r.c < 0.995).length;
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain",
+      zIndex: 1150, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
+        border: `1px solid ${RED}33`, borderTop: `2px solid ${RED}`,
+        width: "100%", maxWidth: 480, padding: "18px 16px 40px", maxHeight: "82dvh", overflowY: "auto" }}>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: RED, letterSpacing: 2 }}>
+            CONDITION REPORT
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        {rows.length === 0 ? (
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, padding: "20px 0" }}>
+            No training history yet — log a workout and your condition will be tracked here.
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, marginTop: 8 }}>
+              {[{ v: decaying, l: "DECAYING", c: decaying ? RED : GREEN },
+                { v: totalLost.toLocaleString(), l: "XP FADED", c: totalLost ? GOLD : GREEN },
+                { v: rows.filter(r => r.status.label === "FRESH").length, l: "FRESH", c: GREEN }].map(s => (
+                <div key={s.l} style={{ flex: 1, background: BG3, border: `1px solid ${s.c}22`,
+                  borderRadius: 8, padding: "8px 6px", textAlign: "center" }}>
+                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: s.c }}>{s.v}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{s.l}</div>
+                </div>
+              ))}
+            </div>
+
+            {rows.map(r => (
+              <div key={r.key} style={{ background: BG2, border: `1px solid ${r.meta.color}22`,
+                borderLeft: `3px solid ${r.status.color}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+                    color: r.meta.color, letterSpacing: 1 }}>{r.meta.name.toUpperCase()}</span>
+                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700,
+                    color: r.status.color, letterSpacing: 1 }}>{r.status.label}</span>
+                </div>
+
+                <div style={{ position: "relative", height: 7, background: DARK1, borderRadius: 4,
+                  overflow: "hidden", marginBottom: 6 }}>
+                  <div style={{ position: "absolute", inset: 0, width: `${Math.round(r.c * 100)}%`,
+                    background: `linear-gradient(90deg, ${r.status.color}55, ${r.status.color})`,
+                    transition: "width .6s cubic-bezier(.16,1,.3,1)" }} />
+                  <div style={{ position: "absolute", left: `${Math.round(r.prm.floor * 100)}%`, top: 0, bottom: 0,
+                    width: 1, background: MUTED, opacity: 0.5 }} />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'Rajdhani',sans-serif",
+                  fontSize: 10, color: MUTED }}>
+                  <span style={{ color: r.status.color }}>{Math.round(r.c * 100)}% condition</span>
+                  <span>{r.daysIdle == null ? "never trained" : r.daysIdle === 0 ? "trained today" : `${r.daysIdle}d since trained`}</span>
+                </div>
+
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 4, lineHeight: 1.5 }}>
+                  {r.lost > 0 && <span style={{ color: RED }}>▼ {r.lost.toLocaleString()} XP faded ({r.now.toLocaleString()} of {r.earned.toLocaleString()}). </span>}
+                  {r.inGrace && r.c >= 0.995
+                    ? `Inside the ${r.prm.grace}-day grace window — nothing lost yet.`
+                    : r.inGrace
+                      ? `Holding inside the ${r.prm.grace}-day grace window, but still down from an earlier layoff. One direct session → ${Math.round(r.regain * 100)}%.`
+                      : r.c > r.prm.floor + 0.005
+                        ? `Another 30 days idle → ${Math.round(r.in30 * 100)}%. One direct session → ${Math.round(r.regain * 100)}%.`
+                        : `At the ${Math.round(r.prm.floor * 100)}% floor — muscle memory holds it here. One direct session → ${Math.round(r.regain * 100)}%.`}
+                </div>
+              </div>
+            ))}
+
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 10, lineHeight: 1.5 }}>
+              Condition decays only after a grace window ({ATROPHY.muscular.grace}d for muscle, {ATROPHY.cardio.grace}d for endurance),
+              fastest at first and levelling off toward a floor you never drop below. Each session rebuilds about a
+              third of what is missing, scaled by how much of that session actually loaded the muscle — so compounds
+              maintain, direct work rebuilds.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PRHistoryModal({ workouts, prs, onClose }) {
   const timeline = useMemo(() => getPRTimeline(workouts), [workouts]);
   const [expanded, setExpanded] = useState(null);
@@ -9179,6 +9315,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const [heatmapOpen, setHeatmapOpen]         = useState(false);
   const [patronPickerOpen, setPatronPickerOpen] = useState(false);
   const [relicVaultOpen, setRelicVaultOpen]     = useState(false);
+  const [conditionOpen, setConditionOpen]       = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -9538,6 +9675,27 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </button>
         </Reveal>
 
+        <Reveal dir="left" delay={20}>
+        <button onClick={() => setConditionOpen(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: `${RED}10`, border: `1px solid ${RED}55`, borderRadius: 8,
+          padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+          fontFamily: "'Rajdhani',sans-serif",
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 15 }}>📉</span>
+            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: RED, letterSpacing: 2, fontWeight: 700 }}>CONDITION REPORT</span>
+          </span>
+          <span style={{ fontSize: 10, color: RED, opacity: 0.7 }}>
+            {(() => {
+              const c = st.condition || {};
+              const n = Object.values(c).filter(v => v < 0.995).length;
+              return n ? `${n} decaying →` : "all fresh →";
+            })()}
+          </span>
+        </button>
+        </Reveal>
+
         <Reveal dir="left" delay={40}>
         <button onClick={() => setRelicVaultOpen(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -9662,6 +9820,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </Reveal>
       </div>
 
+      {conditionOpen && <ConditionReportModal profile={st} onClose={() => setConditionOpen(false)} />}
       {relicVaultOpen && (
         <div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
           background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)",
@@ -10682,11 +10841,13 @@ export default function IronRealm() {
           // Atrophy: fold each muscle's chronology through the condition model
           const newStats = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
           const newCondition = {}, newLastTrained = {};
+          const newEarned = {};
           Object.entries(statEvents).forEach(([k, evts]) => {
             const s = atrophyState(evts, atrophyParams(k));
             newStats[k] = s.xp;
             newCondition[k] = s.condition;
             newLastTrained[k] = s.last;
+            newEarned[k] = s.earned;
           });
           const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
           const subEvents = {};
@@ -10715,7 +10876,7 @@ export default function IronRealm() {
           const tl = getPRTimeline(p.workouts);
           const rebuiltPrs = Object.fromEntries(Object.entries(tl).map(([name, evts]) => [name, evts[evts.length - 1].e1rm]));
           return [id, { ...p, stats: newStats, subStats: newSubStats2, levels: newLevels, prs: rebuiltPrs,
-            condition: newCondition, lastTrained: newLastTrained,
+            condition: newCondition, lastTrained: newLastTrained, earnedStats: newEarned,
             overallXP: newOverallXP, overallLevel: getLevelFromXP(newOverallXP).level }];
         })
       );
