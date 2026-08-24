@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.12.1";
+const APP_VERSION = "1.12.2";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -3469,7 +3469,7 @@ function XPBar({ current, needed, color = ACCENT, height = 6 }) {
 }
 
 
-function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedMuscle, onSelectMuscle }) {
+function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedMuscle, onSelectMuscle, condition = {}, lastTrained = {} }) {
   const [openSuper, setOpenSuper] = useState({});
   const [openGroup, setOpenGroup] = useState({});
 
@@ -3567,10 +3567,29 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                         <MuscleIcon muscle={group.key} size={22} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                             <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
                               color: meta.color, letterSpacing: 1.5,
                               textShadow: `0 0 6px ${meta.color}` }}>
                               {meta.name.toUpperCase()}
+                            </span>
+                            {(() => {
+                              // Decay is otherwise invisible: the level bands are wide enough
+                              // that months of rest never move the number. Show the condition
+                              // loss and idle time directly on the muscle.
+                              const cond = condition[group.key];
+                              if (cond == null || cond >= 0.995) return null;
+                              const lost = Math.round((1 - cond) * 100);
+                              const days = lastTrained[group.key]
+                                ? Math.floor((Date.now() - lastTrained[group.key]) / 86400000) : null;
+                              return (
+                                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8,
+                                  color: RED, background: `${RED}14`, border: `1px solid ${RED}33`,
+                                  borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap", flexShrink: 0 }}>
+                                  ▼{lost}%{days != null ? ` · ${days}d` : ""}
+                                </span>
+                              );
+                            })()}
                             </span>
                             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                               <div style={{ textAlign: "right" }}>
@@ -6313,6 +6332,26 @@ function decayCondition(c, gapDays, prm) {
   return prm.floor + (c - prm.floor) * Math.exp(-_LN2 * d / prm.halfLife);
 }
 // Fold a muscle's chronological XP events into (earned × final condition).
+function atrophyState(events, prm) {
+  const xp = atrophiedXP(events, prm);
+  if (!events || events.length === 0) return { xp: 0, condition: 1, last: null };
+  const sorted = [...events].sort((a, b) => (a.date || 0) - (b.date || 0));
+  let c = 1, last = null;
+  for (const e of sorted) {
+    if (last != null) {
+      const gapDays = (e.date - last) / 86400000;
+      if (gapDays > 0.25) {
+        c = decayCondition(c, gapDays, prm);
+        const share = Math.min(1, Math.max(0, e.share == null ? 1 : e.share));
+        c = c + ATROPHY.REGAIN * share * (1 - c);
+      }
+    }
+    last = e.date || last;
+  }
+  if (last != null) c = decayCondition(c, (Date.now() - last) / 86400000, prm);
+  return { xp, condition: c, last };
+}
+
 function atrophiedXP(events, prm) {
   if (!events || events.length === 0) return 0;
   const sorted = [...events].sort((a, b) => (a.date || 0) - (b.date || 0));
@@ -9610,6 +9649,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         <Reveal>
           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
           <StatTree
+            condition={st.condition || {}}
+            lastTrained={st.lastTrained || {}}
             tree={STAT_TREE}
             getGroupXP={getGroupXP}
             getSuperXP={getSuperXP}
@@ -10640,8 +10681,12 @@ export default function IronRealm() {
           }
           // Atrophy: fold each muscle's chronology through the condition model
           const newStats = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
+          const newCondition = {}, newLastTrained = {};
           Object.entries(statEvents).forEach(([k, evts]) => {
-            newStats[k] = atrophiedXP(evts, atrophyParams(k));
+            const s = atrophyState(evts, atrophyParams(k));
+            newStats[k] = s.xp;
+            newCondition[k] = s.condition;
+            newLastTrained[k] = s.last;
           });
           const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
           const subEvents = {};
@@ -10670,6 +10715,7 @@ export default function IronRealm() {
           const tl = getPRTimeline(p.workouts);
           const rebuiltPrs = Object.fromEntries(Object.entries(tl).map(([name, evts]) => [name, evts[evts.length - 1].e1rm]));
           return [id, { ...p, stats: newStats, subStats: newSubStats2, levels: newLevels, prs: rebuiltPrs,
+            condition: newCondition, lastTrained: newLastTrained,
             overallXP: newOverallXP, overallLevel: getLevelFromXP(newOverallXP).level }];
         })
       );
