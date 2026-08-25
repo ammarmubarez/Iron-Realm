@@ -8,7 +8,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.13.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -1504,7 +1504,7 @@ const INIT_STORE = {
     showMilestones: true,
     compactCards:  false,
     travelMode:    false, // filters exercise lists to your hotel-gym equipment
-    travelEquipment: ["BODYWEIGHT", "DUMBBELL", "KETTLEBELL", "CARDIO"],
+    travelEquipment: ["BODYWEIGHT", "BENCH", "DUMBBELL", "KETTLEBELL", "CARDIO"],
   },
 };
 
@@ -1515,7 +1515,8 @@ const INIT_STORE = {
 // the exercise type.
 
 const EQUIPMENT_CATEGORIES = [
-  { id: "BODYWEIGHT", name: "Bodyweight (floor, wall, chair/step)" },
+  { id: "BODYWEIGHT", name: "Bodyweight (floor & wall only)" },
+  { id: "BENCH",      name: "Bench / chair / step" },
   { id: "PULLUP_BAR", name: "Pull-up bar / rings / dip station" },
   { id: "DUMBBELL",   name: "Dumbbells" },
   { id: "KETTLEBELL", name: "Kettlebells" },
@@ -1536,6 +1537,38 @@ const BAR_NAME_PATTERNS = [
   "pull-up", "pullup", "chin-up", "hanging", "muscle-up", "toes to bar",
   "inverted row", "dead hang", "front lever", "back lever", "scapular pull",
 ];
+// Needing something to lie, sit or step on is a requirement layered ON TOP of
+// the primary equipment: a dumbbell bench press needs dumbbells AND a bench.
+// Machines and cables are exempt — they bring their own seat.
+const BENCH_REQUIRED = new Set([
+  // pressing
+  "Bench Press", "Incline Bench Press", "Decline Bench Press", "Close-Grip Bench Press",
+  "Dumbbell Bench Press", "Incline Dumbbell Press", "Decline Dumbbell Press",
+  "Hex Press", "Squeeze Press",
+  // flyes / pullovers
+  "Dumbbell Flyes", "Incline Dumbbell Flyes", "Decline Dumbbell Flyes", "Dumbbell Pullover",
+  // lying triceps
+  "Skull Crushers", "Dumbbell Skull Crushers", "JM Press", "California Press",
+  "Tate Press", "Rolling Tricep Extension",
+  // supported curls
+  "Preacher Curl", "Incline Dumbbell Curl", "Spider Curl", "Concentration Curl",
+  // seated / supported
+  "Seated Dumbbell Press", "Seated Calf Raises", "Chest Supported Row", "Seal Row",
+  "Back Extension (45°)", "Hyperextension",
+  // hinge & unilateral work off a bench
+  "Hip Thrust", "Barbell Hip Thrust", "Banded Hip Thrust", "Single-Leg Hip Thrust",
+  "Bulgarian Split Squat", "Step-ups", "Barbell Step-ups", "Box Jumps",
+  // elevation-dependent bodyweight
+  "Bench Dips", "Decline Push-ups", "Incline Push-ups",
+  "Decline Sit-up", "Weighted Decline Crunch",
+]);
+function needsBench(exercise) {
+  if (!exercise) return false;
+  const primary = exerciseEquipment(exercise);
+  if (primary === "MACHINE" || primary === "CABLE") return false;
+  return BENCH_REQUIRED.has(exercise.name);
+}
+
 function exerciseEquipment(exercise) {
   if (!exercise) return null;
   if (exercise.type === "calisthenics") {
@@ -1582,7 +1615,11 @@ function isTravelFriendly(exercise, availableEquipment) {
   const list = Array.isArray(availableEquipment) && availableEquipment.length > 0
     ? availableEquipment
     : ["BODYWEIGHT", "CARDIO"];
-  return list.includes(equip);
+  if (!list.includes(equip)) return false;
+  // A bench is a second, independent requirement — no bench, no bench press,
+  // however many dumbbells are on hand.
+  if (needsBench(exercise) && !list.includes("BENCH")) return false;
+  return true;
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
