@@ -9,7 +9,7 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-const APP_VERSION = "1.13.2";
+const APP_VERSION = "1.14.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -1818,6 +1818,16 @@ function getPRTimeline(workouts) {
 }
 
 // XP for a single strength set with all modifiers applied
+// Bodyweight work carries a SIGNED load: positive adds a plate or vest,
+// negative is machine assistance (an assisted pull-up/dip counterweight
+// offsets part of your bodyweight). Floored at 10% of bodyweight — you are
+// always moving your limbs, and past full assistance the number is nonsense
+// rather than easier, so it must never produce zero or negative XP.
+function effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs) {
+  const bw = bodyWeightLbs || 0;
+  return Math.max(bw * 0.1, bw + (setWeightLbs || 0));
+}
+
 function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
   // Isometric holds: the logged value is SECONDS of tension, not reps. Duration
   // is the hold time itself — no rep→time conversion, and no e1RM (an Epley
@@ -1826,7 +1836,7 @@ function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
     const seconds = reps || 0;
     const table = exercise.type === "strength" ? MET_VALUES.strength : MET_VALUES.calisthenics;
     const isoMet = table[exercise.diff] || 5.5;
-    const totalKg = (bodyWeightLbs + (setWeightLbs || 0)) * 0.453592;
+    const totalKg = effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs) * 0.453592;
     return Math.round(isoMet * totalKg * (seconds / 3600));
   }
   const weightKg = bodyWeightLbs * 0.453592;
@@ -1840,7 +1850,7 @@ function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
   if (exercise.type === "calisthenics") {
     const caliMet = MET_VALUES.calisthenics[exercise.diff] || 5.5;
     const caliDur = (reps * 4) / 3600;
-    const totalKg = (bodyWeightLbs + (setWeightLbs || 0)) * 0.453592;
+    const totalKg = effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs) * 0.453592;
     return Math.round(caliMet * totalKg * caliDur);
   }
 
@@ -3950,7 +3960,7 @@ function QuickAddBar({ onAdd, isIso = false, repUnit = "reps", bodyweight = fals
 
 
 // ─── EXERCISE LOG MODAL ───────────────────────────────────────────────────────
-function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onClose }) {
+function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onClose, editingEntry = null }) {
   const isCardio = exercise.type === "cardio";
   const isCali   = exercise.type === "calisthenics";
   const isIso    = !!exercise.iso;          // hold-for-time, logged in seconds
@@ -3959,7 +3969,20 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const repUnit  = isIso ? "sec" : "reps";
 
   const defaultSet = { reps: "", weight: "", rpe: null };
-  const [setRows, setSetRows] = useState([{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }]);
+  // Editing must START from what was logged — otherwise confirming an edit
+  // replaces the original entry with whatever blank rows happened to be shown,
+  // silently destroying the sets being edited.
+  const [setRows, setSetRows] = useState(() => {
+    const prior = editingEntry?.sets_detail;
+    if (Array.isArray(prior) && prior.length > 0) {
+      return prior.map(s => ({
+        reps: s.reps == null ? "" : String(s.reps),
+        weight: s.weight == null ? "" : String(s.weight),
+        rpe: s.rpe == null ? null : s.rpe,
+      }));
+    }
+    return [{ ...defaultSet }, { ...defaultSet }, { ...defaultSet }];
+  });
   const updateSet = (i, field, val) => setSetRows(s => s.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const addSet    = () => setSetRows(s => [...s, { ...defaultSet }]);
   const repeatLastSet = () => setSetRows(s => {
@@ -3974,9 +3997,13 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   });
   const removeSet = (i) => setSetRows(s => s.filter((_, idx) => idx !== i));
 
-  const [cardioMinutes, setCardioMinutes] = useState("");
-  const [speedMph, setSpeedMph] = useState(String(exercise.defaultSpeed || 3.5));
-  const [stepsPerMin, setStepsPerMin] = useState(String(exercise.defaultSpm || 60));
+  const [cardioMinutes, setCardioMinutes] = useState(
+    editingEntry?.cardioData?.minutes != null ? String(editingEntry.cardioData.minutes)
+      : (editingEntry && editingEntry.reps != null && exercise.type === "cardio" ? String(editingEntry.reps) : ""));
+  const [speedMph, setSpeedMph] = useState(String(
+    editingEntry?.cardioData?.speedMph ?? exercise.defaultSpeed ?? 3.5));
+  const [stepsPerMin, setStepsPerMin] = useState(String(
+    editingEntry?.cardioData?.stepsPerMin ?? exercise.defaultSpm ?? 60));
 
   const lastSession = (() => {
     if (!profile?.workouts) return null;
@@ -4182,7 +4209,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                 <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 4, marginTop: 16 }}>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, textAlign: "center" }}>#</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isIso ? "HOLD (SEC)" : "REPS"}</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isCali ? `ADDED WT (${wtLabel().toUpperCase()})` : `WEIGHT (${wtLabel().toUpperCase()})`}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isCali ? `ADDED / −ASSIST (${wtLabel().toUpperCase()})` : `WEIGHT (${wtLabel().toUpperCase()})`}</div>
                   <div />
                 </div>
                 {setRows.map((row, i) => {
@@ -4210,10 +4237,19 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                           style={{ textAlign: "center", color: ACCENT, padding: "7px 6px", borderColor: prReps ? GREEN + "88" : undefined }} />
                         <input className="input-field" type="number" value={row.weight}
                           onChange={e => updateSet(i, "weight", e.target.value)}
-                          placeholder={isCali ? "0 (BW only)" : (lastRow ? lastRow.weight + " last" : "135")}
+                          placeholder={isCali ? "0 · −40 assist" : (lastRow ? lastRow.weight + " last" : "135")}
                           style={{ textAlign: "center", color: GOLD, padding: "7px 6px", borderColor: prWeight ? GREEN + "88" : undefined }} />
                         <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: MUTED, fontSize: 15, cursor: "pointer", lineHeight: 1 }}>×</button>
                       </div>
+                      {isCali && parseFloat(row.weight) !== 0 && !isNaN(parseFloat(row.weight)) && (
+                        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
+                          color: parseFloat(row.weight) < 0 ? ACCENT : GOLD,
+                          paddingLeft: 38, marginTop: 2, letterSpacing: 0.5 }}>
+                          {parseFloat(row.weight) < 0
+                            ? `assisted — lifting ${Math.round(wtVal(effectiveCaliLoadLbs(weightLbs, parseFloat(row.weight))))} ${wtLabel()} of your ${Math.round(wtVal(weightLbs))}`
+                            : `weighted — lifting ${Math.round(wtVal(weightLbs + parseFloat(row.weight)))} ${wtLabel()} total`}
+                        </div>
+                      )}
                       {showE1RM && (
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: e1rmColor,
                           paddingLeft: 38, marginTop: 2, letterSpacing: 0.5,
@@ -4261,7 +4297,14 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
               const hasFilled = setRows.some(r => parseFloat(r.reps) > 0 && (parseFloat(r.weight) > 0 || isCali));
               return (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
-                  <button onClick={addSet} style={{
+                  {isCali && (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED,
+                    marginTop: 2, marginBottom: 6, lineHeight: 1.4 }}>
+                    Leave blank for pure bodyweight · enter a plate/vest as +25 · enter machine
+                    assistance as a negative, e.g. −60 for a 60 {wtLabel()} counterweight.
+                  </div>
+                )}
+                <button onClick={addSet} style={{
                     background: `${ACCENT}06`, border: `1px dashed ${ACCENT}28`,
                     borderRadius: 6, padding: "7px", cursor: "pointer",
                     fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2
@@ -4850,6 +4893,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
           muscle={(logModal || editModal).muscle}
           weightLbs={st.weightLbs || 170}
           profile={st}
+          editingEntry={(logModal || editModal).originalEntry || null}
           onConfirm={data => {
             const modal = logModal || editModal;
             const supersetGroup = currentSupersetGroup || null;
@@ -5978,6 +6022,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             muscle={modal.muscle}
             weightLbs={st.weightLbs || 170}
             profile={st}
+            editingEntry={modal.originalEntry || null}
             onConfirm={data => {
               // Use the selected day's date, not today
               const entryDate = modal.targetDate || getDayDate(selDay);
