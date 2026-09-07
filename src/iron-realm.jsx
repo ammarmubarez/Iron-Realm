@@ -10,6 +10,7 @@ import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTI
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
 import { DAILY_TIPS } from "./data/tips";
 import { MIND_ACTIVITIES } from "./data/mind";
+import Button, { buttonCSS } from "./ui/Button";
 
 import * as authService from "./services/auth";
 import * as syncService from "./services/sync";
@@ -24,7 +25,7 @@ const SystemParticles = lazy(() => import("./fx/SystemParticles"));
 const SoulCore        = lazy(() => import("./fx/SoulCore"));
 const CompanionOrb    = lazy(() => import("./fx/CompanionOrb"));
 
-const APP_VERSION = "1.15.0";
+const APP_VERSION = "1.16.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 const BG      = "#03060f";   // void black
@@ -710,6 +711,7 @@ function getMuscleRank(level) {
 // ─── CSS — SOLO LEVELING SYSTEM UI ───────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
+  ${buttonCSS}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { overscroll-behavior-y: none; }
   body { background: ${BG}; }
@@ -4978,11 +4980,9 @@ function RelicDropModal({ relic, onEquip, onClose }) {
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6 }}>
           Card frame · earned by PR
         </div>
-        <button onClick={onEquip} style={{
-          marginTop: 14, width: "100%", padding: "10px", cursor: "pointer",
-          background: `${c}22`, border: `1px solid ${c}88`, borderRadius: 8,
-          fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
-          color: c, letterSpacing: 2 }}>EQUIP NOW</button>
+        <Button variant="glass" size="md" block accent={c} onClick={onEquip} style={{ marginTop: 14 }}>
+          Equip now
+        </Button>
       </div>
       <div style={{ position: "absolute", bottom: 48, fontFamily: "'Rajdhani',sans-serif",
         fontSize: 11, color: MUTED, letterSpacing: 3,
