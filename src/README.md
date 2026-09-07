@@ -55,18 +55,19 @@ The transforms are scripted and self-verifying: see `scripts/theme/`.
 - **Data lives in `data/`, never inline in `iron-realm.jsx`.** Each module is a set of
   `export const` literals with no dependencies, so adding an exercise or a program is a
   one-file change with no risk to app logic.
-- **Anything that pulls in three.js goes in `fx/`** and is imported with `React.lazy`.
-  The app never imports `three` directly. This keeps the ~130 KB gz three.js chunk out of
-  the initial bundle; it streams in after first paint.
+- **Anything that pulls in three.js goes in `fx/`** and, if it is ever re-enabled, must be
+  imported with `React.lazy` so `three` stays off the critical path. The app never imports
+  `three` directly. In v2.0 nothing renders these components, so three.js is not in the
+  bundle at all.
+- **Colour and type come from `ui/tokens.js`.** Do not hard-code hex values in
+  `iron-realm.jsx`; the palette is meant to be changeable in one place.
 - **Test suites** live in `../qa/` (Playwright). `qa-suite.mjs` and `qa-suite2.mjs` are the
   regression gates — run both after any change to `iron-realm.jsx`.
 
 ## Bundle shape (production build)
 
-| chunk | gz | what |
+| version | gz | shape |
 |---|---|---|
-| `main.*.js` | ~247 KB | app + data |
-| `408.*.chunk.js` | ~133 KB | three.js (deferred) |
-| three `*.chunk.js` | ~1 KB each | the fx component wrappers |
-
-Before the split the app shipped as a single 379 KB gz chunk.
+| v1.14 | 379 KB | one chunk, three.js inlined |
+| v1.15 | 247 KB + 133 KB deferred | three.js split into a lazy chunk |
+| **v2.0** | **244 KB** | one chunk, no three.js, Orbitron no longer loaded |
