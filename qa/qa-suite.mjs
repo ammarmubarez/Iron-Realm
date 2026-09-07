@@ -117,21 +117,23 @@ await t('home: weight update works', async () => {
   await page.waitForTimeout(500);
   ok((await profile()).weightLbs === 190, 'weight not saved');
 });
-await t('home: mind & spirit card present', async () => ok(await has(/MIND & SPIRIT/)));
-await t('home: mind badges show levels', async () => ok(await has(/INTELLIGENCE/) && await has(/FAITH/)));
-await t('home: daily tasks checklist rendered', async () => ok(await has(/TODAY'S TASKS/)));
-await t('home: check task grants XP', async () => {
+await nav('Hunter');
+await t('char: mind & spirit card present', async () => ok(await has(/MIND & SPIRIT/)));
+await t('char: mind badges show levels', async () => ok(await has(/INTELLIGENCE/) && await has(/FAITH/)));
+await t('char: daily tasks checklist rendered', async () => ok(await has(/TODAY'S TASKS/)));
+await t('char: check task grants XP', async () => {
   const before = ((await profile()).mindLog || []).length;
   await page.getByText('Sunnah / Nafl prayer · 1 prayer').first().click();
   await page.waitForTimeout(600);
   ok(((await profile()).mindLog || []).length === before + 1, 'no ledger entry');
 });
-await t('home: uncheck task removes XP', async () => {
+await t('char: uncheck task removes XP', async () => {
   const before = ((await profile()).mindLog || []).length;
   await page.getByText('Sunnah / Nafl prayer · 1 prayer').first().click();
   await page.waitForTimeout(600);
   ok(((await profile()).mindLog || []).length === before - 1, 'entry not removed');
 });
+await nav('Home');
 await t('home: daily rituals card', async () => ok(await has(/DAILY RITUALS/)));
 await t('home: ritual toggle works', async () => {
   await page.getByText('10 push-ups').first().click(); await page.waitForTimeout(400);
@@ -158,6 +160,7 @@ await t('home: last content not hidden under navbar', async () => {
 
 // ═══ SUITE 2: MIND LOG MODAL ═══
 await t('modal: opens via + LOG', async () => {
+  await nav('Hunter');
   await page.evaluate(() => { const scs = [...document.querySelectorAll('div')].filter(d => d.scrollHeight > d.clientHeight + 30 && /auto/.test(getComputedStyle(d).overflowY)); if (scs[0]) scs[0].scrollTop = 0; });
   await page.waitForTimeout(300);
   await page.getByText('+ LOG', { exact: true }).first().click();
@@ -291,8 +294,8 @@ await t('home: equipped aura class applied to name', async () => {
 });
 
 // ═══ SUITE 4: CHARACTER SCREEN ═══
-await t('char: navigates', async () => { await nav('Hunter'); ok(await has(/FRESH MUSCLES/)); });
-await t('char: hero tiles render (level + condition)', async () => ok(await has(/LEVEL/) && await has(/FRESH MUSCLES/)));
+await t('char: navigates', async () => { await nav('Hunter'); ok(await has(/BODY MATRIX/)); });
+await t('char: hero tiles render (level + condition)', async () => ok(await has(/LEVEL/) && await has(/CONDITION/)));
 await t('char: body matrix present', async () => ok(await has(/BODY MATRIX/)));
 await t('char: condition tile reports detraining (cardio idle 40d)', async () => ok(await has(/detraining/)));
 await t('char: account rows no longer on the Hunter screen', async () => ok(!(await has(/Switch hunter/)) && !(await has(/New hunter/))));
@@ -331,7 +334,8 @@ await t('vault: closes', async () => {
   await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400);
   ok(!(await has(/Card frames dropped/)));
 });
-await t('char: PR history opens with data', async () => {
+await t('progress: PR history opens with data', async () => {
+  await nav('Progress');
   await page.getByText('PR history').first().click(); await page.waitForTimeout(600);
   ok(await has(/Bench Press/));
 });
@@ -345,29 +349,30 @@ await t('char: heatmap opens', async () => {
 await t('char: heatmap closes', async () => {
   await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400); ok(true);
 });
-await t('char: progress group rows', async () => ok(await has(/Volume & pace/) && await has(/PR history/) && await has(/Training heatmap/)));
-await t('char: identity group rows', async () => ok(await has(/Signature lift/) && await has(/Relic vault/)));
-await t('char: progress sheet — volume trend', async () => {
-  await page.getByText('Volume & pace').first().click(); await page.waitForTimeout(700);
-  ok(await has(/VOLUME TREND/i), 'volume chart not in progress sheet');
+await t('progress: chart + rows on the Progress tab', async () => ok(await has(/VOLUME TREND/i) && await has(/PR history/) && await has(/Training heatmap/)));
+await t('char: identity group rows', async () => { await nav('Hunter'); ok(await has(/Signature lift/) && await has(/Relic vault/)); });
+await t('progress: volume trend inline', async () => {
+  await nav('Progress');
+  ok(await has(/VOLUME TREND/i), 'volume chart not on Progress tab');
 });
-await t('char: progress sheet — shadow race tab', async () => {
-  await page.getByRole('tab', { name: 'Shadow race' }).click(); await page.waitForTimeout(600);
-  ok(await has(/SHADOW RACE/) && await has(/AHEAD|BEHIND/));
-  await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400);
-});
-await t('char: condition sheet — recovery grid inside', async () => {
+await t('progress: shadow race inline with verdict', async () => ok(await has(/SHADOW RACE/) && await has(/AHEAD|BEHIND/)));
+await t('progress: condition sheet — recovery grid inside', async () => {
   await page.getByText('Condition report').first().click(); await page.waitForTimeout(800);
   ok(await has(/MUSCLE RECOVERY/), 'recovery grid not in condition report');
   await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400);
 });
-await t('char: muscle levels tree', async () => ok(await has(/MUSCLE LEVELS/)));
+await t('char: level tile opens the muscle levels sheet', async () => {
+  await nav('Hunter');
+  await page.locator('[role="button"]').filter({ hasText: 'tap for muscle levels' }).first().click(); await page.waitForTimeout(700);
+  ok(await has(/Muscle levels/), 'levels sheet did not open');
+});
 await t('char: stat tree group expands', async () => {
   await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /UPPER BODY/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(300);
   await page.getByText('UPPER BODY').first().click();
   await page.waitForTimeout(500);
   ok(await has(/Chest|CHEST/));
+  await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400);
 });
 await t('char: scrolls fully + padding ok', async () => {
   const r = await scrollScreenToBottom();

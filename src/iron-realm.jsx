@@ -27,7 +27,7 @@ import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
 
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.1.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -4338,6 +4338,12 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
         <path d="M3 18c0-3.87 3.13-7 7-7s7 3.13 7 7" stroke={c} strokeWidth="1.5"/>
       </svg>
     ),
+    progress: (c) => (
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+        <polyline points="2.5,15 7,10 10.5,13 17.5,5" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+        <polyline points="13,5 17.5,5 17.5,9.5" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
     program: (c) => (
       <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
         <rect x="3" y="2" width="14" height="16" rx="1.5" stroke={c} strokeWidth="1.5"/>
@@ -4350,6 +4356,7 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
 
   const TABS = [
     { id: "character", label: themeLabel(settings, "hunter", "Hunter") },
+    { id: "progress",  label: themeLabel(settings, "progress", "Progress") },
     { id: "program",   label: "Program" },
     { id: "menu",      label: "Home" },
     { id: "schedule",  label: themeLabel(settings, "schedule", "Schedule") },
@@ -5262,9 +5269,6 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         <div className="holo-divider" />
 
         {/* Mind & Spirit */}
-        <MindSpiritCard profile={st} settings={settings} onUpdateSettings={onUpdateSettings}
-          onLogMind={onLogMind} onAddTask={onAddMindTask}
-          onRemoveTask={onRemoveMindTask} onToggleTask={onToggleMindTask} />
 
         {/* Daily Rituals */}
         {(() => {
@@ -6138,26 +6142,6 @@ function ConditionReportModal({ profile, onClose }) {
   , document.body);
 }
 
-// Progress sheet — the volume trend and the shadow race used to sit as two
-// full cards on the Hunter screen; now one row opens them behind a switch.
-function ProgressModal({ workouts, onClose }) {
-  const [tab, setTab] = useState("trend");
-  return createPortal(
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
-      background: "rgba(0,0,0,.72)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: BG2, borderRadius: "20px 20px 0 0",
-        width: "100%", maxWidth: 480, padding: "18px 16px 40px", maxHeight: "85dvh", overflowY: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: TEXT }}>Progress</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
-        </div>
-        <Segmented value={tab} onChange={setTab} style={{ marginBottom: 14 }}
-          options={[{ id: "trend", label: "Volume trend" }, { id: "race", label: "Shadow race" }]} />
-        {tab === "trend" ? <VolumeChart workouts={workouts} /> : <ShadowRace workouts={workouts} />}
-      </div>
-    </div>, document.body);
-}
-
 function PRHistoryModal({ workouts, prs, onClose }) {
   const timeline = useMemo(() => getPRTimeline(workouts), [workouts]);
   const [expanded, setExpanded] = useState(null);
@@ -6948,19 +6932,47 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
   );
 }
 
-function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, onSetPatronLift, toast }) {
+// Progress screen — its own nav tab. The volume trend and shadow race sit
+// inline; records and condition open as sheets.
+function ProgressScreen({ st }) {
+  const [prHistoryOpen, setPrHistoryOpen] = useState(false);
+  const [heatmapOpen, setHeatmapOpen]     = useState(false);
+  const [conditionOpen, setConditionOpen] = useState(false);
+  const condEntries = Object.entries(st.condition || {});
+  const decaying = condEntries.filter(([, v]) => v < 0.995).length;
+  const prCount = Object.keys(st.prs || {}).length;
+  return (
+    <div style={{ height: "100dvh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+      <div style={{ padding: "22px 18px 0" }}>
+        <div className="card-in" style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, color: TEXT, marginBottom: 16 }}>Progress</div>
+        <div className="card-in card-in-1"><VolumeChart workouts={st.workouts || []} /></div>
+        <div className="card-in card-in-2"><ShadowRace workouts={st.workouts || []} /></div>
+        <ListGroup title="Records & condition">
+          <ListRow icon="★" label="PR history" value={`${prCount} tracked`} onClick={() => setPrHistoryOpen(true)} />
+          <ListRow icon="▦" label="Training heatmap" value="13 weeks" onClick={() => setHeatmapOpen(true)} />
+          <ListRow icon="◑" label="Condition report" sub="Detraining, recovery and what to train"
+            value={decaying ? `${decaying} decaying` : "All fresh"} tone={decaying ? RED : GREEN}
+            onClick={() => setConditionOpen(true)} last />
+        </ListGroup>
+      </div>
+      {conditionOpen && <ConditionReportModal profile={st} onClose={() => setConditionOpen(false)} />}
+      {prHistoryOpen && <PRHistoryModal workouts={st.workouts} prs={st.prs} onClose={() => setPrHistoryOpen(false)} />}
+      {heatmapOpen && <HeatmapModal workouts={st.workouts} onClose={() => setHeatmapOpen(false)} />}
+    </div>
+  );
+}
+
+function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, onSetPatronLift, toast,
+                          settings, onUpdateSettings, onLogMind, onAddMindTask, onRemoveMindTask, onToggleMindTask }) {
   const st = store.profiles[store.activeId];
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
 
   const specialStats = ["cardio", "calisthenics"];
   const [selectedMuscle, setSelectedMuscle]   = useState(null);
-  const [prHistoryOpen, setPrHistoryOpen]     = useState(false);
-  const [heatmapOpen, setHeatmapOpen]         = useState(false);
   const [patronPickerOpen, setPatronPickerOpen] = useState(false);
   const [relicVaultOpen, setRelicVaultOpen]     = useState(false);
-  const [conditionOpen, setConditionOpen]       = useState(false);
-  const [progressOpen, setProgressOpen]         = useState(false);
+  const [levelsOpen, setLevelsOpen]             = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -7038,11 +7050,11 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
         {/* ── HERO TILES ── */}
         <div className="card-in card-in-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
-          <StatTile label="Level" value={st.overallLevel} color={rank.color}
-            sub={`${current.toLocaleString()} / ${needed.toLocaleString()} XP`} progress={needed ? current / needed : 0} />
-          <StatTile label="Fresh muscles" value={condTotal ? `${freshCount}/${condTotal}` : "—"} color={condColor}
+          <StatTile label="Level" value={st.overallLevel} color={rank.color} onClick={() => setLevelsOpen(true)}
+            sub={`${current.toLocaleString()} / ${needed.toLocaleString()} XP · tap for muscle levels`} progress={needed ? current / needed : 0} />
+          <StatTile label="Condition" value={condTotal ? `${freshCount}/${condTotal}` : "—"} color={condColor}
             sub={condTotal === 0 ? "Log a workout to start tracking"
-                : decaying === 0 ? "Everything is in condition"
+                : decaying === 0 ? "All muscle groups at full strength"
                 : `${decaying} detraining · ${Math.round(avgCond * 100)}% avg condition`}
             progress={condTotal ? avgCond : 0} />
         </div>
@@ -7053,15 +7065,12 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
-        {/* ── PROGRESS ── */}
-        <ListGroup title="Progress">
-          <ListRow icon="◔" label="Volume & pace" sub="Weekly tonnage and this month vs last" value="12 weeks" onClick={() => setProgressOpen(true)} />
-          <ListRow icon="★" label="PR history" value={`${prCount} tracked`} onClick={() => setPrHistoryOpen(true)} />
-          <ListRow icon="▦" label="Training heatmap" value="13 weeks" onClick={() => setHeatmapOpen(true)} />
-          <ListRow icon="◑" label="Condition report" sub="Detraining, recovery and what to train"
-            value={decaying ? `${decaying} decaying` : "All fresh"} tone={decaying ? RED : GREEN}
-            onClick={() => setConditionOpen(true)} last />
-        </ListGroup>
+        {/* ── MIND & SPIRIT (moved here from Home in v2.1) ── */}
+        <div className="card-in card-in-3" style={{ marginBottom: 18 }}>
+          <MindSpiritCard profile={st} settings={settings} onUpdateSettings={onUpdateSettings}
+            onLogMind={onLogMind} onAddTask={onAddMindTask}
+            onRemoveTask={onRemoveMindTask} onToggleTask={onToggleMindTask} />
+        </div>
 
         {/* ── IDENTITY ── */}
         <ListGroup title="Identity">
@@ -7072,28 +7081,34 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <ListRow icon="◇" label="Relic vault" value={`${relicsOwned}/${RELIC_POOL.length}`} onClick={() => setRelicVaultOpen(true)} last />
         </ListGroup>
 
-        {/* ── MUSCLE LEVELS ── */}
-        <Reveal>
-          {sectionHead("Muscle levels")}
-          <StatTree
-            condition={st.condition || {}}
-            lastTrained={st.lastTrained || {}}
-            tree={STAT_TREE}
-            getGroupXP={getGroupXP}
-            getSuperXP={getSuperXP}
-            subStats={subStats}
-            subLevels={subLevels}
-            selectedMuscle={selectedMuscle}
-            onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
-          />
-        </Reveal>
       </div>
 
       {/* ── SHEETS ── */}
-      {progressOpen && <ProgressModal workouts={st.workouts || []} onClose={() => setProgressOpen(false)} />}
-      {conditionOpen && <ConditionReportModal profile={st} onClose={() => setConditionOpen(false)} />}
-      {prHistoryOpen && <PRHistoryModal workouts={st.workouts} prs={st.prs} onClose={() => setPrHistoryOpen(false)} />}
-      {heatmapOpen && <HeatmapModal workouts={st.workouts} onClose={() => setHeatmapOpen(false)} />}
+      {levelsOpen && createPortal(
+        <div onClick={() => setLevelsOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
+          background: "rgba(0,0,0,.72)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: BG2, borderRadius: "20px 20px 0 0",
+            width: "100%", maxWidth: 480, padding: "18px 16px 40px", maxHeight: "85dvh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: TEXT }}>Muscle levels</div>
+              <button onClick={() => setLevelsOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 12 }}>
+              Level {st.overallLevel} · {rank.label} · {current.toLocaleString()} / {needed.toLocaleString()} XP to next
+            </div>
+            <StatTree
+              condition={st.condition || {}}
+              lastTrained={st.lastTrained || {}}
+              tree={STAT_TREE}
+              getGroupXP={getGroupXP}
+              getSuperXP={getSuperXP}
+              subStats={subStats}
+              subLevels={subLevels}
+              selectedMuscle={selectedMuscle}
+              onSelectMuscle={(id) => setSelectedMuscle(prev => prev === id ? null : id)}
+            />
+          </div>
+        </div>, document.body)}
 
       {patronPickerOpen && (() => {
         const sorted = Object.entries(st.prs || {}).sort((a, b) => b[1] - a[1]);
@@ -8819,7 +8834,9 @@ export default function IronRealm() {
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
-      {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onSetPatronLift={handleSetPatronLift} toast={toast} />}
+      {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onSetPatronLift={handleSetPatronLift} toast={toast}
+        settings={settings} onUpdateSettings={handleUpdateSettings} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} />}
+      {screen === "progress"  && <ProgressScreen st={st} />}
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
       {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}

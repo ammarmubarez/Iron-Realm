@@ -44,9 +44,12 @@ profile/settings structure and the near-monochrome palette.
   pulse/shimmer/glitch keyframes, no aurora, particles, rune fields or tilt cards.
   Event moments (level-up ceremony, relic drop) are kept.
 - **Hunter screen** follows Opal's profile: avatar + rank pill → two `StatTile`s (Level,
-  Fresh muscles) → body matrix → `ListGroup`s (Progress / Identity / Account) →
-  muscle levels. Volume trend + Shadow race moved into a Progress sheet; Recovery +
-  Focus recommendations moved into the Condition report.
+  Condition) → body matrix → Mind & Spirit card → Identity `ListGroup` (signature lift,
+  relic vault). Tapping the Level tile opens a "Muscle levels" sheet with the `StatTree`.
+  Recovery + Focus recommendations live in the Condition report.
+- **Progress screen** (v2.1, nav tab right of Hunter): Volume trend + Shadow race inline,
+  then a `ListGroup` for PR history, Training heatmap and Condition report. Hunter-account
+  management lives in Settings (v2.0.1).
 
 The transforms are scripted and self-verifying: see `scripts/theme/`.
 

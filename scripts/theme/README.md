@@ -1,4 +1,4 @@
-# Theme transforms (v1 → v2.0)
+# Theme transforms (v1 → v2.x)
 
 Deterministic, self-verifying scripts that produced the v2.0 calm theme from the
 v1 "System" look. They are kept for the record and as a template for future
@@ -11,6 +11,8 @@ Run order (from the repo root, on the v1.16 source):
     python3 scripts/theme/01_calm_theme_and_hunter.py  # palette → ui/tokens, one font, strip glows, Hunter restructure
     python3 scripts/theme/02_labels_borders_runes.py   # string-literal labels, border alphas, rune field
     python3 scripts/theme/03_home_header.py            # Home header: orbs, rings, emblem → calm avatar
+    python3 scripts/theme/04_account_to_settings.py    # v2.0.1: hunter account panel → Settings sheet
+    python3 scripts/theme/05_progress_tab.py           # v2.1: Progress nav tab, Mind & Spirit → Hunter, Level tile → levels sheet
 
 They have already been applied to main; re-running them is expected to fail on
 the first anchor. See src/README.md for what the result looks like.

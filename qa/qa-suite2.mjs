@@ -123,7 +123,8 @@ const VIEWPORTS = [
 ];
 const SCREENS = [
   { tab: 'Home', marker: /DAILY MISSION/ },
-  { tab: 'Hunter', marker: /FRESH MUSCLES/ },
+  { tab: 'Hunter', marker: /BODY MATRIX/ },
+  { tab: 'Progress', marker: /VOLUME TREND/i },
   { tab: 'Program', marker: /PROGRAM|Push/i },
   { tab: 'Schedule', marker: /TODAY'S PLAN|REST/i },
   { tab: 'Database', marker: /EXERCISE COMPENDIUM/ },
@@ -180,11 +181,12 @@ async function modalChecks(label, opener, marker, closer = closeTopModal) {
   await t(`[modal] ${label}: closes`, async () => { await closer(); ok(!(await has(marker)), 'still open'); });
 }
 
-await nav('Home');
+await nav('Hunter');
 await modalChecks('mind-log', async () => {
   await page.getByText('+ LOG', { exact: true }).first().click(); await page.waitForTimeout(500);
 }, /LOG MIND & SPIRIT/);
 
+await nav('Home');
 await modalChecks('settings', async () => {
   await page.locator('button:has(svg circle)').first().click(); await page.waitForTimeout(600);
 }, /NAME AURA/);
@@ -205,7 +207,7 @@ await modalChecks('exercise-log', async () => {
   await page.waitForTimeout(700);
 }, /QUICK ADD SETS/);
 
-await nav('Hunter');
+await nav('Progress');
 await modalChecks('pr-history', async () => {
   await page.getByText('PR history').first().click(); await page.waitForTimeout(600);
 }, /PERSONAL RECORDS/);
@@ -214,6 +216,7 @@ await modalChecks('heatmap', async () => {
   await page.getByText('Training heatmap').first().click(); await page.waitForTimeout(600);
 }, /last \d+ weeks/i);
 
+await nav('Hunter');
 await modalChecks('relic-vault', async () => {
   await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /Relic vault/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(300);
@@ -349,13 +352,13 @@ await t('[scroll] tab switch resets scroll to top', async () => {
   const c = await container();
   ok(c.top <= 4, `Home reopened at scrollTop ${c.top}`);
 });
-await t('[scroll] stat tree expansion content reachable', async () => {
+await t('[scroll] levels sheet: tree expands and stays reachable', async () => {
   await nav('Hunter');
-  await wheelToBottom();
-  await page.getByText('UPPER BODY').first().click();
-  await page.waitForTimeout(500);
-  const r = await wheelToBottom();
-  ok(r.reached, 'expanded tree bottom unreachable');
+  await page.locator('[role="button"]').filter({ hasText: 'tap for muscle levels' }).first().click(); await page.waitForTimeout(700);
+  await page.getByText('UPPER BODY').first().click(); await page.waitForTimeout(500);
+  const r = await modalInnerReach();
+  ok(r.fits || r.reached, 'expanded tree bottom unreachable inside the sheet');
+  await closeTopModal();
 });
 await t('[scroll] sticky header remains during Home scroll', async () => {
   await nav('Home');
@@ -371,6 +374,7 @@ await t('[scroll] sticky header remains during Home scroll', async () => {
 
 // ═══ G. BACKGROUND-LEAK on std viewport for the two most-used modals ═══
 await t('[leak-std] mind-log backdrop leak-free after deep scroll', async () => {
+  await nav('Hunter');
   await wheelToBottom(); await page.waitForTimeout(200);
   await page.evaluate(() => { const scs = [...document.querySelectorAll('div')].filter(d => (d.getAttribute('style') || '').includes('100dvh')); if (scs[0]) scs[0].scrollTop = 300; });
   await page.getByText('+ LOG', { exact: true }).first().click(); await page.waitForTimeout(500);
@@ -379,7 +383,7 @@ await t('[leak-std] mind-log backdrop leak-free after deep scroll', async () => 
   await closeTopModal();
 });
 await t('[leak-std] settings backdrop leak-free', async () => {
-  await wheelTop();
+  await nav('Home'); await wheelTop();
   await page.locator('button:has(svg circle)').first().click(); await page.waitForTimeout(600);
   const leak = await leakAt(20, 60);
   ok(Math.abs(leak.moved) <= 2, `moved ${leak.moved}px`);

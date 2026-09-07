@@ -21,6 +21,7 @@ export const MONARCHS = [
     labels: {
       logIt:       "ARISE",
       hunter:      "SOVEREIGN",
+      progress:    "CONQUESTS",
       database:    "SHADOW ARCHIVE",
       schedule:    "CAMPAIGNS",
       workout:     "BATTLE LOG",
@@ -45,6 +46,7 @@ export const MONARCHS = [
     labels: {
       logIt:       "DEVOUR",
       hunter:      "DESTROYER",
+      progress:    "TEMPERING",
       database:    "BESTIARY",
       schedule:    "HUNT",
       workout:     "RAMPAGE",
@@ -69,6 +71,7 @@ export const MONARCHS = [
     labels: {
       logIt:       "LOG IT",
       hunter:      "HUNTER",
+      progress:    "PROGRESS",
       database:    "DATABASE",
       schedule:    "SCHEDULE",
       workout:     "WORKOUT",
@@ -93,6 +96,7 @@ export const MONARCHS = [
     labels: {
       logIt:       "EXECUTE",
       hunter:      "ENTITY",
+      progress:    "TELEMETRY",
       database:    "SKILL REGISTRY",
       schedule:    "PROTOCOL",
       workout:     "SYSTEM LOG",

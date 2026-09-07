@@ -6,17 +6,18 @@
 
 import { BG2, TEXT, MUTED, FONT_DISPLAY, TRACK_CAPS } from "./tokens";
 
-export default function StatTile({ label, value, sub, progress, color = TEXT, style }) {
+export default function StatTile({ label, value, sub, progress, color = TEXT, style, onClick }) {
   const pct = progress == null ? null : Math.max(0, Math.min(1, progress));
   return (
-    <div style={{ background: BG2, borderRadius: 16, padding: "16px 16px 14px", minWidth: 0, ...style }}>
+    <div onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined}
+      style={{ background: BG2, borderRadius: 16, padding: "16px 16px 14px", minWidth: 0, cursor: onClick ? "pointer" : "default", ...style }}>
       <div style={{ fontFamily: FONT_DISPLAY, fontSize: 40, fontWeight: 700, lineHeight: 1, color,
         letterSpacing: -0.5, fontVariantNumeric: "tabular-nums" }}>
         {value}
       </div>
       <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 600, color: MUTED,
         letterSpacing: TRACK_CAPS, textTransform: "uppercase", marginTop: 6 }}>
-        {label}
+        {label}{onClick && <span aria-hidden="true" style={{ marginLeft: 6, opacity: .6 }}>›</span>}
       </div>
       {sub && (
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginTop: 8, lineHeight: 1.3 }}>
