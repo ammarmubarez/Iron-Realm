@@ -103,7 +103,7 @@ await page.waitForTimeout(2200);
 // ═══ SUITE 1: HOME ═══
 await t('home: renders header name', async () => ok(await has(/HUNTER/)));
 await t('home: rank + level shown', async () => ok(await has(/LVL \d+/)));
-await t('home: three.js particle canvas present', async () => ok(await page.evaluate(() => !!document.querySelector('canvas'))));
+await t('home: calm theme — no ambient particle canvas', async () => ok(await page.evaluate(() => !document.querySelector('canvas'))));
 await t('home: daily mission card', async () => ok(await has(/DAILY MISSION/)));
 await t('home: daily tip card', async () => ok(await has(/DAILY TIP/)));
 await t('home: tip expands on tap', async () => {
@@ -280,7 +280,7 @@ await t('settings: modal inner content scrolls', async () => {
 await t('settings: closes', async () => {
   await page.locator('button').filter({ hasText: '×' }).last().click();
   await page.waitForTimeout(400);
-  ok(!(await has(/\/\/ ACCOUNT/)));
+  ok(!(await has(/NAME AURA/)));
 });
 await t('home: equipped aura class applied to name', async () => {
   const cls = await page.evaluate(() => {
@@ -291,25 +291,24 @@ await t('home: equipped aura class applied to name', async () => {
 });
 
 // ═══ SUITE 4: CHARACTER SCREEN ═══
-await t('char: navigates', async () => { await nav('Hunter'); ok(await has(/OVERALL RANK/)); });
-await t('char: soul core canvas renders', async () => ok(await page.evaluate(() => document.querySelectorAll('canvas').length >= 1)));
+await t('char: navigates', async () => { await nav('Hunter'); ok(await has(/FRESH MUSCLES/)); });
+await t('char: hero tiles render (level + condition)', async () => ok(await has(/LEVEL/) && await has(/FRESH MUSCLES/)));
 await t('char: body matrix present', async () => ok(await has(/BODY MATRIX/)));
-await t('char: atrophy banner (shoulders idle 80d)', async () => ok(await has(/ATROPHY ACTIVE/)));
-await t('char: profile switcher shows profile chip', async () => ok(await has(/\[ HUNTERS \]/)));
+await t('char: condition tile reports detraining (cardio idle 40d)', async () => ok(await has(/detraining/)));
+await t('char: account group present', async () => ok(await has(/Switch hunter/) && await has(/New hunter/)));
 await t('char: edit profile opens + saves age', async () => {
-  await page.getByText('EDIT', { exact: true }).first().click(); await page.waitForTimeout(500);
+  await page.getByText('Edit profile').first().click(); await page.waitForTimeout(500);
+  ok(await has(/Save changes/), 'edit form did not open');
   const age = page.locator('input[type="number"]').first();
   await age.fill('26');
-  await page.getByText(/SAVE|APPLY|CONFIRM/).first().click().catch(async () => {
-    await page.getByText('EDIT', { exact: true }).first().click(); // fallback: cancel
-  });
+  await page.getByText('Save changes').first().click();
   await page.waitForTimeout(500);
-  ok(true);
+  ok((await profile()).age === 26, 'age not saved');
 });
 await t('char: relic vault opens', async () => {
-  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /RELIC VAULT/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
+  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /Relic vault/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(300);
-  await page.getByText('RELIC VAULT').first().click();
+  await page.getByText('Relic vault').first().click();
   await page.waitForTimeout(600);
   ok(await has(/Card frames dropped by setting new PRs/));
 });
@@ -318,7 +317,7 @@ await t('vault: owned relic equipable', async () => {
   await page.waitForTimeout(500);
   ok((await profile()).cosmetics.equippedRelic === 'iron_frame');
 });
-await t('vault: locked relic shows SET A PR', async () => ok(await has(/SET A PR/)));
+await t('vault: locked relic shows Set a PR', async () => ok(await has(/Set a PR/)));
 await t('vault: unequip works', async () => {
   await page.getByText('Iron Frame').first().click();
   await page.waitForTimeout(500);
@@ -329,25 +328,36 @@ await t('vault: closes', async () => {
   ok(!(await has(/Card frames dropped/)));
 });
 await t('char: PR history opens with data', async () => {
-  await page.getByText('PR HISTORY').first().click(); await page.waitForTimeout(600);
+  await page.getByText('PR history').first().click(); await page.waitForTimeout(600);
   ok(await has(/Bench Press/));
 });
 await t('char: PR history closes', async () => {
   await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400); ok(true);
 });
 await t('char: heatmap opens', async () => {
-  await page.getByText('TRAINING HEATMAP').first().click(); await page.waitForTimeout(600);
-  ok(await has(/WEEKS|MON|Mon/));
+  await page.getByText('Training heatmap').first().click(); await page.waitForTimeout(600);
+  ok(await has(/last \d+ weeks/i));
 });
 await t('char: heatmap closes', async () => {
   await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400); ok(true);
 });
-await t('char: special attributes badges', async () => ok(await has(/ENDURANCE|AGILITY/)));
-await t('char: mind & spirit badges on char screen', async () => ok(await has(/\[ MIND & SPIRIT \]/)));
-await t('char: volume chart', async () => ok(await has(/VOLUME TREND/)));
-await t('char: shadow race renders with verdict', async () => ok(await has(/SHADOW RACE/) && await has(/AHEAD|BEHIND/)));
-await t('char: recovery grid', async () => ok(await has(/MUSCLE RECOVERY/)));
-await t('char: muscle levels tree', async () => ok(await has(/\[ MUSCLE LEVELS \]/)));
+await t('char: progress group rows', async () => ok(await has(/Volume & pace/) && await has(/PR history/) && await has(/Training heatmap/)));
+await t('char: identity group rows', async () => ok(await has(/Signature lift/) && await has(/Relic vault/)));
+await t('char: progress sheet — volume trend', async () => {
+  await page.getByText('Volume & pace').first().click(); await page.waitForTimeout(700);
+  ok(await has(/VOLUME TREND/i), 'volume chart not in progress sheet');
+});
+await t('char: progress sheet — shadow race tab', async () => {
+  await page.getByRole('tab', { name: 'Shadow race' }).click(); await page.waitForTimeout(600);
+  ok(await has(/SHADOW RACE/) && await has(/AHEAD|BEHIND/));
+  await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400);
+});
+await t('char: condition sheet — recovery grid inside', async () => {
+  await page.getByText('Condition report').first().click(); await page.waitForTimeout(800);
+  ok(await has(/MUSCLE RECOVERY/), 'recovery grid not in condition report');
+  await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400);
+});
+await t('char: muscle levels tree', async () => ok(await has(/MUSCLE LEVELS/)));
 await t('char: stat tree group expands', async () => {
   await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /UPPER BODY/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(300);
@@ -554,13 +564,8 @@ await t('global: navbar always visible', async () => {
   });
   ok(vis, 'navbar missing or mispositioned');
 });
-await t('global: aurora + particles behind content', async () => {
-  const z = await page.evaluate(() => {
-    const canvas = document.querySelector('canvas');
-    const wrap = canvas?.parentElement;
-    return wrap ? getComputedStyle(wrap).zIndex : null;
-  });
-  ok(z === '-1', `particle z-index ${z}`);
+await t('global: calm theme — no ambient layers', async () => {
+  ok(await page.evaluate(() => !document.querySelector('.aurora-bg') && !document.querySelector('canvas')), 'ambient layer present');
 });
 await t('global: zero page errors across entire run', async () => ok(pageErrors.length === 0, pageErrors.join(' | ')));
 
@@ -588,8 +593,8 @@ await t('fix: atrophy banner does NOT false-flag EMG-maintained shoulders', asyn
   await nav('Hunter');
   await page.waitForTimeout(1200);
   const body = await text();
-  ok(/ATROPHY ACTIVE/.test(body), 'banner missing entirely');
-  ok(/1 muscle group det/.test(body), `expected exactly 1 decaying group (cardio); banner says: ${(body.match(/\d+ muscle groups? det[^.]*/) || ['?'])[0]}`);
+  ok(/detraining/.test(body), 'condition tile shows no detraining');
+  ok(/1 detraining/.test(body), `expected exactly 1 decaying group (cardio); tile says: ${(body.match(/\d+ detraining[^\n]*/) || ['?'])[0]}`);
 });
 
 // ─── report ───

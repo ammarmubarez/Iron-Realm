@@ -11,6 +11,13 @@ import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, C
 import { DAILY_TIPS } from "./data/tips";
 import { MIND_ACTIVITIES } from "./data/mind";
 import Button, { buttonCSS } from "./ui/Button";
+import ListGroup, { ListRow } from "./ui/ListGroup";
+import StatTile from "./ui/StatTile";
+import Segmented from "./ui/Segmented";
+// ACCENT / ACCENT2 stay local `let`s — they are re-tinted at runtime by the
+// brightness and monarch-theme settings, so they cannot be read-only imports.
+import { BG, BG2, BG3, DARK1, TEXT, MUTED, GOLD, GOLD2, RED, GREEN,
+         FONT_DISPLAY, TRACK, TRACK_CAPS } from "./ui/tokens";
 
 import * as authService from "./services/auth";
 import * as syncService from "./services/sync";
@@ -19,28 +26,13 @@ import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
-// Visual FX use three.js (~130 KB gz) — loaded on demand in their own chunk so
-// they never block first paint. Each usage is wrapped in <Suspense fallback={null}>.
-const SystemParticles = lazy(() => import("./fx/SystemParticles"));
-const SoulCore        = lazy(() => import("./fx/SoulCore"));
-const CompanionOrb    = lazy(() => import("./fx/CompanionOrb"));
 
-const APP_VERSION = "1.16.0";
+const APP_VERSION = "2.0.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
-const BG      = "#03060f";   // void black
-const BG2     = "#070d1a";   // system panel dark
-const BG3     = "#0b1425";   // inner panel
 let ACCENT  = "#00d4ff";   // system electric cyan
 let ACCENT2 = "#0044aa";   // deep system blue
-const GOLD    = "#e8c44a";   // hunter rank gold
-const GOLD2   = "#ffe680";   // bright gold highlight
-const TEXT    = "#d0e8ff";   // system text — cold blue-white
-const MUTED   = "#3a5878";   // inactive / dim
-const RED     = "#ff3a3a";   // danger / enemy red
-const GREEN   = "#00ff88";   // system success / buff
 const CYAN2   = "#00ffee";   // highlight teal
-const DARK1   = "#020508";   // deepest void
 
 // Weight unit helper — reads live from store settings
 // Components call wtLabel() for "lbs"/"kg" and wtVal(lbs) to convert
@@ -118,7 +110,7 @@ function MuscleIcon({ muscle, size = 28 }) {
       <polygon points="14,2 25,8 25,20 14,26 3,20 3,8"
         fill={meta.color + "22"} stroke={meta.color} strokeWidth="1.2" />
       <text x="14" y="17" textAnchor="middle"
-        style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7, fontWeight: 700, fill: meta.color, letterSpacing: 0.5 }}>
+        style={{ fontFamily: FONT_DISPLAY, fontSize: 7, fontWeight: 700, fill: meta.color, letterSpacing: TRACK }}>
         {meta.glyph}
       </text>
     </svg>
@@ -710,7 +702,7 @@ function getMuscleRank(level) {
 
 // ─── CSS — SOLO LEVELING SYSTEM UI ───────────────────────────────────────────
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
   ${buttonCSS}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { overscroll-behavior-y: none; }
@@ -728,52 +720,19 @@ const CSS = `
   ::-webkit-scrollbar-thumb { background: ${ACCENT}66; border-radius: 0; }
 
   /* ── SOLO LEVELING KEYFRAMES ── */
-  @keyframes runeFloat { 0%,100%{transform:translateY(0) rotate(0deg);opacity:.12} 50%{transform:translateY(-12px) rotate(6deg);opacity:.28} }
-  @keyframes sysGlow { 0%,100%{text-shadow:0 0 8px ${ACCENT},0 0 20px ${ACCENT}44} 50%{text-shadow:0 0 16px ${ACCENT},0 0 40px ${ACCENT}88,0 0 60px ${ACCENT}33} }
-  @keyframes borderPulse { 0%,100%{border-color:${ACCENT}33;box-shadow:0 0 8px ${ACCENT}11} 50%{border-color:${ACCENT};box-shadow:0 0 20px ${ACCENT}44,inset 0 0 20px ${ACCENT}0a} }
   @keyframes slideUp { from{transform:translateY(24px);opacity:0} to{transform:translateY(0);opacity:1} }
   @keyframes fadeIn { from{opacity:0} to{opacity:1} }
   @keyframes xpFill { from{width:0} to{width:var(--w)} }
-  @keyframes scanLine { 0%{top:-100%} 100%{top:200%} }
   @keyframes toastIn { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
-  @keyframes hexPulse { 0%,100%{opacity:.6;transform:scale(1)} 50%{opacity:1;transform:scale(1.04)} }
-  @keyframes sysBoot { 0%{clip-path:inset(0 100% 0 0)} 100%{clip-path:inset(0 0% 0 0)} }
-  @keyframes cornerBlink { 0%,90%,100%{opacity:1} 95%{opacity:.3} }
 
   /* ── v1.9 MOTION PACK ── */
-  @keyframes auraSpin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-  @keyframes ringSpinRev { from{transform:rotate(360deg)} to{transform:rotate(0deg)} }
-  @keyframes shimmerSweep { 0%{left:-60%} 100%{left:130%} }
-  @keyframes glitchIn {
-    0%{clip-path:inset(40% 0 42% 0);transform:translateX(-8px);opacity:0}
-    15%{clip-path:inset(8% 0 64% 0);transform:translateX(5px);opacity:.7}
-    30%{clip-path:inset(54% 0 6% 0);transform:translateX(-4px);opacity:.85}
-    45%{clip-path:inset(0 0 0 0);transform:translateX(3px);opacity:1}
-    60%{clip-path:inset(22% 0 38% 0);transform:translateX(-2px)}
-    75%{clip-path:inset(0 0 0 0);transform:translateX(1px)}
-    100%{clip-path:inset(0 0 0 0);transform:translateX(0);opacity:1}
-  }
-  @keyframes cardIn { from{transform:translateY(20px) scale(.97);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+  @keyframes cardIn { from{transform:translateY(10px);opacity:0} to{transform:none;opacity:1} }
   @keyframes orbRise { 0%{transform:translateY(0) translateX(0);opacity:0} 12%{opacity:.8} 85%{opacity:.25} 100%{transform:translateY(-64px) translateX(var(--drift,6px));opacity:0} }
-  @keyframes breatheGlow { 0%,100%{border-color:${ACCENT}33;box-shadow:inset 0 0 0 ${ACCENT}00} 50%{border-color:${ACCENT}99;box-shadow:inset 0 0 18px ${ACCENT}0c} }
-  @keyframes emblemPulse { 0%,100%{transform:scale(1);filter:brightness(1)} 50%{transform:scale(1.06);filter:brightness(1.3)} }
-
-  .glitch-in { animation: glitchIn .7s linear both; }
   .card-in   { animation: cardIn .55s cubic-bezier(.16,1,.3,1) both; }
   .card-in-1 { animation-delay: .06s } .card-in-2 { animation-delay: .14s }
   .card-in-3 { animation-delay: .22s } .card-in-4 { animation-delay: .30s }
   .card-in-5 { animation-delay: .38s } .card-in-6 { animation-delay: .46s }
-  .breathe   { animation: breatheGlow 3.2s ease-in-out infinite; }
-  .card-in.breathe { animation: cardIn .55s cubic-bezier(.16,1,.3,1) both, breatheGlow 3.2s ease-in-out .8s infinite; }
   .shimmer-bar { position: relative; overflow: hidden; }
-  .shimmer-bar::after {
-    content:''; position:absolute; top:0; bottom:0; left:-60%; width:45%;
-    background: linear-gradient(100deg, transparent, #ffffff3e, transparent);
-    animation: shimmerSweep 2.6s ease-in-out 1.2s infinite;
-    pointer-events: none;
-  }
-  .emblem-ring  { animation: auraSpin 14s linear infinite; transform-origin: center; }
-  .emblem-ring2 { animation: ringSpinRev 9s linear infinite; transform-origin: center; }
   button:active { transform: scale(.96); transition: transform .08s; }
 
   /* ── v1.9 SCROLL + INTERACTIVE PACK ── */
@@ -818,7 +777,6 @@ const CSS = `
   @keyframes shockwave { from{transform:scale(.2);opacity:.9} to{transform:scale(4.5);opacity:0} }
   @keyframes burst { from{transform:translate(0,0) scale(1);opacity:1} to{transform:translate(var(--tx),var(--ty)) scale(.15);opacity:0} }
   @keyframes slamIn { 0%{transform:scale(3.2);opacity:0;filter:blur(10px)} 60%{transform:scale(.92);opacity:1;filter:blur(0)} 100%{transform:scale(1)} }
-  @keyframes relicGlowPulse { 0%,100%{box-shadow:0 0 12px var(--relic)55} 50%{box-shadow:0 0 26px var(--relic), 0 0 46px var(--relic)44} }
   @keyframes screenWipe { from{opacity:0} to{opacity:1} }
   /* fill must be 'backwards', not 'both': a retained transform animation turns
      this wrapper into a containing block, which re-anchors every position:fixed
@@ -847,13 +805,6 @@ const CSS = `
     background: radial-gradient(circle at var(--mgx, 50%) var(--mgy, 50%),
       ${ACCENT}44 0%, ${ACCENT}11 28%, transparent 60%); }
   .magnet-btn:hover .magnet-glow, .magnet-btn:focus-visible .magnet-glow { opacity: 1; }
-  @keyframes auroraDrift { 0%{transform:translate(0,0) rotate(0deg)} 50%{transform:translate(-6%, 4%) rotate(2deg)} 100%{transform:translate(0,0) rotate(0deg)} }
-  .aurora-bg { position: fixed; inset: -20%; z-index: -2; pointer-events: none; opacity: .55;
-    background:
-      radial-gradient(ellipse at 22% 32%, ${ACCENT}33 0%, transparent 48%),
-      radial-gradient(ellipse at 78% 22%, #b455ff2a 0%, transparent 50%),
-      radial-gradient(ellipse at 62% 78%, ${GOLD}22 0%, transparent 50%);
-    filter: blur(20px); animation: auroraDrift 22s ease-in-out infinite; }
 
   /* ── v1.9.2 POLISH ── */
   /* Holographic gradient title — chromatic shift through cyan/violet/gold */
@@ -959,42 +910,23 @@ const CSS = `
     box-shadow: 0 0 20px ${ACCENT}22, inset 0 0 20px ${ACCENT}05;
   }
 
-  /* ── BUTTONS ── */
-  .btn-primary {
-    background: linear-gradient(90deg, ${ACCENT2}cc, ${ACCENT}33);
-    color: ${ACCENT}; border: 1px solid ${ACCENT}88;
-    border-top: 1px solid ${ACCENT}cc;
-    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
-    font-family: 'Orbitron', sans-serif; font-weight: 700;
-    letter-spacing: 3px; cursor: pointer; transition: all .15s;
-    text-shadow: 0 0 10px ${ACCENT};
+  /* ── BUTTONS (legacy classes, now pill-shaped like ui/Button) ── */
+  .btn-primary, .btn-gold {
+    border-radius: 999px; border: 1px solid transparent; cursor: pointer;
+    font-family: 'Rajdhani', sans-serif; font-weight: 600; letter-spacing: .2px;
+    transition: background .18s ease, color .18s ease;
   }
-  .btn-primary:hover {
-    background: linear-gradient(90deg, ${ACCENT}44, ${ACCENT}66);
-    box-shadow: 0 0 24px ${ACCENT}55, inset 0 0 12px ${ACCENT}22;
-    color: #fff;
-  }
-  .btn-gold {
-    background: linear-gradient(90deg, #3a2800cc, ${GOLD}55);
-    color: ${GOLD2}; border: 1px solid ${GOLD}88;
-    border-top: 1px solid ${GOLD}dd;
-    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
-    font-family: 'Orbitron', sans-serif; font-weight: 700;
-    letter-spacing: 3px; cursor: pointer; transition: all .15s;
-    text-shadow: 0 0 10px ${GOLD};
-  }
-  .btn-gold:hover {
-    background: linear-gradient(90deg, ${GOLD}33, ${GOLD}66);
-    box-shadow: 0 0 24px ${GOLD}55;
-    color: #fff;
-  }
+  .btn-primary { background: #f3efe9; color: #111417; }
+  .btn-primary:hover { background: #ffffff; }
+  .btn-gold { background: ${GOLD}22; color: ${GOLD2}; border-color: ${GOLD}55; }
+  .btn-gold:hover { background: ${GOLD}33; }
 
   /* ── INPUTS ── */
   .input-field {
     background: ${DARK1}; border: 1px solid ${ACCENT}44;
     border-bottom: 1px solid ${ACCENT}88;
     border-radius: 0;
-    color: ${ACCENT}; font-family: 'Orbitron', sans-serif; font-size: 14px;
+    color: ${ACCENT}; font-family: 'Rajdhani', sans-serif; font-size: 14px;
     padding: 10px 14px; width: 100%; outline: none; transition: all .2s;
     caret-color: ${ACCENT};
   }
@@ -1112,22 +1044,14 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
 function BodyFigure({ levels, subLevels, gender, highlight }) {
   const isFemale = gender === "female";
   return (
-    <div style={{ position: "relative", padding: "26px 10px 18px", overflow: "hidden",
-      background: `radial-gradient(ellipse at 50% 40%, ${ACCENT}08 0%, transparent 70%)` }}>
-      {/* Holographic corner brackets */}
-      <div className="holo-corner" style={{ top: 6, left: 6, borderTopWidth: 1.5, borderLeftWidth: 1.5 }} />
-      <div className="holo-corner" style={{ top: 6, right: 6, borderTopWidth: 1.5, borderRightWidth: 1.5 }} />
-      <div className="holo-corner" style={{ bottom: 6, left: 6, borderBottomWidth: 1.5, borderLeftWidth: 1.5 }} />
-      <div className="holo-corner" style={{ bottom: 6, right: 6, borderBottomWidth: 1.5, borderRightWidth: 1.5 }} />
-      <div style={{ position: "absolute", top: 10, left: 0, right: 0, textAlign: "center",
-        fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 5,
-        opacity: 0.7, animation: "cornerBlink 4s linear infinite" }}>{"// BODY MATRIX"}</div>
+    // Calm theme: the figure stands on its own — the hologram frame, corner
+    // brackets, scan sweep and inner caption are gone; the card around it
+    // carries the section header now.
+    <div style={{ position: "relative", padding: "6px 10px 10px", overflow: "hidden" }}>
       <div style={{ display: "flex", gap: 2, width: "100%", justifyContent: "center" }}>
         <SvgFigure svgKey={isFemale ? "femaleFront" : "maleFront"} levels={levels} subLevels={subLevels} showCardio highlight={highlight} />
         <SvgFigure svgKey={isFemale ? "femaleBack"  : "maleBack"}  levels={levels} subLevels={subLevels} highlight={highlight} />
       </div>
-      {/* System scan sweep */}
-      <div className="body-scan" />
     </div>
   );
 }
@@ -1156,25 +1080,8 @@ function Reveal({ children, dir = "up", delay = 0, style, className = "", ...res
 }
 
 // Pointer-tracking 3D tilt with a light glare that follows the finger/cursor
-function TiltCard({ children, max = 7, style }) {
-  const ref = useRef(null);
-  const move = e => {
-    const el = ref.current; if (!el) return;
-    const r = el.getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width - 0.5;
-    const py = (e.clientY - r.top) / r.height - 0.5;
-    el.style.transform = `perspective(700px) rotateY(${(px * max).toFixed(2)}deg) rotateX(${(-py * max).toFixed(2)}deg) scale(1.012)`;
-    el.style.setProperty("--gx", `${((px + 0.5) * 100).toFixed(1)}%`);
-    el.style.setProperty("--gy", `${((py + 0.5) * 100).toFixed(1)}%`);
-  };
-  const reset = () => { const el = ref.current; if (el) el.style.transform = ""; };
-  return (
-    <div ref={ref} className="tilt-wrap" style={style}
-      onPointerMove={move} onPointerLeave={reset} onPointerUp={reset} onPointerCancel={reset}>
-      {children}
-    </div>
-  );
-}
+// Tilt-to-pointer card effect retired in the calm theme; kept as a plain wrapper so call sites are untouched.
+function TiltCard({ children, style }) { return <div style={style}>{children}</div>; }
 
 // Animated number: eases from previous value to the new one
 function CountUp({ value, decimals = 0, duration = 900, locale = false }) {
@@ -1247,23 +1154,23 @@ function LevelUpCeremony({ level, settings, onDone }) {
       ))}
       {parts.map((p, i) => (
         <span key={i} style={{ position: "absolute", width: 5, height: 5, borderRadius: "50%",
-          background: p.gold ? GOLD : rank.color, boxShadow: `0 0 8px ${p.gold ? GOLD : rank.color}`,
+          background: p.gold ? GOLD : rank.color, 
           "--tx": `${p.tx}px`, "--ty": `${p.ty}px`,
           animation: `burst ${p.d}s cubic-bezier(.16,1,.3,1) ${0.15 + p.delay}s both` }} />
       ))}
-      <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, letterSpacing: 7,
-        color: ACCENT, textShadow: `0 0 12px ${ACCENT}`, marginBottom: 10, textAlign: "center", padding: "0 20px" }}>
+      <div className="glitch-in" style={{ fontFamily: FONT_DISPLAY, fontSize: 13, letterSpacing: TRACK,
+        color: ACCENT, marginBottom: 10, textAlign: "center", padding: "0 20px" }}>
         {themeLabel(settings, "levelUp", "LEVEL UP!")}
       </div>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 84, fontWeight: 900, lineHeight: 1,
-        color: rank.color, textShadow: `0 0 30px ${rank.color}, 0 0 80px ${rank.color}66`,
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 84, fontWeight: 900, lineHeight: 1,
+        color: rank.color, 
         animation: "slamIn .55s cubic-bezier(.16,1,.3,1) .12s both" }}>{level}</div>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, letterSpacing: 4, color: rank.color,
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, letterSpacing: TRACK, color: rank.color,
         opacity: 0.85, marginTop: 12, animation: "fadeIn .4s ease-out .5s both" }}>
         {rank.rank}-RANK · {rank.label.toUpperCase()}
       </div>
       <div style={{ position: "absolute", bottom: 48, fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
-        color: MUTED, letterSpacing: 3, animation: "fadeIn .4s ease-out 1.2s both" }}>TAP TO CONTINUE</div>
+        color: MUTED, letterSpacing: TRACK, animation: "fadeIn .4s ease-out 1.2s both" }}>TAP TO CONTINUE</div>
     </div>, document.body)
   );
 }
@@ -1272,20 +1179,19 @@ function XPBar({ current, needed, color = ACCENT, height = 6 }) {
   const pct = Math.min(100, (current / needed) * 100);
   return (
     <div style={{
-      background: DARK1, border: `1px solid ${color}33`,
+      background: DARK1, border: `1px solid ${color}22`,
       borderRadius: 0, height: height + 2, overflow: "hidden", position: "relative"
     }}>
       <div className="xp-flow" style={{
         width: `${pct}%`, height: "100%",
         background: `linear-gradient(90deg, ${color}66, ${color}, ${color}cc)`,
-        boxShadow: `0 0 8px ${color}, 0 0 16px ${color}44`,
+        
         transition: "width .8s cubic-bezier(0.16,1,0.3,1)",
         position: "relative"
       }}>
         <div style={{
           position: "absolute", right: 0, top: 0, bottom: 0, width: 3,
-          background: "#fff", opacity: 0.8, boxShadow: `0 0 6px #fff`
-        }}/>
+          background: "#fff", opacity: 0.8}}/>
       </div>
     </div>
   );
@@ -1314,9 +1220,9 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
             <div onClick={() => toggleSuper(superNode.key)} style={{
               background: `linear-gradient(90deg, ${superNode.color}14, ${DARK1})`,
               border: `1px solid ${isOpenS ? superNode.color + "88" : superNode.color + "44"}`,
-              borderLeft: `3px solid ${superNode.color}`,
+              borderLeft: `2px solid ${superNode.color}aa`,
               padding: "11px 14px",
-              clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)",
+              
               cursor: "pointer", transition: "border-color .2s",
               display: "flex", alignItems: "center", gap: 10,
             }}>
@@ -1324,21 +1230,21 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
               <div style={{
                 width: 34, height: 34, flexShrink: 0,
                 background: `linear-gradient(135deg, ${superNode.color}33, ${superNode.color}11)`,
-                border: `1px solid ${superNode.color}66`,
-                clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)",
+                border: `1px solid ${superNode.color}22`,
+                
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
                   fontWeight: 900, color: superNode.color }}>{superNode.glyph}</span>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
-                    color: superNode.color, letterSpacing: 2, textShadow: `0 0 8px ${superNode.color}` }}>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700,
+                    color: superNode.color, letterSpacing: TRACK}}>
                     {superNode.label.toUpperCase()}
                   </span>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10,
+                    <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10,
                       color: superRank.color, fontWeight: 900 }}>{superRank.rank}</span>
                     <span style={{ color: superNode.color, fontSize: 10, opacity: 0.7,
                       transform: isOpenS ? "rotate(180deg)" : "rotate(0deg)",
@@ -1347,7 +1253,7 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                 </div>
                 <XPBar current={sCur} needed={sNeed} color={superNode.color} />
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 1 }}>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK }}>
                     LVL {superLvl}
                   </span>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>
@@ -1360,7 +1266,7 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
             {/* ── Layer 2: Muscle groups (expanded from super-group) ── */}
             {isOpenS && (
               <div style={{
-                borderLeft: `3px solid ${superNode.color}33`,
+                borderLeft: `3px solid ${superNode.color}22`,
                 marginLeft: 6,
                 paddingLeft: 6,
                 display: "flex", flexDirection: "column", gap: 4,
@@ -1391,9 +1297,8 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                             <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
-                              color: meta.color, letterSpacing: 1.5,
-                              textShadow: `0 0 6px ${meta.color}` }}>
+                            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+                              color: meta.color, letterSpacing: TRACK}}>
                               {meta.name.toUpperCase()}
                             </span>
                             {(() => {
@@ -1407,7 +1312,7 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                                 ? Math.floor((Date.now() - lastTrained[group.key]) / 86400000) : null;
                               return (
                                 <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8,
-                                  color: RED, background: `${RED}14`, border: `1px solid ${RED}33`,
+                                  color: RED, background: `${RED}14`, border: `1px solid ${RED}22`,
                                   borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap", flexShrink: 0 }}>
                                   ▼{lost}%{days != null ? ` · ${days}d` : ""}
                                 </span>
@@ -1416,7 +1321,7 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                             </span>
                             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                               <div style={{ textAlign: "right" }}>
-                            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
+                            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
                               color: groupRank.color, fontWeight: 700 }}>{groupRank.rank}</span>
                             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8,
                               color: groupRank.color, opacity: 0.8 }}>{groupRank.label}</div>
@@ -1430,8 +1335,8 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                           </div>
                           <XPBar current={gCur} needed={gNeed} color={meta.color} height={3} />
                           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-                            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                              color: MUTED, letterSpacing: 1 }}>LVL {groupLvl}</span>
+                            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8,
+                              color: MUTED, letterSpacing: TRACK }}>LVL {groupLvl}</span>
                             <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED }}>
                               {gCur.toLocaleString()} / {gNeed.toLocaleString()} XP
                             </span>
@@ -1445,13 +1350,13 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                           background: `${meta.color}05`,
                           border: `1px solid ${meta.color}22`,
                           borderTop: "none",
-                          borderLeft: `2px solid ${meta.color}33`,
+                          borderLeft: `2px solid ${meta.color}22`,
                           padding: "10px 12px 12px 14px",
                           display: "flex", flexDirection: "column", gap: 9,
                         }}>
                           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8,
-                            color: meta.color, letterSpacing: 3, opacity: 0.6, marginBottom: 2 }}>
-                            {"// SUB-MUSCLE BREAKDOWN"}
+                            color: meta.color, letterSpacing: TRACK, opacity: 0.6, marginBottom: 2 }}>
+                            {"SUB-MUSCLE BREAKDOWN"}
                           </div>
                           {group.subs.map(svgId => {
                             const sm = MUSCLE_META[svgId];
@@ -1471,7 +1376,7 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                                   alignItems: "center", marginBottom: 3 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                     <div style={{ width: 6, height: 6, borderRadius: "50%",
-                                      background: sm.color, boxShadow: `0 0 4px ${sm.color}`,
+                                      background: sm.color, 
                                       flexShrink: 0 }} />
                                     <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
                                       fontWeight: 700, color: isSelected ? sm.color : smXP > 0 ? TEXT : MUTED }}>
@@ -1480,11 +1385,11 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
                                   </div>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                                     {smXP > 0 && (
-                                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7,
+                                      <span style={{ fontFamily: FONT_DISPLAY, fontSize: 7,
                                         color: smRank.color, fontWeight: 700 }}>{smRank.rank}</span>
                                     )}
-                                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                                      color: smXP > 0 ? sm.color : MUTED, letterSpacing: 1 }}>
+                                    <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8,
+                                      color: smXP > 0 ? sm.color : MUTED, letterSpacing: TRACK }}>
                                       LVL {smLvl}
                                     </span>
                                   </div>
@@ -1640,7 +1545,7 @@ function QuickAddBar({ onAdd, isIso = false, repUnit = "reps", bodyweight = fals
   };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 6 }}>QUICK ADD SETS</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 6 }}>QUICK ADD SETS</div>
       <div style={{ display: "grid", gridTemplateColumns: "52px 64px 1fr 52px", gap: 6, alignItems: "center" }}>
         <div style={{ position: "relative" }}>
           <input className="input-field" type="number" value={qCount} onChange={e => setQCount(e.target.value)}
@@ -1660,8 +1565,8 @@ function QuickAddBar({ onAdd, isIso = false, repUnit = "reps", bodyweight = fals
         <button onClick={handleAdd} style={{
           background: valid ? `${ACCENT}22` : BG3, border: `1px solid ${valid ? ACCENT + "88" : ACCENT2 + "33"}`,
           borderRadius: 6, padding: "9px 6px", cursor: valid ? "pointer" : "not-allowed",
-          fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
-          color: valid ? ACCENT : MUTED, letterSpacing: 1, transition: "all .15s"
+          fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+          color: valid ? ACCENT : MUTED, letterSpacing: TRACK, transition: "all .15s"
         }}>ADD</button>
       </div>
       {valid && (
@@ -1781,8 +1686,8 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
-        border: `1px solid ${meta.color}66`, borderTop: `2px solid ${meta.color}`,
-        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+        border: `1px solid ${meta.color}22`, borderTop: `2px solid ${meta.color}`,
+        
         width: "100%", maxWidth: 480,
         boxShadow: `0 -8px 40px ${meta.color}22`, position: "relative",
         maxHeight: "90vh", display: "flex", flexDirection: "column"
@@ -1793,13 +1698,13 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: exercise.angle ? 2 : 4 }}>{exercise.name}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: exercise.angle ? 2 : 4 }}>{exercise.name}</div>
             {exercise.angle && (
               <div style={{ display: "inline-flex", alignItems: "center", gap: 6,
-                background: `${GOLD}15`, border: `1px solid ${GOLD}44`,
+                background: `${GOLD}15`, border: `1px solid ${GOLD}22`,
                 borderRadius: 6, padding: "3px 10px", marginBottom: 8 }}>
-                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                  color: GOLD, letterSpacing: 2 }}>ANGLE</span>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8,
+                  color: GOLD, letterSpacing: TRACK }}>ANGLE</span>
                 <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
                   fontWeight: 700, color: GOLD }}>{exercise.angle}</span>
               </div>
@@ -1816,17 +1721,17 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         {lastSession && (
           <div style={{ background: `${ACCENT}08`, border: `1px solid ${ACCENT}22`, borderRadius: 6, padding: "10px 12px", marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 3 }}>
-                {"// LAST SESSION · "}{new Date(lastSession.date).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: ACCENT, letterSpacing: TRACK }}>
+                {"LAST SESSION · "}{new Date(lastSession.date).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
               </div>
               {storedE1RM && (
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GOLD, letterSpacing: 1 }}>EST. 1RM: {wtVal(storedE1RM).toFixed(0)} {wtLabel()}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: GOLD, letterSpacing: TRACK }}>EST. 1RM: {wtVal(storedE1RM).toFixed(0)} {wtLabel()}</div>
               )}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {lastSession.sets_detail.map((s, i) => (
                 <div key={i} style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 5, padding: "4px 10px", textAlign: "center" }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: TEXT, fontWeight: 700 }}>{s.reps}<span style={{ color: MUTED, fontSize: 7 }}> {repUnit}</span></div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: TEXT, fontWeight: 700 }}>{s.reps}<span style={{ color: MUTED, fontSize: 7 }}> {repUnit}</span></div>
                   {parseFloat(s.weight) > 0 && !isCali && (
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT }}>{wtVal(s.weight)} {wtLabel()}</div>
                   )}
@@ -1846,14 +1751,14 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: "grid", gridTemplateColumns: (isSpeed || isSpm) ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 10 }}>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>TIME (MIN)</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>TIME (MIN)</div>
                 <input className="input-field" type="number" value={cardioMinutes}
                   onChange={e => setCardioMinutes(e.target.value)} placeholder="30"
                   style={{ color: ACCENT, fontWeight: 700, fontSize: 16, textAlign: "center" }} />
               </div>
               {isSpm && (
                 <div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>STEPS / MIN</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>STEPS / MIN</div>
                   <input className="input-field" type="number" value={stepsPerMin}
                     onChange={e => setStepsPerMin(e.target.value)} placeholder={String(exercise.defaultSpm || 60)}
                     style={{ color: RED, fontWeight: 700, fontSize: 16, textAlign: "center" }} />
@@ -1861,7 +1766,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
               )}
               {isSpeed && (
                 <div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>SPEED (MPH)</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>SPEED (MPH)</div>
                   <input className="input-field" type="number" step="0.1" value={speedMph}
                     onChange={e => setSpeedMph(e.target.value)} placeholder={String(exercise.defaultSpeed || 3.5)}
                     style={{ color: RED, fontWeight: 700, fontSize: 16, textAlign: "center" }} />
@@ -1870,7 +1775,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             </div>
             {isSpeed && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2, marginBottom: 6 }}>QUICK SELECT</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>QUICK SELECT</div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                   {[{label:"2.0",sub:"slow walk"},{label:"3.0",sub:"walk"},{label:"3.5",sub:"brisk"},{label:"4.0",sub:"fast walk"},{label:"5.0",sub:"jog"},{label:"6.0",sub:"run"},{label:"7.5",sub:"fast run"},{label:"9.0",sub:"sprint"}].map(s => (
                     <button key={s.label} onClick={() => setSpeedMph(s.label)} style={{
@@ -1878,7 +1783,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                       border: `1px solid ${speedMph === s.label ? RED : ACCENT2 + "33"}`,
                       borderRadius: 6, padding: "6px 10px", cursor: "pointer", textAlign: "center", flex: "0 0 auto"
                     }}>
-                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: speedMph === s.label ? RED : TEXT }}>{s.label}</div>
+                      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: speedMph === s.label ? RED : TEXT }}>{s.label}</div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>{s.sub}</div>
                     </button>
                   ))}
@@ -1887,7 +1792,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             )}
             {isSpm && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2, marginBottom: 6 }}>QUICK SELECT</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>QUICK SELECT</div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                   {[{label:"40",sub:"easy"},{label:"50",sub:"steady"},{label:"60",sub:"moderate"},{label:"75",sub:"brisk"},{label:"90",sub:"hard"},{label:"110",sub:"very hard"},{label:"130",sub:"max"}].map(s => (
                     <button key={s.label} onClick={() => setStepsPerMin(s.label)} style={{
@@ -1895,7 +1800,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                       border: `1px solid ${stepsPerMin === s.label ? RED : ACCENT2 + "33"}`,
                       borderRadius: 6, padding: "6px 10px", cursor: "pointer", textAlign: "center", flex: "0 0 auto"
                     }}>
-                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: stepsPerMin === s.label ? RED : TEXT }}>{s.label}</div>
+                      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: stepsPerMin === s.label ? RED : TEXT }}>{s.label}</div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>{s.sub}</div>
                     </button>
                   ))}
@@ -1922,9 +1827,9 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             {setRows.length > 0 && (
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, marginBottom: 4, marginTop: 16 }}>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, textAlign: "center" }}>#</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isIso ? "HOLD (SEC)" : "REPS"}</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{isCali ? `ADDED / −ASSIST (${wtLabel().toUpperCase()})` : `WEIGHT (${wtLabel().toUpperCase()})`}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: TRACK, textAlign: "center" }}>#</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: TRACK }}>{isIso ? "HOLD (SEC)" : "REPS"}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: TRACK }}>{isCali ? `ADDED / −ASSIST (${wtLabel().toUpperCase()})` : `WEIGHT (${wtLabel().toUpperCase()})`}</div>
                   <div />
                 </div>
                 {setRows.map((row, i) => {
@@ -1945,7 +1850,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                   return (
                     <div key={i} style={{ marginBottom: 5 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "28px 80px 1fr 24px", gap: 6, alignItems: "center" }}>
-                        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, color: repsN > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
+                        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, color: repsN > 0 ? meta.color : MUTED, textAlign: "center" }}>{i + 1}</div>
                         <input className="input-field" type="number" value={row.reps}
                           onChange={e => updateSet(i, "reps", e.target.value)}
                           placeholder={lastRow ? lastRow.reps + " last" : (isIso ? "30" : "10")}
@@ -1959,7 +1864,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                       {isCali && parseFloat(row.weight) !== 0 && !isNaN(parseFloat(row.weight)) && (
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                           color: parseFloat(row.weight) < 0 ? ACCENT : GOLD,
-                          paddingLeft: 38, marginTop: 2, letterSpacing: 0.5 }}>
+                          paddingLeft: 38, marginTop: 2, letterSpacing: TRACK }}>
                           {parseFloat(row.weight) < 0
                             ? `assisted — lifting ${Math.round(wtVal(effectiveCaliLoadLbs(weightLbs, parseFloat(row.weight))))} ${wtLabel()} of your ${Math.round(wtVal(weightLbs))}`
                             : `weighted — lifting ${Math.round(wtVal(weightLbs + parseFloat(row.weight)))} ${wtLabel()} total`}
@@ -1967,8 +1872,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                       )}
                       {showE1RM && (
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: e1rmColor,
-                          paddingLeft: 38, marginTop: 2, letterSpacing: 0.5,
-                          textShadow: beatsPR ? `0 0 6px ${GOLD}88` : "none" }}>
+                          paddingLeft: 38, marginTop: 2, letterSpacing: TRACK}}>
                           → est. 1RM {Math.round(wtVal(setE1RM))} {wtLabel()}
                           {storedE1RM && (
                             <span style={{ color: MUTED, marginLeft: 6, fontSize: 9 }}>
@@ -1981,7 +1885,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                       {/* RPE picker — appears once reps + weight are filled, only for strength */}
                       {rowFilled && !isCardio && (
                         <div style={{ display: "flex", alignItems: "center", gap: 5, paddingLeft: 38, marginTop: 4, marginBottom: 2 }}>
-                          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2, marginRight: 2 }}>RPE</span>
+                          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, letterSpacing: TRACK, marginRight: 2 }}>RPE</span>
                           {[6,7,8,9,10].map(v => {
                             const m = RPE_META[v];
                             const active = row.rpe === v;
@@ -1991,7 +1895,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                                 background: active ? `${m.color}33` : "transparent",
                                 border: `1px solid ${active ? m.color : MUTED + "33"}`,
                                 borderRadius: 4, cursor: "pointer",
-                                fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
+                                fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
                                 color: active ? m.color : MUTED,
                               }}>{v}</button>
                             );
@@ -2022,7 +1926,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                 <button onClick={addSet} style={{
                     background: `${ACCENT}06`, border: `1px dashed ${ACCENT}28`,
                     borderRadius: 6, padding: "7px", cursor: "pointer",
-                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK
                   }}>+ BLANK SET</button>
                   <button onClick={repeatLastSet} disabled={!hasFilled} style={{
                     background: hasFilled ? `${GOLD}0a` : "transparent",
@@ -2030,7 +1934,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                     borderRadius: 6, padding: "7px",
                     cursor: hasFilled ? "pointer" : "not-allowed",
                     fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
-                    color: hasFilled ? GOLD : MUTED, letterSpacing: 2,
+                    color: hasFilled ? GOLD : MUTED, letterSpacing: TRACK,
                     opacity: hasFilled ? 1 : 0.5,
                   }}>+ REPEAT LAST</button>
                 </div>
@@ -2042,39 +1946,39 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         {/* XP Preview */}
         {totalXP > 0 && (
           <div style={{ background: `${GOLD}0d`, border: `1px solid ${isPR || isFirstLog ? GOLD : GOLD + "33"}`,
-            clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px))",
-            padding: "14px 16px", marginBottom: 16, boxShadow: isPR ? `0 0 20px ${GOLD}44` : "none" }}>
+            
+            padding: "14px 16px", marginBottom: 16}}>
             {(isPR || isFirstLog) && (
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8, textShadow: `0 0 8px ${GOLD}` }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK, marginBottom: 8}}>
                 {isFirstLog ? "FIRST LOG — 1RM ESTABLISHED" : `NEW PR! ${wtVal(storedE1RM).toFixed(0)} → ${wtVal(sessionBestE1RM).toFixed(0)} ${wtLabel()} EST. 1RM`}
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 3, marginBottom: 4 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>
                   {isPR ? "BOOSTED XP (PR BONUS)" : "HYPERTROPHY XP"}
                 </div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 26, fontWeight: 900, color: GOLD, textShadow: `0 0 12px ${GOLD}` }}>+{totalXP}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 900, color: GOLD}}>+{totalXP}</div>
               </div>
               {netXP < totalXP && (
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 3, marginBottom: 4 }}>NET XP (AFTER FOOD)</div>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 26, fontWeight: 900, color: RED, textShadow: `0 0 12px ${RED}` }}>+{netXP}</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>NET XP (AFTER FOOD)</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 900, color: RED}}>+{netXP}</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{validSets.length} sets logged</div>
                 </div>
               )}
             </div>
             {netXP < totalXP && (
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: RED, marginTop: 6, letterSpacing: 1 }}>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: RED, marginTop: 6, letterSpacing: TRACK }}>
                 -{totalXP - netXP} XP absorbed by today's calorie surplus
               </div>
             )}
             {netXP === totalXP && (
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GREEN, marginTop: 6, letterSpacing: 1 }}>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GREEN, marginTop: 6, letterSpacing: TRACK }}>
                 Full XP active — eating at deficit or maintenance
               </div>
             )}
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7, color: MUTED, marginTop: 8, letterSpacing: 2 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 7, color: MUTED, marginTop: 8, letterSpacing: TRACK }}>
               {FIRST_OVERALL_THRESHOLD.toLocaleString()} XP = LVL 2 · {FIRST_MUSCLE_THRESHOLD.toLocaleString()} XP = MUSCLE LVL 2
             </div>
           </div>
@@ -2093,15 +1997,15 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           const color = sugg.delta > 0 ? GREEN : sugg.delta < 0 ? RED : ACCENT;
           return (
             <div style={{ margin: "0 20px 12px", padding: "10px 12px",
-              background: `${color}0e`, border: `1px solid ${color}44`, borderRadius: 8 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color, letterSpacing: 3, marginBottom: 4 }}>
-                {"// NEXT SESSION SUGGESTION"}
+              background: `${color}0e`, border: `1px solid ${color}22`, borderRadius: 8 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color, letterSpacing: TRACK, marginBottom: 4 }}>
+                {"NEXT SESSION SUGGESTION"}
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT }}>
                   {sugg.reason}
                 </div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color }}>
                   {arrow} {Math.round(wtVal(nextWeight))} {wtLabel()}
                   {sugg.delta !== 0 && (
                     <span style={{ fontSize: 9, marginLeft: 4, opacity: 0.7 }}>
@@ -2135,7 +2039,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             onConfirm({ sets: setsDetail.length, reps: Math.round(avgReps), weight: Math.round(avgWeight),
               sets_detail: setsDetail, newE1RM: sessionBestE1RM, isPR, xp: totalXP, cals: totalXP });
           }
-        }} style={{ width: "100%", padding: "15px", fontSize: 15, letterSpacing: 3,
+        }} style={{ width: "100%", padding: "15px", fontSize: 15, letterSpacing: TRACK,
           opacity: canLog ? 1 : 0.4, cursor: canLog ? "pointer" : "not-allowed" }}>
           LOG {isCardio ? "CARDIO" : `${validSets.length} SET${validSets.length !== 1 ? "S" : ""}`}
         </button>
@@ -2160,41 +2064,41 @@ function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
-        border: `1px solid ${GOLD}55`, borderTop: `3px solid ${GOLD}`,
+        border: `1px solid ${GOLD}22`, borderTop: `3px solid ${GOLD}`,
         width: "100%", maxWidth: 460, padding: "28px 22px 28px",
         maxHeight: "90vh", overflowY: "auto", borderRadius: 12,
-        boxShadow: `0 0 48px ${GOLD}33`,
+        
       }}>
         <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 6, marginBottom: 4 }}>SESSION COMPLETE</div>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 42, fontWeight: 900, color: GOLD, letterSpacing: 2,
-            textShadow: `0 0 24px ${GOLD}66`, lineHeight: 1 }}>+{totalXP.toLocaleString()}</div>
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT, letterSpacing: 2, marginTop: 2 }}>TOTAL XP</div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: TRACK, marginBottom: 4 }}>SESSION COMPLETE</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 42, fontWeight: 900, color: GOLD, letterSpacing: TRACK,
+            lineHeight: 1 }}>+{totalXP.toLocaleString()}</div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT, letterSpacing: TRACK, marginTop: 2 }}>TOTAL XP</div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 20 }}>
           <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{sessionLog.length}</div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>EXERCISES</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: ACCENT }}>{sessionLog.length}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: TRACK }}>EXERCISES</div>
           </div>
           <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{totalSets}</div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>SETS</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: ACCENT }}>{totalSets}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: TRACK }}>SETS</div>
           </div>
           <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT }}>{durationMin != null ? `${durationMin}m` : "—"}</div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: 1 }}>DURATION</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: ACCENT }}>{durationMin != null ? `${durationMin}m` : "—"}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2, letterSpacing: TRACK }}>DURATION</div>
           </div>
         </div>
 
         {prs.length > 0 && (
-          <div style={{ background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>★ NEW PERSONAL RECORDS</div>
+          <div style={{ background: `${GOLD}10`, border: `1px solid ${GOLD}22`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK, marginBottom: 8 }}>★ NEW PERSONAL RECORDS</div>
             {prs.map((l, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0",
                 borderBottom: i < prs.length - 1 ? `1px solid ${GOLD}22` : "none" }}>
                 <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, fontWeight: 600 }}>{l.name}</span>
-                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: GOLD, fontWeight: 700 }}>
                   {l.prevE1RM ? `${Math.round(wtVal(l.prevE1RM))} → ` : ""}{Math.round(wtVal(l.newE1RM || 0))} {wtLabel()}
                 </span>
               </div>
@@ -2204,15 +2108,15 @@ function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
 
         {muscles.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>MUSCLES TRAINED</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 8 }}>MUSCLES TRAINED</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {muscles.map(m => {
                 const mm = MUSCLE_META[m] || { color: ACCENT, name: m };
                 return (
                   <span key={m} style={{
-                    background: `${mm.color}1a`, border: `1px solid ${mm.color}55`, borderRadius: 6,
+                    background: `${mm.color}1a`, border: `1px solid ${mm.color}22`, borderRadius: 6,
                     padding: "5px 10px", fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
-                    color: mm.color, fontWeight: 700, letterSpacing: 1,
+                    color: mm.color, fontWeight: 700, letterSpacing: TRACK,
                   }}>{mm.name.toUpperCase()}</span>
                 );
               })}
@@ -2221,7 +2125,7 @@ function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
         )}
 
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>EXERCISES LOGGED</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 8 }}>EXERCISES LOGGED</div>
           {sessionLog.map((l, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0",
               borderBottom: `1px solid ${ACCENT}11` }}>
@@ -2230,7 +2134,7 @@ function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
                 {l.name}
                 <span style={{ color: MUTED, fontSize: 10 }}>· {l.sets || 1} sets</span>
               </span>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>+{l.xp || 0}</span>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: GOLD, fontWeight: 700 }}>+{l.xp || 0}</span>
             </div>
           ))}
         </div>
@@ -2238,10 +2142,10 @@ function WorkoutFinishModal({ sessionLog, sessionStart, onClose, onComplete }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <button onClick={onClose} style={{
             padding: "12px", cursor: "pointer",
-            background: BG3, border: `1px solid ${ACCENT}44`, borderRadius: 8,
-            fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+            background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8,
+            fontFamily: FONT_DISPLAY, fontSize: 10, color: ACCENT, fontWeight: 700, letterSpacing: TRACK,
           }}>KEEP TRAINING</button>
-          <button onClick={onComplete} className="btn-gold" style={{ padding: "12px", fontSize: 11, letterSpacing: 2 }}>
+          <button onClick={onComplete} className="btn-gold" style={{ padding: "12px", fontSize: 11, letterSpacing: TRACK }}>
             COMPLETE ✓
           </button>
         </div>
@@ -2295,11 +2199,11 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
     <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
-        borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 0" }}>
-        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
-          color: GOLD, letterSpacing: 2, marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+        borderBottom: `1px solid ${ACCENT}22`, padding: "18px 20px 0" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700,
+          color: GOLD, letterSpacing: TRACK, marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
           {themeLabel(settings,"workout","WORKOUT")}
-          {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
+          {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}22`, borderRadius: 5, padding: "2px 8px", letterSpacing: TRACK }}>✈ TRAVEL</span>}
         </div>
 
         {/* Tabs */}
@@ -2308,8 +2212,8 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
             <button key={t} onClick={() => setTab(t)} style={{
               background: "none", border: "none", borderBottom: `2px solid ${tab===t ? ACCENT : "transparent"}`,
               padding: "8px 18px 10px", cursor: "pointer",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
-              color: tab===t ? ACCENT : MUTED, letterSpacing: 2, transition: "all .15s"
+              fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
+              color: tab===t ? ACCENT : MUTED, letterSpacing: TRACK, transition: "all .15s"
             }}>{lbl}</button>
           ))}
         </div>
@@ -2331,8 +2235,8 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                   flexShrink: 0, background: active ? `${ACCENT}22` : BG2,
                   border: `1px solid ${active ? ACCENT : isToday ? GOLD+"44" : ACCENT2+"33"}`,
                   borderRadius: 8, padding: "7px 12px", cursor: "pointer",
-                  fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
-                  color: active ? ACCENT : isToday ? GOLD : MUTED, letterSpacing: 1,
+                  fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+                  color: active ? ACCENT : isToday ? GOLD : MUTED, letterSpacing: TRACK,
                   textAlign: "center"
                 }}>
                   <div>{d}</div>
@@ -2355,9 +2259,9 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                 No workouts logged for {DAY_LABELS[selDay]}
               </div>
               <button onClick={() => setTab("browse")} style={{
-                marginTop: 12, background: `${ACCENT}18`, border: `1px solid ${ACCENT}44`,
+                marginTop: 12, background: `${ACCENT}18`, border: `1px solid ${ACCENT}22`,
                 borderRadius: 8, padding: "8px 20px", cursor: "pointer",
-                fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2
+                fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK
               }}>LOG AN EXERCISE</button>
             </div>
           ) : (
@@ -2369,8 +2273,8 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                 const groupAbove = inGroup && dayList[i - 1]?.supersetGroup === w.supersetGroup;
                 return (
                   <div key={i} style={{
-                    background: BG2, border: `1px solid ${muscleMeta.color}33`,
-                    borderLeft: `3px solid ${inGroup ? GOLD : muscleMeta.color}`,
+                    background: BG2, border: `1px solid ${muscleMeta.color}22`,
+                    borderLeft: `2px solid ${inGroup ? GOLD : muscleMeta.color}aa`,
                     borderRadius: 10, padding: "12px 14px",
                     marginTop: groupAbove ? -4 : 0,
                   }}>
@@ -2386,23 +2290,23 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11,
+                        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11,
                           fontWeight: 700, color: GOLD }}>+{w.xp}</span>
                         <button onClick={() => {
                           onUnlogExercise(w);
                           setEditModal({ exercise: w.exercise, muscle: w.muscle });
                         }} style={{
-                          background: `${ACCENT}18`, border: `1px solid ${ACCENT}44`,
+                          background: `${ACCENT}18`, border: `1px solid ${ACCENT}22`,
                           borderRadius: 5, padding: "4px 9px", cursor: "pointer",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 1
+                          fontFamily: FONT_DISPLAY, fontSize: 8, color: ACCENT, letterSpacing: TRACK
                         }}>EDIT</button>
                         <button onClick={() => {
                           onUnlogExercise(w);
                           toast(`${w.exerciseName} removed`, MUTED);
                         }} style={{
-                          background: `${RED}11`, border: `1px solid ${RED}33`,
+                          background: `${RED}11`, border: `1px solid ${RED}22`,
                           borderRadius: 5, padding: "4px 9px", cursor: "pointer",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: RED, letterSpacing: 1
+                          fontFamily: FONT_DISPLAY, fontSize: 8, color: RED, letterSpacing: TRACK
                         }}>DEL</button>
                       </div>
                     </div>
@@ -2427,7 +2331,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               })}
               {/* Day total */}
               <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 4 }}>
-                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12,
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12,
                   fontWeight: 700, color: GOLD }}>
                   +{byDay[selDay].reduce((s,w)=>s+(w.xp||0),0)} XP
                 </span>
@@ -2438,14 +2342,14 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
           {/* Today's session quick-log at bottom */}
           {selDay === todayDayIdx && sessionLog.length > 0 && (
             <div style={{ marginTop: 16, background: `${GOLD}0a`,
-              border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px" }}>
+              border: `1px solid ${GOLD}22`, borderRadius: 10, padding: "12px 14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                  color: GOLD, letterSpacing: 3 }}>{"// THIS SESSION"}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
+                  color: GOLD, letterSpacing: TRACK }}>{"THIS SESSION"}</div>
                 <button onClick={() => setFinishModalOpen(true)} style={{
-                  background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 6,
+                  background: `${GOLD}22`, border: `1px solid ${GOLD}22`, borderRadius: 6,
                   padding: "5px 11px", cursor: "pointer",
-                  fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, fontWeight: 700, letterSpacing: 2,
+                  fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, fontWeight: 700, letterSpacing: TRACK,
                 }}>FINISH ▶</button>
               </div>
               {sessionLog.map((l, i) => {
@@ -2488,8 +2392,8 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               background: currentSupersetGroup ? `${GOLD}1a` : BG2,
               border: `1px solid ${currentSupersetGroup ? GOLD : ACCENT2 + "33"}`,
               borderRadius: 8, textAlign: "left",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
-              color: currentSupersetGroup ? GOLD : MUTED, letterSpacing: 2,
+              fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
+              color: currentSupersetGroup ? GOLD : MUTED, letterSpacing: TRACK,
               display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
             <span>↔ {currentSupersetGroup ? "SUPERSET ACTIVE" : "START SUPERSET"}</span>
@@ -2516,7 +2420,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                   border: `1px solid ${active ? mm.color : ACCENT2+"33"}`,
                   borderRadius: 8, padding: "7px 13px", cursor: "pointer",
                   fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700,
-                  color: active ? mm.color : MUTED, letterSpacing: 1, transition: "all .15s"
+                  color: active ? mm.color : MUTED, letterSpacing: TRACK, transition: "all .15s"
                 }}>{mm.name.toUpperCase()}</button>
               );
             })}
@@ -2531,15 +2435,15 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                 <div key={i} style={{
                   background: logged ? `${meta.color}0d` : BG2,
                   border: `1px solid ${logged ? meta.color+"55" : meta.color+"22"}`,
-                  borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px"
+                  borderLeft: `2px solid ${meta.color}aa`, borderRadius: 10, padding: "12px 14px"
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between",
                     alignItems: "flex-start", marginBottom: 5 }}>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 15,
                       fontWeight: 700, color: TEXT }}>{ex.name}</div>
                     <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                      {logged > 0 && <span style={{ fontFamily: "'Orbitron',sans-serif",
-                        fontSize: 8, color: meta.color, letterSpacing: 1 }}>×{logged}</span>}
+                      {logged > 0 && <span style={{ fontFamily: FONT_DISPLAY,
+                        fontSize: 8, color: meta.color, letterSpacing: TRACK }}>×{logged}</span>}
                       <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
                         color: diffColor, background: `${diffColor}22`,
                         padding: "2px 7px", borderRadius: 8 }}>{ex.diff.toUpperCase()}</span>
@@ -2554,7 +2458,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                       <div style={{ marginBottom: 8 }}>
                         <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
                           fontWeight: 700, color: mm.color, background: `${mm.color}18`,
-                          border: `1px solid ${mm.color}44`, padding: "2px 9px",
+                          border: `1px solid ${mm.color}22`, padding: "2px 9px",
                           borderRadius: 6, marginRight: 6 }}>{mm.name}</span>
                         {subs.length > 0 && (
                           <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
@@ -2568,12 +2472,12 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                       color: MUTED }}>{ex.type} · {ex.diff}</span>
                     <button onClick={() => setLogModal({ exercise: ex, muscle: selMuscle })} style={{
                       background: `linear-gradient(90deg, ${meta.color}22, ${meta.color}33)`,
-                      border: `1px solid ${meta.color}88`,
-                      borderTop: `1px solid ${meta.color}cc`,
-                      clipPath: "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
+                      border: `1px solid ${meta.color}22`,
+                      borderTop: `1px solid ${meta.color}22`,
+                      
                       padding: "7px 18px", cursor: "pointer",
-                      fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
-                      color: meta.color, letterSpacing: 2
+                      fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+                      color: meta.color, letterSpacing: TRACK
                     }}>{themeLabel(settings,"logIt","LOG IT")}</button>
                   </div>
                 </div>
@@ -2730,13 +2634,13 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   return (
     <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
-      <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
-        <span className="glitch-in holo-text" style={{ fontFamily: "'Orbitron',sans-serif" }}>
+      <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: TRACK, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="glitch-in holo-text" style={{ fontFamily: FONT_DISPLAY }}>
           {themeLabel(settings,"database","DATABASE")}
         </span>
-        {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}66`, borderRadius: 5, padding: "2px 8px", letterSpacing: 1 }}>✈ TRAVEL</span>}
+        {travelMode && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, background: `${GOLD}22`, border: `1px solid ${GOLD}22`, borderRadius: 5, padding: "2px 8px", letterSpacing: TRACK }}>✈ TRAVEL</span>}
       </div>
-      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, letterSpacing: 2, marginBottom: 18 }}>EXERCISE COMPENDIUM</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, letterSpacing: TRACK, marginBottom: 18 }}>EXERCISE COMPENDIUM</div>
 
       {/* Search */}
       <input className="input-field" value={searchQ} onChange={e => setSearchQ(e.target.value)}
@@ -2751,7 +2655,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
             borderRadius: 20, padding: "5px 11px", cursor: "pointer",
             fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700,
             color: bookmarksOnly ? GOLD : MUTED, transition: "all .15s",
-            boxShadow: bookmarksOnly ? `0 0 8px ${GOLD}33` : "none",
+            
           }}>★ {bookmarkedSet.size > 0 ? `${bookmarkedSet.size}` : ""}</button>
           {[
             { key: "chest",     name: "Chest" },
@@ -2772,9 +2676,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                 border: `1px solid ${sel ? meta.color : ACCENT2 + "33"}`,
                 borderRadius: 20, padding: "5px 11px", cursor: "pointer",
                 fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700,
-                color: sel ? meta.color : MUTED, transition: "all .15s",
-                boxShadow: sel ? `0 0 8px ${meta.color}33` : "none"
-              }}>{name}</button>
+                color: sel ? meta.color : MUTED, transition: "all .15s"}}>{name}</button>
             );
           })}
         </div>
@@ -2782,14 +2684,14 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
       {/* Plan banner — always visible when plan exists, browse still works below */}
       {randoPlan && (
-        <div style={{ background: `${GOLD}0d`, border: `1px solid ${GOLD}33`,
+        <div style={{ background: `${GOLD}0d`, border: `1px solid ${GOLD}22`,
           borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK }}>
               GENERATED PLAN — {randoMuscles.map(m => (MUSCLE_META[m]?.name||m).toUpperCase()).join(" + ")}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={runRandomizer} style={{ background: "none", border: `1px solid ${GOLD}44`,
+              <button onClick={runRandomizer} style={{ background: "none", border: `1px solid ${GOLD}22`,
                 borderRadius: 5, padding: "3px 10px", cursor: "pointer",
                 fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD }}>REGENERATE</button>
               <button onClick={() => { setRandoPlan(null); setRandoMuscles([]); }} style={{
@@ -2801,8 +2703,8 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
               const mm = MUSCLE_META[ex.primary] || MUSCLE_META.chest;
               return (
                 <div key={idx} style={{
-                  background: BG3, border: `1px solid ${mm.color}33`,
-                  borderLeft: `3px solid ${mm.color}`, borderRadius: 8,
+                  background: BG3, border: `1px solid ${mm.color}22`,
+                  borderLeft: `2px solid ${mm.color}aa`, borderRadius: 8,
                   padding: "8px 12px", display: "flex",
                   justifyContent: "space-between", alignItems: "center"
                 }}>
@@ -2815,10 +2717,10 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button onClick={() => setLogModal({ exercise: ex, muscle: ex.primary || selMuscle })}
                       style={{
-                        background: `${mm.color}22`, border: `1px solid ${mm.color}66`,
+                        background: `${mm.color}22`, border: `1px solid ${mm.color}22`,
                         borderRadius: 6, padding: "5px 12px", cursor: "pointer",
-                        fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                        fontWeight: 700, color: mm.color, letterSpacing: 1
+                        fontFamily: FONT_DISPLAY, fontSize: 8,
+                        fontWeight: 700, color: mm.color, letterSpacing: TRACK
                       }}>LOG</button>
                     <button onClick={() => setRandoPlan(p => p.filter((_, i) => i !== idx))}
                       style={{ background: "none", border: "none",
@@ -2845,7 +2747,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
           const subs = ex.svgTargets ? ex.svgTargets.map(t => MUSCLE_META[t]?.name).filter(Boolean) : [];
           const isBookmarked = bookmarkedSet.has(ex.name);
           return (
-            <div key={ex.name} className="card-in" style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, padding: "12px 14px",
+            <div key={ex.name} className="card-in" style={{ background: BG2, border: `1px solid ${meta.color}22`, borderLeft: `2px solid ${meta.color}aa`, borderRadius: 10, padding: "12px 14px",
               animationDelay: `${Math.min(i, 8) * 45}ms` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -2857,8 +2759,8 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 15, fontWeight: 700, color: TEXT }}>{ex.name}</div>
                 </div>
                 <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: diffColor, background: `${diffColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: 1 }}>{ex.diff?.toUpperCase()}</span>
-                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: typeColor, background: `${typeColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: 1 }}>{ex.type?.toUpperCase()}</span>
+                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: diffColor, background: `${diffColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: TRACK }}>{ex.diff?.toUpperCase()}</span>
+                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: typeColor, background: `${typeColor}22`, padding: "2px 7px", borderRadius: 8, letterSpacing: TRACK }}>{ex.type?.toUpperCase()}</span>
                 </div>
               </div>
               {subs.length > 0 && (
@@ -2889,16 +2791,16 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
       </div>
 
       {/* Custom exercise creator */}
-      <div style={{ borderTop: `1px solid ${ACCENT2}33`, paddingTop: 16 }}>
+      <div style={{ borderTop: `1px solid ${ACCENT2}22`, paddingTop: 16 }}>
         {!customMode ? (
           <button onClick={() => setCustomMode(true)} style={{
             width: "100%", background: `${ACCENT}0a`, border: `1px dashed ${ACCENT}44`,
             borderRadius: 10, padding: "13px", cursor: "pointer",
-            fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: ACCENT, fontWeight: 700, letterSpacing: 2
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: ACCENT, fontWeight: 700, letterSpacing: TRACK
           }}>+ CREATE CUSTOM EXERCISE</button>
         ) : (
-          <div style={{ background: BG2, border: `1px solid ${ACCENT}33`, borderRadius: 12, padding: 16 }}>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 12 }}>[ CUSTOM EXERCISE ]</div>
+          <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 12, padding: 16 }}>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: TRACK, marginBottom: 12 }}>CUSTOM EXERCISE</div>
 
             {/* Name */}
             <input className="input-field" value={cName} onChange={e => setCName(e.target.value)}
@@ -2907,13 +2809,13 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
             {/* Difficulty + Type */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>DIFFICULTY</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>DIFFICULTY</div>
                 <select value={cDiff} onChange={e => setCDiff(e.target.value)} className="input-field">
                   {["beginner","intermediate","advanced","elite"].map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>TYPE</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>TYPE</div>
                 <select value={cType} onChange={e => setCType(e.target.value)} className="input-field">
                   <option value="strength">Strength</option>
                   <option value="calisthenics">Calisthenics</option>
@@ -2925,8 +2827,8 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
             {/* Muscle Activation */}
             <div style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2 }}>MUSCLE ACTIVATION %</div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10,
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK }}>MUSCLE ACTIVATION %</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10,
                   color: totalPct === 100 ? GREEN : totalPct > 100 ? RED : GOLD }}>
                   {totalPct}% / 100%
                 </div>
@@ -2974,8 +2876,8 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                 ]},
               ].map(group => (
                 <div key={group.label} style={{ marginBottom: 10 }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                    color: ACCENT, letterSpacing: 2, marginBottom: 6 }}>{group.label}</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8,
+                    color: ACCENT, letterSpacing: TRACK, marginBottom: 6 }}>{group.label}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                     {group.targets.map(({ id, name }) => {
                       const val = activations[id] || 0;
@@ -2991,15 +2893,15 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                             fontWeight: 700, color: isActive ? ACCENT : MUTED }}>{name}</span>
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <button onClick={() => setActivations(a => ({ ...a, [id]: Math.max(0, (a[id]||0) - 5) }))}
-                              style={{ background: "none", border: `1px solid ${MUTED}44`, borderRadius: 4,
+                              style={{ background: "none", border: `1px solid ${MUTED}22`, borderRadius: 4,
                                 width: 20, height: 20, cursor: "pointer", color: MUTED, fontSize: 14,
                                 display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10,
+                            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10,
                               color: isActive ? ACCENT : MUTED, minWidth: 28, textAlign: "center" }}>
                               {val}%
                             </span>
                             <button onClick={() => setActivations(a => ({ ...a, [id]: Math.min(100, (a[id]||0) + 5) }))}
-                              style={{ background: "none", border: `1px solid ${MUTED}44`, borderRadius: 4,
+                              style={{ background: "none", border: `1px solid ${MUTED}22`, borderRadius: 4,
                                 width: 20, height: 20, cursor: "pointer", color: MUTED, fontSize: 14,
                                 display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                           </div>
@@ -3017,11 +2919,11 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
             {/* Save / Cancel */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <button onClick={() => { setCustomMode(false); resetCustomForm(); }}
-                style={{ background: "none", border: `1px solid ${MUTED}33`, borderRadius: 8,
+                style={{ background: "none", border: `1px solid ${MUTED}22`, borderRadius: 8,
                   padding: "10px", cursor: "pointer",
                   fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>CANCEL</button>
               <button className="btn-primary" onClick={handleSaveCustom}
-                style={{ padding: "10px", fontSize: 13, letterSpacing: 2 }}>SAVE</button>
+                style={{ padding: "10px", fontSize: 13, letterSpacing: TRACK }}>SAVE</button>
             </div>
           </div>
         )}
@@ -3030,15 +2932,15 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
       {/* Randomizer modal */}
       {randoMode && (
         createPortal(<div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1100, background: "rgba(7,11,20,0.93)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "96px" }} onClick={() => setRandoMode(false)}>
-          <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`, border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480, padding: "24px 20px 36px", clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)" }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 2, marginBottom: 4 }}>RANDOM WORKOUT</div>
+          <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`, border: `1px solid ${GOLD}22`, borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480, padding: "24px 20px 36px"}}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: TRACK, marginBottom: 4 }}>RANDOM WORKOUT</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>Pick any muscle groups. I will build a hypertrophy-optimised session.</div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {randoMuscles.map(m => { const mm = MUSCLE_META[m]; return <span key={m} style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, fontWeight: 700, color: mm?.color, background: `${mm?.color}22`, border: `1px solid ${mm?.color}66`, padding: "3px 10px", borderRadius: 6 }}>{mm?.name}</span>; })}
+                {randoMuscles.map(m => { const mm = MUSCLE_META[m]; return <span key={m} style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, fontWeight: 700, color: mm?.color, background: `${mm?.color}22`, border: `1px solid ${mm?.color}22`, padding: "3px 10px", borderRadius: 6 }}>{mm?.name}</span>; })}
                 {!randoMuscles.length && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>None selected</span>}
               </div>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: randoMuscles.length ? ACCENT : MUTED }}>{randoMuscles.length} selected</span>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: randoMuscles.length ? ACCENT : MUTED }}>{randoMuscles.length} selected</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
               {["chest","back","shoulders","bicep","tricep","legs","glutes","core","calves","forearms"].map(m => {
@@ -3048,9 +2950,9 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                 const lastDate = lastW.length ? new Date(Math.max(...lastW.map(w=>w.date||0))) : null;
                 const daysSince = lastDate ? Math.floor((Date.now()-lastDate)/86400000) : null;
                 return (
-                  <button key={m} onClick={() => toggleRandoMuscle(m)} style={{ background: isSel ? `${mm.color}28` : `${mm.color}0a`, border: `1px solid ${isSel ? mm.color : mm.color+"44"}`, borderLeft: `3px solid ${isSel ? mm.color : mm.color+"55"}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer", textAlign: "left", position: "relative" }}>
-                    {isSel && <div style={{ position: "absolute", top: 6, right: 8, fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: mm.color, fontWeight: 900 }}>✓</div>}
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: isSel ? mm.color : MUTED, letterSpacing: 1, marginBottom: 3 }}>{mm.name.toUpperCase()}</div>
+                  <button key={m} onClick={() => toggleRandoMuscle(m)} style={{ background: isSel ? `${mm.color}28` : `${mm.color}0a`, border: `1px solid ${isSel ? mm.color : mm.color+"44"}`, borderLeft: `2px solid ${isSel ? mm.color : mm.color+"55"}aa`, borderRadius: 8, padding: "10px 12px", cursor: "pointer", textAlign: "left", position: "relative" }}>
+                    {isSel && <div style={{ position: "absolute", top: 6, right: 8, fontFamily: FONT_DISPLAY, fontSize: 8, color: mm.color, fontWeight: 900 }}>✓</div>}
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: isSel ? mm.color : MUTED, letterSpacing: TRACK, marginBottom: 3 }}>{mm.name.toUpperCase()}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>{daysSince===null?"Never trained":daysSince===0?"Today":daysSince===1?"1 day ago":`${daysSince}d ago`}</div>
                   </button>
                 );
@@ -3059,7 +2961,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
             {/* Difficulty filter */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                letterSpacing: 3, marginBottom: 8 }}>DIFFICULTY</div>
+                letterSpacing: TRACK, marginBottom: 8 }}>DIFFICULTY</div>
               <div style={{ display: "flex", gap: 6 }}>
                 {[
                   { val: "all",          label: "ALL" },
@@ -3077,17 +2979,17 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                       background: isActive ? `${col}22` : BG3,
                       border: `1px solid ${isActive ? col : MUTED + "33"}`,
                       borderRadius: 6,
-                      fontFamily: "'Orbitron',sans-serif", fontSize: 6, fontWeight: 700,
-                      color: isActive ? col : MUTED, letterSpacing: 0.5,
+                      fontFamily: FONT_DISPLAY, fontSize: 6, fontWeight: 700,
+                      color: isActive ? col : MUTED, letterSpacing: TRACK,
                       transition: "all .15s",
-                      boxShadow: isActive ? `0 0 8px ${col}44` : "none",
+                      
                     }}>{label}</button>
                   );
                 })}
               </div>
               {randoDiff !== "all" && (
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                  marginTop: 6, letterSpacing: 1 }}>
+                  marginTop: 6, letterSpacing: TRACK }}>
                   {randoDiff === "beginner" ? "Foundation movements — safe for all levels" :
                    randoDiff === "intermediate" ? "Progressive overload focus — solid technique required" :
                    randoDiff === "advanced" ? "High intensity — strong base needed" :
@@ -3095,8 +2997,8 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                 </div>
               )}
             </div>
-            <button onClick={runRandomizer} disabled={!randoMuscles.length} style={{ width: "100%", padding: "13px", marginBottom: 8, cursor: randoMuscles.length ? "pointer" : "not-allowed", background: randoMuscles.length ? `linear-gradient(90deg, ${GOLD}33, ${GOLD}22)` : DARK1, border: `1px solid ${randoMuscles.length ? GOLD+"88" : MUTED+"33"}`, clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px))", fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700, color: randoMuscles.length ? GOLD : MUTED, letterSpacing: 3, opacity: randoMuscles.length ? 1 : 0.5 }}>GENERATE WORKOUT</button>
-            <button onClick={() => { setRandoMode(false); setRandoMuscles([]); }} style={{ width: "100%", background: "none", border: `1px solid ${MUTED}33`, borderRadius: 8, padding: "10px", cursor: "pointer", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>CANCEL</button>
+            <button onClick={runRandomizer} disabled={!randoMuscles.length} style={{ width: "100%", padding: "13px", marginBottom: 8, cursor: randoMuscles.length ? "pointer" : "not-allowed", background: randoMuscles.length ? `linear-gradient(90deg, ${GOLD}33, ${GOLD}22)` : DARK1, border: `1px solid ${randoMuscles.length ? GOLD+"88" : MUTED+"33"}`, fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: randoMuscles.length ? GOLD : MUTED, letterSpacing: TRACK, opacity: randoMuscles.length ? 1 : 0.5 }}>GENERATE WORKOUT</button>
+            <button onClick={() => { setRandoMode(false); setRandoMuscles([]); }} style={{ width: "100%", background: "none", border: `1px solid ${MUTED}22`, borderRadius: 8, padding: "10px", cursor: "pointer", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>CANCEL</button>
           </div>
         </div>, document.body)
       )}
@@ -3194,28 +3096,28 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
     <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
-        borderBottom: `1px solid ${ACCENT}33`, padding: "18px 20px 14px" }}>
+        borderBottom: `1px solid ${ACCENT}22`, padding: "18px 20px 14px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
-              color: GOLD, letterSpacing: 2, marginBottom: 2 }}>{themeLabel(settings,"schedule","SCHEDULE")}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700,
+              color: GOLD, letterSpacing: TRACK, marginBottom: 2 }}>{themeLabel(settings,"schedule","SCHEDULE")}</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
               {program ? program.name : "No program selected"}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
             <button onClick={() => setRandoMode(true)} style={{
-              background: `${GOLD}18`, border: `1px solid ${GOLD}55`,
-              borderTop: `1px solid ${GOLD}99`,
-              clipPath: "polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px))",
+              background: `${GOLD}18`, border: `1px solid ${GOLD}22`,
+              borderTop: `1px solid ${GOLD}22`,
+              
               padding: "8px 14px", cursor: "pointer",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
-              color: GOLD, letterSpacing: 2 }}>RANDOMIZE</button>
+              fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+              color: GOLD, letterSpacing: TRACK }}>RANDOMIZE</button>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700,
               color: GOLD }}>{weekXP.toLocaleString()} XP</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
-              color: MUTED, letterSpacing: 1 }}>THIS WEEK</div>
+              color: MUTED, letterSpacing: TRACK }}>THIS WEEK</div>
           </div>
           </div>
         </div>
@@ -3223,14 +3125,14 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
 
       {/* Randomizer plan banner */}
       {randoPlan && (
-        <div style={{ background: `${GOLD}0d`, border: `1px solid ${GOLD}33`,
+        <div style={{ background: `${GOLD}0d`, border: `1px solid ${GOLD}22`,
           padding: "10px 16px", borderBottom: `1px solid ${GOLD}22` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK }}>
               TODAY'S PLAN — {randoMuscles.map(m => MUSCLE_META[m]?.name?.toUpperCase()).join(" + ")}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={runRandomizer} style={{ background: "none", border: `1px solid ${GOLD}44`,
+              <button onClick={runRandomizer} style={{ background: "none", border: `1px solid ${GOLD}22`,
                 borderRadius: 5, padding: "3px 10px", cursor: "pointer",
                 fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD }}>REGENERATE</button>
               <button onClick={() => { setRandoPlan(null); setRandoMuscles([]); }} style={{
@@ -3245,7 +3147,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               return (
                 <div key={i} style={{ background: alreadyLogged ? `${mm.color}0d` : BG2,
                   border: `1px solid ${alreadyLogged ? mm.color+"44" : mm.color+"22"}`,
-                  borderLeft: `3px solid ${mm.color}`, borderRadius: 8, padding: "10px 12px",
+                  borderLeft: `2px solid ${mm.color}aa`, borderRadius: 8, padding: "10px 12px",
                   display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
@@ -3258,15 +3160,15 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     {alreadyLogged
-                      ? <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GREEN, letterSpacing: 1 }}>DONE</span>
+                      ? <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: GREEN, letterSpacing: TRACK }}>DONE</span>
                       : <button onClick={() => setLogModal({ exercise: ex, muscle: ex.primary || "chest", targetDate: getDayDate(selDay) })} style={{
-                          background: `${mm.color}22`, border: `1px solid ${mm.color}66`,
+                          background: `${mm.color}22`, border: `1px solid ${mm.color}22`,
                           borderRadius: 6, padding: "6px 12px", cursor: "pointer",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                          fontWeight: 700, color: mm.color, letterSpacing: 1 }}>LOG</button>
+                          fontFamily: FONT_DISPLAY, fontSize: 9,
+                          fontWeight: 700, color: mm.color, letterSpacing: TRACK }}>LOG</button>
                     }
                     <button onClick={() => setRandoPlan(p => p.filter((_, j) => j !== i))}
-                      style={{ background: "none", border: `1px solid ${MUTED}33`,
+                      style={{ background: "none", border: `1px solid ${MUTED}22`,
                         borderRadius: 6, width: 26, height: 26, cursor: "pointer",
                         color: MUTED, fontSize: 14, display: "flex",
                         alignItems: "center", justifyContent: "center" }}>✕</button>
@@ -3296,10 +3198,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               borderRadius: 8, padding: "7px 11px", cursor: "pointer", textAlign: "center",
               minWidth: 46
             }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
                 color: active ? ACCENT : isToday ? GOLD : MUTED }}>{d}</div>
               {xp > 0 && (
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8,
                   color: GOLD, marginTop: 2 }}>+{xp}</div>
               )}
               {isRest && (
@@ -3319,8 +3221,8 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
         {/* Program plan for day (structured programs only) */}
         {!isFree && todayPlan && !todayPlan.rest && todayPlan.exercises?.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-              letterSpacing: 3, marginBottom: 8 }}>{`// TODAY'S PLAN · ${todayPlan.label.toUpperCase()}`}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+              letterSpacing: TRACK, marginBottom: 8 }}>{`TODAY'S PLAN · ${todayPlan.label.toUpperCase()}`}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {todayPlan.exercises.map((planned, i) => {
                 // Travel mode: substitute anything the user can't perform today
@@ -3333,7 +3235,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 return (
                   <div key={i} className="card-in" style={{ background: BG2,
                     border: `1px solid ${alreadyLogged ? GREEN+"44" : mm.color+"22"}`,
-                    borderLeft: `3px solid ${alreadyLogged ? GREEN : mm.color}`,
+                    borderLeft: `2px solid ${alreadyLogged ? GREEN : mm.color}aa`,
                     borderRadius: 8, padding: "10px 12px", animationDelay: `${Math.min(i, 8) * 55}ms`,
                     display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
@@ -3354,14 +3256,14 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                     </div>
                     {!alreadyLogged && (
                       <button onClick={() => setLogModal({ exercise: ex, muscle: ex.muscle || ex.primary || "chest" })}
-                        style={{ background: `${mm.color}22`, border: `1px solid ${mm.color}66`,
+                        style={{ background: `${mm.color}22`, border: `1px solid ${mm.color}22`,
                           borderRadius: 6, padding: "5px 14px", cursor: "pointer",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                          fontWeight: 700, color: mm.color, letterSpacing: 1 }}>LOG</button>
+                          fontFamily: FONT_DISPLAY, fontSize: 9,
+                          fontWeight: 700, color: mm.color, letterSpacing: TRACK }}>LOG</button>
                     )}
                     {alreadyLogged && (
-                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                        color: GREEN, letterSpacing: 1 }}>DONE</span>
+                      <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8,
+                        color: GREEN, letterSpacing: TRACK }}>DONE</span>
                     )}
                   </div>
                 );
@@ -3372,10 +3274,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
         )}
 
         {!isFree && todayPlan?.rest && byDay[selDay].length === 0 && (
-          <div style={{ background: BG2, border: `1px solid ${ACCENT2}33`, borderRadius: 10,
+          <div style={{ background: BG2, border: `1px solid ${ACCENT2}22`, borderRadius: 10,
             padding: "20px", textAlign: "center", marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, color: MUTED,
-              letterSpacing: 2 }}>REST DAY</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: MUTED,
+              letterSpacing: TRACK }}>REST DAY</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 4 }}>
               Recovery is part of the program
             </div>
@@ -3398,13 +3300,13 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           const isPast     = selDay !== todayIdx;
           return (
             <div style={{ background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
-              border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}44`,
+              border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}22`,
               borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                  color: ACCENT, letterSpacing: 3 }}>{"// NUTRITION · " + dayLabel.toUpperCase()}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
+                  color: ACCENT, letterSpacing: TRACK }}>{"NUTRITION · " + dayLabel.toUpperCase()}</div>
                 {cals > 0 && (
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 900,
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 900,
                     color: surplus === 0 && protMult >= 1.0 ? GREEN : GOLD }}>
                     {Math.round(calcNetXP(100, cals, tdee, prot, protTarget))}% XP
                   </div>
@@ -3414,7 +3316,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                     <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, fontWeight: 700, color: MUTED }}>CALORIES</span>
-                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: calColor }}>{cals.toLocaleString()} / {tdee.toLocaleString()}</span>
+                    <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: calColor }}>{cals.toLocaleString()} / {tdee.toLocaleString()}</span>
                   </div>
                   <div style={{ background: DARK1, height: 4, borderRadius: 2 }}>
                     <div style={{ width: `${Math.min(100, cals/tdee*100)}%`, height: "100%",
@@ -3426,7 +3328,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 <div style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                     <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, fontWeight: 700, color: MUTED }}>PROTEIN</span>
-                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: protColor }}>{prot}g / {protTarget}g</span>
+                    <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: protColor }}>{prot}g / {protTarget}g</span>
                   </div>
                   <div style={{ background: DARK1, height: 4, borderRadius: 2 }}>
                     <div style={{ width: `${Math.min(100, prot/protTarget*100)}%`, height: "100%",
@@ -3456,10 +3358,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                   toast("Nutrition saved for " + dayLabel, GREEN);
                 }} style={{
                   background: `linear-gradient(90deg, ${ACCENT2}cc, ${ACCENT}33)`,
-                  border: `1px solid ${ACCENT}66`, borderTop: `1px solid ${ACCENT}aa`,
+                  border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}22`,
                   borderRadius: 8, color: ACCENT, cursor: "pointer",
-                  fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
-                  letterSpacing: 2, padding: "10px",
+                  fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+                  letterSpacing: TRACK, padding: "10px",
                 }}>
                   {isPast ? "LOG FOR " + dayLabel.toUpperCase() : "LOG NUTRITION"}
                 </button>
@@ -3476,9 +3378,9 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
         {byDay[selDay].length > 0 && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
-                color: ACCENT, letterSpacing: 3 }}>{`// LOGGED · ${DAYS[selDay]}`}</div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11,
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
+                color: ACCENT, letterSpacing: TRACK }}>{`LOGGED · ${DAYS[selDay]}`}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11,
                 fontWeight: 700, color: GOLD }}>+{dayXP(selDay).toLocaleString()} XP</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -3486,8 +3388,8 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 const mm = MUSCLE_META[w.muscle] || MUSCLE_META[w.exercise?.primary] || MUSCLE_META.chest;
                 return (
                   <div key={i} style={{ background: BG2,
-                    border: `1px solid ${mm.color}33`,
-                    borderLeft: `3px solid ${mm.color}`,
+                    border: `1px solid ${mm.color}22`,
+                    borderLeft: `2px solid ${mm.color}aa`,
                     borderRadius: 10, padding: "12px 14px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between",
                       alignItems: "flex-start", marginBottom: 4 }}>
@@ -3504,18 +3406,18 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                         )}
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12,
+                        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12,
                           fontWeight: 700, color: GOLD }}>+{w.xp}</span>
                         <button onClick={() => handleEdit(w)} style={{
-                          background: `${ACCENT}18`, border: `1px solid ${ACCENT}44`,
+                          background: `${ACCENT}18`, border: `1px solid ${ACCENT}22`,
                           borderRadius: 5, padding: "4px 9px", cursor: "pointer",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                          color: ACCENT, letterSpacing: 1 }}>EDIT</button>
+                          fontFamily: FONT_DISPLAY, fontSize: 8,
+                          color: ACCENT, letterSpacing: TRACK }}>EDIT</button>
                         <button onClick={() => handleDelete(w)} style={{
-                          background: `${RED}11`, border: `1px solid ${RED}33`,
+                          background: `${RED}11`, border: `1px solid ${RED}22`,
                           borderRadius: 5, padding: "4px 9px", cursor: "pointer",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                          color: RED, letterSpacing: 1 }}>DEL</button>
+                          fontFamily: FONT_DISPLAY, fontSize: 8,
+                          color: RED, letterSpacing: TRACK }}>DEL</button>
                       </div>
                     </div>
                     {w.sets_detail && (
@@ -3541,7 +3443,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               marginTop: 10, width: "100%",
               background: `${ACCENT}0d`, border: `1px dashed ${ACCENT}44`, borderRadius: 8,
               padding: "10px", cursor: "pointer",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2
+              fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK
             }}>+ LOG ANOTHER EXERCISE</button>
           </div>
         )}
@@ -3552,9 +3454,9 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
               marginBottom: 10 }}>Nothing logged for {DAYS[selDay]}</div>
             <button onClick={() => setLogModal({ fromEmpty: true })} style={{
-              background: `${ACCENT}18`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+              background: `${ACCENT}18`, border: `1px solid ${ACCENT}22`, borderRadius: 8,
               padding: "9px 20px", cursor: "pointer",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2
+              fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK
             }}>+ LOG EXERCISE</button>
           </div>
         )}
@@ -3564,9 +3466,9 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           <button onClick={() => setFinishModalOpen(true)} style={{
             width: "100%", marginTop: 14,
             background: `linear-gradient(90deg, ${GOLD}22, ${GOLD}11)`,
-            border: `1px solid ${GOLD}66`, borderRadius: 10,
+            border: `1px solid ${GOLD}22`, borderRadius: 10,
             padding: "12px 14px", cursor: "pointer",
-            fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 3,
+            fontFamily: FONT_DISPLAY, fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: TRACK,
             display: "flex", justifyContent: "space-between", alignItems: "center",
           }}>
             <span>FINISH SESSION ▶</span>
@@ -3579,8 +3481,8 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
         {/* Weekly XP summary */}
         <div style={{ marginTop: 20, background: BG2, border: `1px solid ${GOLD}22`,
           borderRadius: 10, padding: "12px 14px" }}>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD,
-            letterSpacing: 3, marginBottom: 10 }}>{"// WEEK SUMMARY"}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD,
+            letterSpacing: TRACK, marginBottom: 10 }}>{"WEEK SUMMARY"}</div>
           <div style={{ display: "flex", gap: 4 }}>
             {DAYS.map((d, i) => {
               const xp = dayXP(i);
@@ -3596,7 +3498,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                       background: xp > 0 ? `linear-gradient(180deg, ${GOLD}, ${GOLD}88)` : BG3,
                       borderRadius: 2, transition: "height .4s" }} />
                   </div>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7,
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 7,
                     color: isToday ? GOLD : MUTED }}>{d}</div>
                   {xp > 0 && (
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8,
@@ -3610,7 +3512,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
               {DAYS.reduce((s,_,i) => s + (byDay[i].length > 0 ? 1 : 0), 0)} training days
             </span>
-            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12,
+            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12,
               fontWeight: 700, color: GOLD }}>{weekXP.toLocaleString()} XP total</span>
           </div>
         </div>
@@ -3629,12 +3531,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
-                border: `1px solid ${ACCENT}55`, borderTop: `2px solid ${ACCENT}`,
-                width: "100%", maxWidth: 480, padding: "20px 20px 20px",
-                clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
-              }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, color: ACCENT,
-                  letterSpacing: 2, marginBottom: 14 }}>LOG EXERCISE</div>
+                border: `1px solid ${ACCENT}22`, borderTop: `2px solid ${ACCENT}`,
+                width: "100%", maxWidth: 480, padding: "20px 20px 20px"}}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, color: ACCENT,
+                  letterSpacing: TRACK, marginBottom: 14 }}>LOG EXERCISE</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {["chest","back","shoulders","bicep","tricep","forearms","legs","glutes","calves","core","cardio"].map(m => {
                     const mm = MUSCLE_META[m]; if (!mm) return null;
@@ -3643,7 +3543,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                         const exs = EXERCISE_DB[m] || [];
                         if (exs.length) setLogModal({ exercise: exs[0], muscle: m, pickExercise: true, muscleKey: m });
                       }} style={{
-                        background: `${mm.color}18`, border: `1px solid ${mm.color}44`,
+                        background: `${mm.color}18`, border: `1px solid ${mm.color}22`,
                         borderRadius: 20, padding: "6px 12px", cursor: "pointer",
                         fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
                         fontWeight: 700, color: mm.color
@@ -3673,14 +3573,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               onClick={() => { setLogModal(null); setEditEntry(null); }}>
               <div onClick={e => e.stopPropagation()} className="slide-up" style={{
                 background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
-                border: `1px solid ${mm.color}55`, borderTop: `2px solid ${mm.color}`,
+                border: `1px solid ${mm.color}22`, borderTop: `2px solid ${mm.color}`,
                 width: "100%", maxWidth: 480, padding: "20px 20px 36px", maxHeight: "75vh",
-                overflowY: "auto", WebkitOverflowScrolling: "touch",
-                clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
-              }}>
+                overflowY: "auto", WebkitOverflowScrolling: "touch"}}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, color: mm.color,
-                    letterSpacing: 2 }}>{mm.name.toUpperCase()}</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, color: mm.color,
+                    letterSpacing: TRACK }}>{mm.name.toUpperCase()}</div>
                   <button onClick={() => setLogModal({ fromEmpty: true, targetDate: getSelDayDate() })}
                     style={{ background: "none", border: "none", color: MUTED,
                       cursor: "pointer", fontFamily: "'Rajdhani',sans-serif", fontSize: 11 }}>← BACK</button>
@@ -3703,8 +3601,8 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                     const diffColor = { beginner: GREEN, intermediate: ACCENT, advanced: GOLD, elite: RED }[ex.diff];
                     return (
                       <button key={i} onClick={() => setLogModal({ exercise: ex, muscle: modal.muscleKey })}
-                        style={{ background: BG2, border: `1px solid ${mm.color}33`,
-                          borderLeft: `3px solid ${mm.color}`, borderRadius: 8,
+                        style={{ background: BG2, border: `1px solid ${mm.color}22`,
+                          borderLeft: `2px solid ${mm.color}aa`, borderRadius: 8,
                           padding: "10px 14px", cursor: "pointer", textAlign: "left",
                           display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
@@ -3712,13 +3610,13 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
                           <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
                             color: diffColor, background: `${diffColor}22`,
-                            padding: "2px 7px", borderRadius: 6, letterSpacing: 1 }}>
+                            padding: "2px 7px", borderRadius: 6, letterSpacing: TRACK }}>
                             {ex.diff?.toUpperCase()}
                           </span>
                           {ex.angle && (
                             <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
                               color: GOLD, background: `${GOLD}15`,
-                              padding: "2px 7px", borderRadius: 6, letterSpacing: 0.5 }}>
+                              padding: "2px 7px", borderRadius: 6, letterSpacing: TRACK }}>
                               {ex.angle}
                             </span>
                           )}
@@ -3788,12 +3686,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           onClick={() => setRandoMode(false)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}f8, ${DARK1}f5)`,
-            border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`,
-            width: "100%", maxWidth: 480, padding: "24px 20px 36px",
-            clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
-          }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700,
-              color: GOLD, letterSpacing: 2, marginBottom: 4 }}>RANDOM WORKOUT</div>
+            border: `1px solid ${GOLD}22`, borderTop: `2px solid ${GOLD}`,
+            width: "100%", maxWidth: 480, padding: "24px 20px 36px"}}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700,
+              color: GOLD, letterSpacing: TRACK, marginBottom: 4 }}>RANDOM WORKOUT</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>
               Pick which muscles to train. Builds the optimal hypertrophy session.
             </div>
@@ -3802,11 +3698,11 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 {randoMuscles.map(m => { const mm = MUSCLE_META[m]; return (
                   <span key={m} style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                     fontWeight: 700, color: mm?.color, background: `${mm?.color}22`,
-                    border: `1px solid ${mm?.color}66`, padding: "3px 10px", borderRadius: 6 }}>{mm?.name}</span>
+                    border: `1px solid ${mm?.color}22`, padding: "3px 10px", borderRadius: 6 }}>{mm?.name}</span>
                 );})}
                 {!randoMuscles.length && <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>None selected</span>}
               </div>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
                 color: randoMuscles.length ? ACCENT : MUTED }}>{randoMuscles.length} selected</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
@@ -3820,14 +3716,14 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                   <button key={m} onClick={() => toggleRandoMuscle(m)} style={{
                     background: isSel ? `${mm.color}28` : `${mm.color}0a`,
                     border: `1px solid ${isSel ? mm.color : mm.color+"44"}`,
-                    borderLeft: `3px solid ${isSel ? mm.color : mm.color+"55"}`,
+                    borderLeft: `2px solid ${isSel ? mm.color : mm.color+"55"}aa`,
                     borderRadius: 8, padding: "10px 12px", cursor: "pointer",
                     textAlign: "left", position: "relative", transition: "all .15s"
                   }}>
                     {isSel && <div style={{ position: "absolute", top: 6, right: 8,
-                      fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: mm.color, fontWeight: 900 }}>✓</div>}
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
-                      color: isSel ? mm.color : MUTED, letterSpacing: 1, marginBottom: 3 }}>{mm.name.toUpperCase()}</div>
+                      fontFamily: FONT_DISPLAY, fontSize: 9, color: mm.color, fontWeight: 900 }}>✓</div>}
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
+                      color: isSel ? mm.color : MUTED, letterSpacing: TRACK, marginBottom: 3 }}>{mm.name.toUpperCase()}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>
                       {daysSince===null?"Never trained":daysSince===0?"Today":daysSince===1?"1 day ago":`${daysSince}d ago`}
                     </div>
@@ -3838,7 +3734,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
             {/* Difficulty filter */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                letterSpacing: 3, marginBottom: 8 }}>DIFFICULTY</div>
+                letterSpacing: TRACK, marginBottom: 8 }}>DIFFICULTY</div>
               <div style={{ display: "flex", gap: 6 }}>
                 {[
                   { val: "all",          label: "ALL" },
@@ -3856,17 +3752,17 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                       background: isActive ? `${col}22` : BG3,
                       border: `1px solid ${isActive ? col : MUTED + "33"}`,
                       borderRadius: 6,
-                      fontFamily: "'Orbitron',sans-serif", fontSize: 6, fontWeight: 700,
-                      color: isActive ? col : MUTED, letterSpacing: 0.5,
+                      fontFamily: FONT_DISPLAY, fontSize: 6, fontWeight: 700,
+                      color: isActive ? col : MUTED, letterSpacing: TRACK,
                       transition: "all .15s",
-                      boxShadow: isActive ? `0 0 8px ${col}44` : "none",
+                      
                     }}>{label}</button>
                   );
                 })}
               </div>
               {randoDiff !== "all" && (
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                  marginTop: 6, letterSpacing: 1 }}>
+                  marginTop: 6, letterSpacing: TRACK }}>
                   {randoDiff === "beginner" ? "Foundation movements — safe for all levels" :
                    randoDiff === "intermediate" ? "Progressive overload focus — solid technique required" :
                    randoDiff === "advanced" ? "High intensity — strong base needed" :
@@ -3879,12 +3775,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               cursor: randoMuscles.length ? "pointer" : "not-allowed",
               background: randoMuscles.length ? `linear-gradient(90deg, ${GOLD}33, ${GOLD}22)` : DARK1,
               border: `1px solid ${randoMuscles.length ? GOLD+"88" : MUTED+"33"}`,
-              clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px))",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
-              color: randoMuscles.length ? GOLD : MUTED, letterSpacing: 3,
+              
+              fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700,
+              color: randoMuscles.length ? GOLD : MUTED, letterSpacing: TRACK,
               opacity: randoMuscles.length ? 1 : 0.5 }}>GENERATE WORKOUT</button>
             <button onClick={() => { setRandoMode(false); setRandoMuscles([]); }} style={{
-              width: "100%", background: "none", border: `1px solid ${MUTED}33`,
+              width: "100%", background: "none", border: `1px solid ${MUTED}22`,
               borderRadius: 8, padding: "10px", cursor: "pointer",
               fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>CANCEL</button>
           </div>
@@ -3913,19 +3809,19 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
 
   return (
     <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 18, fontWeight: 700,
-        color: GOLD, letterSpacing: 2, marginBottom: 4 }}>PROGRAMS</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700,
+        color: GOLD, letterSpacing: TRACK, marginBottom: 4 }}>PROGRAMS</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED,
-        letterSpacing: 2, marginBottom: 20 }}>SELECT YOUR TRAINING REGIME</div>
+        letterSpacing: TRACK, marginBottom: 20 }}>SELECT YOUR TRAINING REGIME</div>
 
       {st.program && (
         <button onClick={() => setScreen("schedule")} style={{
-          width: "100%", background: `${GREEN}11`, border: `1px solid ${GREEN}44`, borderRadius: 10,
+          width: "100%", background: `${GREEN}11`, border: `1px solid ${GREEN}22`, borderRadius: 10,
           padding: "12px 14px", marginBottom: 16, fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
           color: GREEN, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center"
         }}>
           <span>ACTIVE: {allPrograms.find(p => p.id === st.program)?.name}</span>
-          <span style={{ fontSize: 11, color: ACCENT, letterSpacing: 1 }}>VIEW SCHEDULE</span>
+          <span style={{ fontSize: 11, color: ACCENT, letterSpacing: TRACK }}>VIEW SCHEDULE</span>
         </button>
       )}
 
@@ -3936,12 +3832,11 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
             background: "none", border: "none", width: "100%", cursor: "pointer",
             padding: "14px 14px", display: "flex", gap: 12, alignItems: "center", textAlign: "left"
           }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900,
-              color: p.color, letterSpacing: 2, minWidth: 36, textAlign: "center",
-              textShadow: `0 0 12px ${p.color}66` }}>{p.icon}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 900,
+              color: p.color, letterSpacing: TRACK, minWidth: 36, textAlign: "center"}}>{p.icon}</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700,
-                color: p.color, letterSpacing: 1, marginBottom: 2 }}>{p.name}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
+                color: p.color, letterSpacing: TRACK, marginBottom: 2 }}>{p.name}</div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
                 {p.athlete} · {p.era}
               </div>
@@ -3959,10 +3854,10 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
               {!p.free && (
                 <>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                    letterSpacing: 3, marginBottom: 8 }}>WEEKLY OVERVIEW</div>
+                    letterSpacing: TRACK, marginBottom: 8 }}>WEEKLY OVERVIEW</div>
                   {p.days.map((day, i) => (
                     <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 5 }}>
-                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9,
+                      <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
                         color: ACCENT, minWidth: 28 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][i]}</span>
                       <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
                         color: day.rest ? MUTED : TEXT }}>{day.label}</span>
@@ -3985,7 +3880,7 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
                 onSelectProgram(p.id);
                 toast(`${p.name} activated!`, GREEN);
                 setTimeout(() => setScreen("schedule"), 600);
-              }} style={{ width: "100%", padding: "12px", fontSize: 13, letterSpacing: 2, marginTop: p.free ? 0 : 14 }}>
+              }} style={{ width: "100%", padding: "12px", fontSize: 13, letterSpacing: TRACK, marginTop: p.free ? 0 : 14 }}>
                 {st.program === p.id ? "ACTIVE — VIEW SCHEDULE" : "SELECT PROGRAM"}
               </button>
             </div>
@@ -4005,20 +3900,20 @@ function StatBadge({ muscle, level, xp }) {
   return (
     <div style={{
       background: `linear-gradient(90deg, ${meta.color}08, ${DARK1})`,
-      border: `1px solid ${meta.color}44`, borderLeft: `2px solid ${meta.color}`,
+      border: `1px solid ${meta.color}22`, borderLeft: `2px solid ${meta.color}`,
       padding: "10px 12px", display: "flex", alignItems: "center", gap: 10,
-      clipPath: "polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)",
+      
       position: "relative"
     }}>
       <MuscleIcon muscle={muscle} size={26} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: meta.color, letterSpacing: 2, textShadow: `0 0 8px ${meta.color}` }}>{meta.name.toUpperCase()}</span>
-          <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: rank.color, fontWeight: 900, textShadow: `0 0 10px ${rank.color}` }}>{rank.rank}</span>
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: meta.color, letterSpacing: TRACK}}>{meta.name.toUpperCase()}</span>
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11, color: rank.color, fontWeight: 900}}>{rank.rank}</span>
         </div>
         <XPBar current={current} needed={needed} color={meta.color} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
-          <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 1 }}>LVL {level}</span>
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK }}>LVL {level}</span>
           <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>{current.toLocaleString()} / {needed.toLocaleString()} XP</span>
         </div>
       </div>
@@ -4164,15 +4059,14 @@ function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, o
       display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 96 }}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
-        border: `1px solid ${meta.color}44`, borderTop: `2px solid ${meta.color}`,
-        width: "100%", maxWidth: 480, maxHeight: "82dvh", display: "flex", flexDirection: "column",
-        clipPath: "polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%)" }}>
+        border: `1px solid ${meta.color}22`, borderTop: `2px solid ${meta.color}`,
+        width: "100%", maxWidth: 480, maxHeight: "82dvh", display: "flex", flexDirection: "column"}}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${meta.color}cc, transparent)` }} />
         <div style={{ padding: "18px 18px 0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700,
-              color: meta.color, letterSpacing: 2 }}>LOG MIND & SPIRIT</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
+              color: meta.color, letterSpacing: TRACK }}>LOG MIND & SPIRIT</div>
             <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
           </div>
           {/* Attribute tabs */}
@@ -4185,8 +4079,8 @@ function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, o
                   flex: 1, padding: "10px", cursor: "pointer",
                   background: on ? `${m.color}22` : BG3,
                   border: `1px solid ${on ? m.color : ACCENT2 + "33"}`, borderRadius: 8,
-                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
-                  color: on ? m.color : MUTED, letterSpacing: 1,
+                  fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700,
+                  color: on ? m.color : MUTED, letterSpacing: TRACK,
                 }}>{m.name.toUpperCase()} · LVL {lvl}</button>
               );
             })}
@@ -4222,7 +4116,7 @@ function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, o
             const xp = activityXP(a, q);
             return (
               <div key={a.id} style={{ background: BG3, border: `1px solid ${meta.color}22`,
-                borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                borderLeft: `2px solid ${meta.color}aa`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, fontWeight: 700, color: TEXT }}>{a.label}</div>
@@ -4241,23 +4135,23 @@ function MindLogModal({ profile, settings, onUpdateSettings, onLog, onAddTask, o
                         color: pinned ? GOLD : MUTED }}>{pinned ? "★" : "☆"}</button>
                     ); })()}
                     <button onClick={() => doLog(a)} style={{
-                      background: `${meta.color}22`, border: `1px solid ${meta.color}66`,
-                      borderTop: `1px solid ${meta.color}cc`,
-                      clipPath: "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
+                      background: `${meta.color}22`, border: `1px solid ${meta.color}22`,
+                      borderTop: `1px solid ${meta.color}22`,
+                      
                       padding: "8px 16px", cursor: "pointer",
-                      fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
-                      color: meta.color, letterSpacing: 1 }}>LOG</button>
+                      fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
+                      color: meta.color, letterSpacing: TRACK }}>LOG</button>
                   </div>
                 </div>
                 {/* Quantity stepper for unit-based activities */}
                 {a.unit && (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                     <button onClick={() => setQty(s => ({ ...s, [a.id]: Math.max(1, (s[a.id] ?? a.defaultQty ?? 1) - 1) }))}
-                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}44`, borderRadius: 6,
+                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}22`, borderRadius: 6,
                         color: TEXT, fontSize: 16, cursor: "pointer" }}>−</button>
-                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, color: TEXT, minWidth: 54, textAlign: "center" }}>{q} {a.unit}</span>
+                    <span style={{ fontFamily: FONT_DISPLAY, fontSize: 13, color: TEXT, minWidth: 54, textAlign: "center" }}>{q} {a.unit}</span>
                     <button onClick={() => setQty(s => ({ ...s, [a.id]: (s[a.id] ?? a.defaultQty ?? 1) + 1 }))}
-                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}44`, borderRadius: 6,
+                      style={{ width: 28, height: 28, background: BG2, border: `1px solid ${MUTED}22`, borderRadius: 6,
                         color: TEXT, fontSize: 16, cursor: "pointer" }}>+</button>
                   </div>
                 )}
@@ -4289,14 +4183,14 @@ function MindSpiritCard({ profile, settings, onUpdateSettings, onLogMind, onAddT
     <div style={{ marginBottom: 16 }}>
       <div style={{ background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
         border: `1px solid #8b8cf644`, borderTop: `1px solid #8b8cf699`,
-        clipPath: "polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))",
+        
         padding: "12px 14px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: "#8b8cf6", letterSpacing: 3 }}>{"// MIND & SPIRIT"}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: "#8b8cf6", letterSpacing: TRACK }}>{"MIND & SPIRIT"}</div>
           <button onClick={() => setOpen(true)} style={{
             background: "#8b8cf622", border: "1px solid #8b8cf666", borderRadius: 6,
             padding: "5px 12px", cursor: "pointer",
-            fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: "#a5a6ff", fontWeight: 700, letterSpacing: 1 }}>+ LOG</button>
+            fontFamily: FONT_DISPLAY, fontSize: 9, color: "#a5a6ff", fontWeight: 700, letterSpacing: TRACK }}>+ LOG</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {["intelligence", "faith"].map(s => (
@@ -4319,8 +4213,8 @@ function MindSpiritCard({ profile, settings, onUpdateSettings, onLogMind, onAddT
           return (
             <div style={{ marginTop: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: "#8b8cf6", letterSpacing: 3 }}>{"// TODAY'S TASKS"}</div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: doneCount === tasks.length ? GOLD : MUTED }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: "#8b8cf6", letterSpacing: TRACK }}>{"TODAY'S TASKS"}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: doneCount === tasks.length ? GOLD : MUTED }}>
                   {doneCount}/{tasks.length}
                 </div>
               </div>
@@ -4343,7 +4237,7 @@ function MindSpiritCard({ profile, settings, onUpdateSettings, onLogMind, onAddT
                       textDecoration: done ? "line-through" : "none", flex: 1, minWidth: 0,
                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>{t.label}</span>
-                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: m.color, flexShrink: 0 }}>+{t.xp}</span>
+                    <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: m.color, flexShrink: 0 }}>+{t.xp}</span>
                     <button onClick={() => onRemoveTask?.(t.id)} title="Remove task" style={{
                       background: "none", border: "none", color: MUTED, fontSize: 14,
                       cursor: "pointer", padding: "0 2px", flexShrink: 0, opacity: 0.6 }}>×</button>
@@ -4374,19 +4268,19 @@ function Toasts({ toasts }) {
       {toasts.map(t => (
         <div key={t.id} style={{
           background: `linear-gradient(90deg, ${DARK1}f8, ${BG2}f0)`,
-          border: `1px solid ${t.color}88`,
-          borderLeft: `3px solid ${t.color}`,
+          border: `1px solid ${t.color}22`,
+          borderLeft: `2px solid ${t.color}aa`,
           borderRadius: 0,
-          clipPath: "polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)",
+          
           padding: "10px 16px",
-          fontFamily: "'Orbitron',sans-serif", fontSize: 11, letterSpacing: 2,
+          fontFamily: FONT_DISPLAY, fontSize: 11, letterSpacing: TRACK,
           color: t.color, fontWeight: 700,
-          boxShadow: `0 0 20px ${t.color}33, inset 0 0 20px ${t.color}0a`,
+          
           animation: "toastIn .25s cubic-bezier(0.16,1,0.3,1)",
-          textShadow: `0 0 8px ${t.color}`,
+          
           position: "relative",
         }}>
-          <span style={{ fontSize: 9, letterSpacing: 3, color: t.color, opacity: 0.7, display: "block", marginBottom: 2 }}>[ SYSTEM ]</span>
+          <span style={{ fontSize: 9, letterSpacing: TRACK, color: t.color, opacity: 0.7, display: "block", marginBottom: 2 }}>SYSTEM</span>
           {t.msg}
         </div>
       ))}
@@ -4468,7 +4362,7 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
       background: `linear-gradient(180deg, ${DARK1}ee, ${BG2}ff)`,
       backdropFilter: "blur(16px)",
       WebkitBackdropFilter: "blur(16px)",
-      borderTop: `1px solid ${ACCENT}44`,
+      borderTop: `1px solid ${ACCENT}22`,
       boxShadow: `0 -4px 24px ${ACCENT}18`,
       display: "flex", alignItems: "stretch",
       paddingBottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
@@ -4511,16 +4405,16 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
                 position: "absolute", top: 6, right: "18%",
                 background: RED, color: "#fff", borderRadius: "50%",
                 width: 14, height: 14, fontSize: 8,
-                fontFamily: "'Orbitron',sans-serif",
+                fontFamily: FONT_DISPLAY,
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>{badge}</span>
             )}
             {NAV_ICONS[id](c)}
             <span style={{
-              fontFamily: "'Orbitron',sans-serif",
-              fontSize: 7, fontWeight: 700, letterSpacing: 1,
+              fontFamily: FONT_DISPLAY,
+              fontSize: 7, fontWeight: 700, letterSpacing: TRACK,
               color: c,
-              textShadow: active ? `0 0 8px ${ACCENT}` : "none",
+              
             }}>{label}</span>
           </button>
         );
@@ -4548,8 +4442,8 @@ function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest 
       borderRadius: 10, marginBottom: 10,
       transition: "all .15s",
     }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
-        color: primary ? ACCENT : TEXT, letterSpacing: 2 }}>{label}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700,
+        color: primary ? ACCENT : TEXT, letterSpacing: TRACK }}>{label}</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
         color: MUTED, marginTop: 4, lineHeight: 1.4 }}>{sub}</div>
     </button>
@@ -4559,12 +4453,12 @@ function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest 
     <div style={{ minHeight: "100dvh", background: BG, display: "flex",
       flexDirection: "column", justifyContent: "center", padding: "40px 24px" }}>
       <div style={{ maxWidth: 420, margin: "0 auto", width: "100%" }}>
-        <div className="holo-text" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900,
-          letterSpacing: 6, textAlign: "center", marginBottom: 8 }}>
+        <div className="holo-text" style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 900,
+          letterSpacing: TRACK, textAlign: "center", marginBottom: 8 }}>
           IRON REALM
         </div>
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
-          color: MUTED, textAlign: "center", marginBottom: 32, letterSpacing: 1 }}>
+          color: MUTED, textAlign: "center", marginBottom: 32, letterSpacing: TRACK }}>
           Awaken the Hunter within.
         </div>
 
@@ -4625,18 +4519,18 @@ function OnboardScreen({ onComplete }) {
         {step === 0 && (
           <div className="slide-up" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: ACCENT,
-              letterSpacing: 6, marginBottom: 16 }}>— SYSTEM INITIALIZATION —</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 48, fontWeight: 900,
-              color: GOLD, letterSpacing: 4, lineHeight: 1, textShadow: `0 0 40px ${GOLD}66` }}>IRON</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 48, fontWeight: 900,
-              color: TEXT, letterSpacing: 4, lineHeight: 1, marginBottom: 8 }}>REALM</div>
+              letterSpacing: TRACK, marginBottom: 16 }}>— SYSTEM INITIALIZATION —</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 48, fontWeight: 900,
+              color: GOLD, letterSpacing: TRACK, lineHeight: 1}}>IRON</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 48, fontWeight: 900,
+              color: TEXT, letterSpacing: TRACK, lineHeight: 1, marginBottom: 8 }}>REALM</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
-              letterSpacing: 3, marginBottom: 48 }}>AWAKEN, HUNTER.</div>
+              letterSpacing: TRACK, marginBottom: 48 }}>AWAKEN, HUNTER.</div>
 
-            <div style={{ background: `${ACCENT}11`, border: `1px solid ${ACCENT}33`,
+            <div style={{ background: `${ACCENT}11`, border: `1px solid ${ACCENT}22`,
               borderRadius: 12, padding: "20px", marginBottom: 32, textAlign: "left" }}>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: ACCENT,
-                letterSpacing: 4, marginBottom: 10 }}>[ SYSTEM NOTICE ]</div>
+                letterSpacing: TRACK, marginBottom: 10 }}>SYSTEM NOTICE</div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: TEXT, lineHeight: 1.7 }}>
                 A new player has been detected.<br />
                 Initializing Hunter profile...<br />
@@ -4645,7 +4539,7 @@ function OnboardScreen({ onComplete }) {
             </div>
 
             <button className="btn-primary" onClick={() => setStep(1)}
-              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: 3 }}>
+              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK }}>
               BEGIN INITIALIZATION
             </button>
             <div style={{ marginTop: 16, fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
@@ -4661,19 +4555,19 @@ function OnboardScreen({ onComplete }) {
         {step === 1 && (
           <div className="slide-up" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-              letterSpacing: 4, marginBottom: 8 }}>STEP 1 / 3</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 700,
-              color: GOLD, letterSpacing: 2, marginBottom: 6 }}>HUNTER NAME</div>
+              letterSpacing: TRACK, marginBottom: 8 }}>STEP 1 / 3</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
+              color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>HUNTER NAME</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
               marginBottom: 32 }}>What shall we call you, Hunter?</div>
 
             <input className="input-field" value={name} onChange={e => setName(e.target.value)}
               placeholder="Enter your name..." maxLength={20}
               style={{ textAlign: "center", fontSize: 18, fontWeight: 700,
-                letterSpacing: 2, marginBottom: 24, color: ACCENT }} />
+                letterSpacing: TRACK, marginBottom: 24, color: ACCENT }} />
 
             <button className="btn-primary" onClick={() => name.trim() && setStep(2)}
-              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: 3,
+              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK,
                 opacity: name.trim() ? 1 : 0.5 }}>
               CONFIRM
             </button>
@@ -4684,9 +4578,9 @@ function OnboardScreen({ onComplete }) {
         {step === 2 && (
           <div className="slide-up" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-              letterSpacing: 4, marginBottom: 8 }}>STEP 2 / 3</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 700,
-              color: GOLD, letterSpacing: 2, marginBottom: 6 }}>SELECT CLASS</div>
+              letterSpacing: TRACK, marginBottom: 8 }}>STEP 2 / 3</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
+              color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>SELECT CLASS</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
               marginBottom: 32 }}>Choose your Hunter class to unlock programs.</div>
 
@@ -4699,18 +4593,17 @@ function OnboardScreen({ onComplete }) {
                   background: gender === g.id ? `${ACCENT}22` : BG2,
                   border: `2px solid ${gender === g.id ? ACCENT : ACCENT2 + "44"}`,
                   borderRadius: 12, padding: "24px 12px", cursor: "pointer",
-                  transition: "all .2s", boxShadow: gender === g.id ? `0 0 20px ${ACCENT}33` : "none"
-                }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 28, fontWeight: 900, color: goal === g.id ? ACCENT : MUTED, letterSpacing: 2, marginBottom: 10 }}>{g.glyph}</div>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700,
-                    color: gender === g.id ? ACCENT : TEXT, letterSpacing: 2, marginBottom: 4 }}>{g.label}</div>
+                  transition: "all .2s"}}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 900, color: goal === g.id ? ACCENT : MUTED, letterSpacing: TRACK, marginBottom: 10 }}>{g.glyph}</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
+                    color: gender === g.id ? ACCENT : TEXT, letterSpacing: TRACK, marginBottom: 4 }}>{g.label}</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{g.sub}</div>
                 </button>
               ))}
             </div>
 
             <button className="btn-primary" onClick={() => gender && setStep(3)}
-              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: 3, opacity: gender ? 1 : 0.5 }}>
+              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK, opacity: gender ? 1 : 0.5 }}>
               CONFIRM
             </button>
           </div>
@@ -4721,9 +4614,9 @@ function OnboardScreen({ onComplete }) {
           <div className="slide-up">
             <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                letterSpacing: 4, marginBottom: 8 }}>STEP 3 / 4</div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 700,
-                color: GOLD, letterSpacing: 2, marginBottom: 6 }}>MISSION TYPE</div>
+                letterSpacing: TRACK, marginBottom: 8 }}>STEP 3 / 4</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
+                color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>MISSION TYPE</div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
                 What is your primary objective?
               </div>
@@ -4737,16 +4630,16 @@ function OnboardScreen({ onComplete }) {
                   borderRadius: 10, padding: "12px 10px", cursor: "pointer", textAlign: "left",
                   transition: "all .2s"
                 }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: goal === g.id ? g.color : MUTED, letterSpacing: 1, marginBottom: 4 }}>{g.glyph}</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: goal === g.id ? g.color : MUTED, letterSpacing: TRACK, marginBottom: 4 }}>{g.glyph}</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, fontWeight: 700,
-                    color: goal === g.id ? ACCENT : TEXT, letterSpacing: 1 }}>{g.label}</div>
+                    color: goal === g.id ? ACCENT : TEXT, letterSpacing: TRACK }}>{g.label}</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{g.desc}</div>
                 </button>
               ))}
             </div>
 
             <button className="btn-gold" onClick={() => goal && setStep(4)}
-              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: 3, opacity: goal ? 1 : 0.5 }}>
+              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK, opacity: goal ? 1 : 0.5 }}>
               NEXT
             </button>
           </div>
@@ -4756,20 +4649,20 @@ function OnboardScreen({ onComplete }) {
         {step === 4 && (
           <div className="slide-up" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-              letterSpacing: 4, marginBottom: 8 }}>STEP 4 / 4</div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 700,
-              color: GOLD, letterSpacing: 2, marginBottom: 6 }}>BODY STATS</div>
+              letterSpacing: TRACK, marginBottom: 8 }}>STEP 4 / 4</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
+              color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>BODY STATS</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
               marginBottom: 32 }}>Used to calculate calories burned accurately.</div>
 
             <div style={{ textAlign: "left", marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3, marginBottom: 6 }}>WEIGHT (LBS)</div>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>WEIGHT (LBS)</div>
               <input className="input-field" type="number" value={weightLbs} onChange={e => setWeightLbs(e.target.value)}
                 placeholder={getWtUnit()==="kg"?"77":"170"} style={{ fontSize: 18, fontWeight: 700, color: ACCENT, textAlign: "center" }} />
             </div>
 
             <div style={{ textAlign: "left", marginBottom: 32 }}>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3, marginBottom: 6 }}>HEIGHT</div>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>HEIGHT</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
                   <input className="input-field" type="number" value={heightFt} onChange={e => setHeightFt(e.target.value)}
@@ -4787,7 +4680,7 @@ function OnboardScreen({ onComplete }) {
             <button className="btn-gold" onClick={() => {
               const totalIn = (parseInt(heightFt) || 5) * 12 + (parseInt(heightIn) || 10);
               onComplete({ name: name.trim() || "Hunter", gender, goal, weightLbs: parseFloat(weightLbs) || 170, heightIn: totalIn });
-            }} style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: 3 }}>
+            }} style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK }}>
               ARISE
             </button>
           </div>
@@ -4823,13 +4716,13 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
   const message = localErr || error;
   const fieldStyle = {
     width: "100%", padding: "10px 12px", marginTop: 4,
-    background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 6,
+    background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 6,
     color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
     outline: "none", boxSizing: "border-box",
   };
   const labelStyle = {
-    fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-    letterSpacing: 2, fontWeight: 700,
+    fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+    letterSpacing: TRACK, fontWeight: 700,
   };
 
   return (
@@ -4838,15 +4731,13 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
-        border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
+        border: `1px solid ${ACCENT}22`, borderTop: `2px solid ${ACCENT}`,
         width: "100%", maxWidth: 480, padding: "24px 20px 40px",
-        maxHeight: "85dvh", overflowY: "auto",
-        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
-      }}>
+        maxHeight: "85dvh", overflowY: "auto"}}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: TRACK }}>
             {mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
@@ -4860,8 +4751,8 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
               background: mode === m ? `${ACCENT}22` : BG3,
               border: `1px solid ${mode === m ? ACCENT : MUTED + "44"}`,
               borderRadius: 6,
-              fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700,
-              letterSpacing: 2, color: mode === m ? ACCENT : MUTED,
+              fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+              letterSpacing: TRACK, color: mode === m ? ACCENT : MUTED,
             }}>
               {m === "signin" ? "SIGN IN" : "CREATE ACCOUNT"}
             </button>
@@ -4892,14 +4783,14 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
           </label>
 
           {message && (
-            <div style={{ background: `${RED}11`, border: `1px solid ${RED}55`, borderRadius: 6,
+            <div style={{ background: `${RED}11`, border: `1px solid ${RED}22`, borderRadius: 6,
               padding: "10px 12px", fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: RED }}>
               {message}
             </div>
           )}
 
           <button onClick={submit} disabled={busy} className="btn-primary" style={{
-            padding: "14px", fontSize: 12, letterSpacing: 2, marginTop: 4,
+            padding: "14px", fontSize: 12, letterSpacing: TRACK, marginTop: 4,
             opacity: busy ? 0.5 : 1, cursor: busy ? "wait" : "pointer",
           }}>
             {busy ? "..." : mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}
@@ -4930,7 +4821,7 @@ function relicStyle(relicId) {
   const relic = RELIC_POOL.find(r => r.id === relicId);
   if (!relic) return null;
   const c = RELIC_FRAME_COLORS[relicId];
-  const base = { border: `2px solid ${c}`, boxShadow: `0 0 14px ${c}44` };
+  const base = { border: `2px solid ${c}`};
   if (relic.rarity === "epic" || relic.rarity === "legendary") {
     return { ...base, "--relic": c, animation: "relicGlowPulse 2.6s ease-in-out infinite" };
   }
@@ -4966,8 +4857,8 @@ function RelicDropModal({ relic, onEquip, onClose }) {
         <div key={i} style={{ position: "absolute", width: 120, height: 120, borderRadius: "50%",
           border: `2px solid ${c}`, animation: `shockwave 1.2s cubic-bezier(.2,.7,.3,1) ${d}s both` }} />
       ))}
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, letterSpacing: 6,
-        color: rar.color, textShadow: `0 0 10px ${rar.color}`, marginBottom: 12,
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, letterSpacing: TRACK,
+        color: rar.color, marginBottom: 12,
         animation: "fadeIn .4s ease-out .1s both" }}>RELIC DROP — {rar.name.toUpperCase()}</div>
       <div onClick={e => e.stopPropagation()} style={{
         width: 190, padding: "26px 18px", textAlign: "center",
@@ -4975,8 +4866,8 @@ function RelicDropModal({ relic, onEquip, onClose }) {
         border: `2px solid ${c}`, borderRadius: 14,
         "--relic": c, animation: "relicGlowPulse 2.2s ease-in-out infinite, slamIn .5s cubic-bezier(.16,1,.3,1) .15s both" }}>
         <div style={{ fontSize: 34, marginBottom: 8 }}>{relic.rarity === "legendary" ? "👑" : relic.rarity === "epic" ? "🔮" : relic.rarity === "rare" ? "💠" : "🛡️"}</div>
-        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 900, color: c,
-          letterSpacing: 1, textShadow: `0 0 12px ${c}` }}>{relic.name}</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 900, color: c,
+          letterSpacing: TRACK}}>{relic.name}</div>
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6 }}>
           Card frame · earned by PR
         </div>
@@ -4985,7 +4876,7 @@ function RelicDropModal({ relic, onEquip, onClose }) {
         </Button>
       </div>
       <div style={{ position: "absolute", bottom: 48, fontFamily: "'Rajdhani',sans-serif",
-        fontSize: 11, color: MUTED, letterSpacing: 3,
+        fontSize: 11, color: MUTED, letterSpacing: TRACK,
         animation: "fadeIn .4s ease-out 1s both" }}>TAP ANYWHERE TO STASH</div>
     </div>, document.body)
   );
@@ -5118,81 +5009,35 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             animation: "runeFloat 3s ease-in-out infinite" }} />
         </div>
       )}
-      {/* Parallax rune field — sticky layer, each rune drifts up at its own depth while you scroll */}
-      <div style={{ position: "sticky", top: 0, height: 0, zIndex: 0, pointerEvents: "none" }}>
-        {["⬡", "◈", "⟁", "✦", "◇", "⬢"].map((r, i) => (
-          <div key={i} style={{ position: "absolute", top: 120 + i * 115,
-            left: i % 2 === 0 ? `${4 + i}%` : `${86 - i * 2}%`,
-            transform: `translateY(calc(var(--sy, 0) * ${(-0.1 - (i % 3) * 0.14).toFixed(2)}px))` }}>
-            <div style={{ fontSize: 14 + (i % 3) * 4, color: i % 3 === 1 ? GOLD : ACCENT,
-              animation: `runeFloat ${3 + i}s ease-in-out ${i * 0.7}s infinite`, opacity: 0.1 + (i % 3) * 0.04 }}>{r}</div>
-          </div>
-        ))}
-      </div>
 
       {/* Header — System Window */}
       <div style={{
         background: `linear-gradient(180deg, ${BG2}f8, ${DARK1}ee)`,
         backdropFilter: "blur(16px)",
-        borderBottom: `1px solid ${ACCENT}44`,
+        borderBottom: `1px solid ${ACCENT}22`,
         boxShadow: `0 4px 24px ${ACCENT}11`,
         padding: "14px 18px 12px", position: "sticky", top: 0, zIndex: 10
       }}>
-        {/* Top cyan line */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
-          background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
-        {/* Rising energy orbs */}
-        {[12, 30, 52, 71, 90].map((left, i) => (
-          <div key={i} style={{
-            position: "absolute", bottom: 4, left: `${left}%`, width: 3, height: 3,
-            borderRadius: "50%", background: i % 2 === 0 ? ACCENT : GOLD,
-            boxShadow: `0 0 6px ${i % 2 === 0 ? ACCENT : GOLD}`,
-            "--drift": `${(i % 3 - 1) * 14}px`,
-            animation: `orbRise ${2.6 + i * 0.7}s ease-out ${i * 0.9}s infinite`,
-            pointerEvents: "none",
-          }} />
-        ))}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {/* Animated rank emblem */}
-            <div style={{ position: "relative", width: 54, height: 54, flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ position: "absolute", inset: -5, borderRadius: "50%",
-                background: `conic-gradient(from 0deg, transparent, ${rank.color}55, transparent 32%)`,
-                animation: "auraSpin 5s linear infinite", filter: "blur(5px)" }} />
-              <svg className="emblem-ring" width="54" height="54" viewBox="0 0 54 54"
-                style={{ position: "absolute", inset: 0 }}>
-                <circle cx="27" cy="27" r="25" fill="none" stroke={rank.color} strokeWidth="1"
-                  strokeDasharray="7 9" opacity="0.75" />
-              </svg>
-              <svg className="emblem-ring2" width="54" height="54" viewBox="0 0 54 54"
-                style={{ position: "absolute", inset: 0 }}>
-                <circle cx="27" cy="27" r="20" fill="none" stroke={rank.color} strokeWidth="0.7"
-                  strokeDasharray="2 7" opacity="0.5" />
-              </svg>
-              <div style={{
-                fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900, color: rank.color,
-                textShadow: `0 0 16px ${rank.color}, 0 0 34px ${rank.color}66`, lineHeight: 1,
-                animation: "emblemPulse 2.8s ease-in-out infinite",
-              }}>{rank.rank}</div>
-            </div>
+            <div aria-hidden="true" style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: BG2,
+              border: `2px solid ${rank.color}`, display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: rank.color }}>{rank.rank}</div>
             <div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: ACCENT, letterSpacing: 4, opacity: 0.7, marginBottom: 2 }}>{`// ${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
-              <div className="glitch-in" style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
-                letterSpacing: 3 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: ACCENT, letterSpacing: TRACK, opacity: 0.7, marginBottom: 2 }}>{`${themeLabel(settings,"hunter","HUNTER")} STATUS`}</div>
+              <div className="glitch-in" style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 900,
+                letterSpacing: TRACK }}>
                 <AuraName name={st.name.toUpperCase()} level={st.overallLevel}
                   equippedId={settings?.nameAura} color={GOLD} />
               </div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7, color: rank.color, letterSpacing: 3, opacity: 0.85, marginTop: 2 }}>{rank.label.toUpperCase()}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 7, color: rank.color, letterSpacing: TRACK, opacity: 0.85, marginTop: 2 }}>{rank.label.toUpperCase()}</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {/* Companion familiar — 3D orbiting halos in rank color */}
-            <Suspense fallback={null}><CompanionOrb color={rank.color} size={36} /></Suspense>
             <button onClick={() => setSettingsOpen("help")} style={{
-              background: "none", border: `1px solid ${MUTED}44`, borderRadius: "50%",
+              background: "none", border: `1px solid ${MUTED}22`, borderRadius: "50%",
               width: 28, height: 28, cursor: "pointer", color: MUTED,
-              fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
+              fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700,
               display: "flex", alignItems: "center", justifyContent: "center"
             }}>?</button>
             <button onClick={() => setSettingsOpen("settings")} style={{
@@ -5207,7 +5052,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-          <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2, textShadow: `0 0 6px ${ACCENT}` }}>LVL {st.overallLevel}</span>
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK}}>LVL {st.overallLevel}</span>
           <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{current.toLocaleString()} / {needed.toLocaleString()} XP</span>
         </div>
         <div className="shimmer-bar">
@@ -5220,18 +5065,17 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         <TiltCard>
         <div className="card-in card-in-1 breathe" style={{
           background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
-          border: `1px solid ${ACCENT}44`, borderTop: `1px solid ${ACCENT}99`,
-          clipPath: "polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))",
+          border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}22`,
+          
           padding: "16px", marginBottom: 16, position: "relative"
         }}>
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
             background: "radial-gradient(circle at var(--gx,50%) var(--gy,50%), #ffffff12, transparent 55%)" }} />
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 4, marginBottom: 10,
-            textShadow: `0 0 8px ${ACCENT}` }}>{"// DAILY MISSION"}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 10}}>{"DAILY MISSION"}</div>
           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 4 }}>{_isArchitect ? '[ SYSTEM ACTIVE ]' : _isShadow ? '[ SHADOW REALM ONLINE ]' : _isBeast ? '[ DESTRUCTION ENGAGED ]' : today}</div>
           {todayWorkout ? (
             <div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: todayWorkout.rest ? MUTED : TEXT }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: todayWorkout.rest ? MUTED : TEXT }}>
                 {todayWorkout.rest ? "REST DAY" : todayWorkout.label}
               </div>
               {!todayWorkout.rest && (
@@ -5254,17 +5098,17 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           return (
             <div className="card-in card-in-2" onClick={() => setTipExpanded(e => !e)} style={{
               background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
-              border: `1px solid ${col}33`, borderLeft: `3px solid ${col}`,
+              border: `1px solid ${col}22`, borderLeft: `2px solid ${col}aa`,
               borderRadius: 10, padding: "12px 14px", marginBottom: 14, cursor: "pointer",
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14,
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 14,
                     color: col, filter: `drop-shadow(0 0 6px ${col})` }}>{tip.icon}</span>
                   <div>
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                      color: col, letterSpacing: 3, marginBottom: 3 }}>
-                      {"// DAILY TIP · " + tip.category}
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8,
+                      color: col, letterSpacing: TRACK, marginBottom: 3 }}>
+                      {"DAILY TIP · " + tip.category}
                     </div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
                       fontWeight: 700, color: TEXT, lineHeight: 1.4 }}>
@@ -5296,17 +5140,17 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         {/* ── WEIGHT WIDGET ── */}
         <div className="card-in card-in-3" style={{
           background: `linear-gradient(135deg, ${BG2}f0, ${DARK1}e8)`,
-          border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}44`,
-          clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
+          border: `1px solid ${ACCENT}22`, borderTop: `1px solid ${ACCENT}22`,
+          
           padding: "12px 16px", marginBottom: 16,
           display: "flex", alignItems: "center", gap: 12,
         }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-              letterSpacing: 3, marginBottom: 6 }}>{"// BODY WEIGHT"}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+              letterSpacing: TRACK, marginBottom: 6 }}>{"BODY WEIGHT"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 20, fontWeight: 900,
-                color: GOLD, textShadow: `0 0 12px ${GOLD}66` }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 900,
+                color: GOLD}}>
                 <CountUp value={wtVal(st.weightLbs || 0)} decimals={1} />
               </div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
@@ -5315,9 +5159,9 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           </div>
           {weightSaved ? (
             <button onClick={() => { setWeightSaved(false); setWeightInput(""); }} style={{
-              background: `${GREEN}18`, border: `1px solid ${GREEN}44`,
+              background: `${GREEN}18`, border: `1px solid ${GREEN}22`,
               borderRadius: 8, padding: "8px 14px", cursor: "pointer",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GREEN, letterSpacing: 1,
+              fontFamily: FONT_DISPLAY, fontSize: 9, color: GREEN, letterSpacing: TRACK,
             }}>UPDATED ✓</button>
           ) : (
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -5348,12 +5192,12 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 setWeightSaved(true);
                 setTimeout(() => setWeightSaved(false), 3000);
               }} style={{
-                background: `${ACCENT}22`, border: `1px solid ${ACCENT}55`,
-                borderTop: `1px solid ${ACCENT}99`,
-                clipPath: "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
+                background: `${ACCENT}22`, border: `1px solid ${ACCENT}22`,
+                borderTop: `1px solid ${ACCENT}22`,
+                
                 padding: "9px 14px", cursor: "pointer",
-                fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-                fontWeight: 700, letterSpacing: 1,
+                fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+                fontWeight: 700, letterSpacing: TRACK,
               }}>UPDATE</button>
             </div>
           )}
@@ -5362,14 +5206,14 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         {/* Quick actions */}
         <div className="card-in card-in-4" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
           <MagneticButton className="btn-primary" onClick={() => setScreen("schedule")}
-            style={{ padding: "16px", fontSize: 14, letterSpacing: 2,
+            style={{ padding: "16px", fontSize: 14, letterSpacing: TRACK,
               animation: "borderPulse 3s ease-in-out infinite" }}>
             <span style={{ fontSize: 11 }}>{_isShadow ? "BEGIN THE HUNT" : _isBeast ? "UNLEASH" : _isArchitect ? "INITIATE PROTOCOL" : "START TRAINING"}</span>
           </MagneticButton>
           <MagneticButton onClick={() => setScreen("character")} style={{
-            background: `${GOLD}11`, border: `1px solid ${GOLD}44`, borderRadius: 8,
+            background: `${GOLD}11`, border: `1px solid ${GOLD}22`, borderRadius: 8,
             padding: "16px", cursor: "pointer",
-            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: GOLD, fontWeight: 700, letterSpacing: 2
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: GOLD, fontWeight: 700, letterSpacing: TRACK
           }}>
             <span style={{ fontSize: 11 }}>MY STATS</span>
           </MagneticButton>
@@ -5378,9 +5222,9 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         {/* Social actions */}
         <div className="card-in card-in-5" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
           <button onClick={() => setScreen("leaderboard")} style={{
-            background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            background: `${ACCENT}11`, border: `1px solid ${ACCENT}22`, borderRadius: 8,
             padding: "12px", cursor: "pointer", transition: "all .2s",
-            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: TRACK,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           }}>
             <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
@@ -5391,9 +5235,9 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <span style={{ fontSize: 11 }}>LEADERBOARD</span>
           </button>
           <button onClick={() => setScreen("friends")} style={{
-            background: `${ACCENT}11`, border: `1px solid ${ACCENT}44`, borderRadius: 8,
+            background: `${ACCENT}11`, border: `1px solid ${ACCENT}22`, borderRadius: 8,
             padding: "12px", cursor: "pointer", position: "relative", transition: "all .2s",
-            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: ACCENT, fontWeight: 700, letterSpacing: TRACK,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           }}>
             <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
@@ -5407,7 +5251,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               <span style={{
                 position: "absolute", top: 6, right: 8,
                 background: RED, color: "#fff", borderRadius: "50%",
-                width: 18, height: 18, fontSize: 10, fontFamily: "'Orbitron',sans-serif",
+                width: 18, height: 18, fontSize: 10, fontFamily: FONT_DISPLAY,
                 display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
               }}>{pendingCount}</span>
             )}
@@ -5430,13 +5274,13 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           const allDone = DAILY_RITUALS.every(r => doneToday.has(r.id));
           return (
             <Reveal dir="scale">
-            <div style={{ background: `${GOLD}0a`, border: `1px solid ${GOLD}33`,
+            <div style={{ background: `${GOLD}0a`, border: `1px solid ${GOLD}22`,
               borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3 }}>
-                  {"// DAILY RITUALS"}
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK }}>
+                  {"DAILY RITUALS"}
                 </div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: streak > 0 ? GOLD : MUTED, letterSpacing: 1 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: streak > 0 ? GOLD : MUTED, letterSpacing: TRACK }}>
                   {streak > 0 ? <>{streak}<span className="streak-flame">🔥</span> day streak</> : "no streak"}
                 </div>
               </div>
@@ -5476,16 +5320,16 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         {/* Equipped title selector — only show if user has unlocked any */}
         {(st.cosmetics?.unlockedTitles?.length || 0) > 0 && (
           <Reveal dir="left">
-          <div style={{ background: BG2, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 8 }}>
-              {"// EQUIPPED TITLE"}
+          <div style={{ background: BG2, border: `1px solid ${GOLD}22`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK, marginBottom: 8 }}>
+              {"EQUIPPED TITLE"}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               <button onClick={() => onEquipTitle?.(null)} style={{
                 padding: "5px 10px", cursor: "pointer",
                 background: !st.cosmetics?.equippedTitle ? `${MUTED}33` : "transparent",
-                border: `1px solid ${MUTED}55`, borderRadius: 5,
-                fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 1,
+                border: `1px solid ${MUTED}22`, borderRadius: 5,
+                fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK,
               }}>None</button>
               {(st.cosmetics?.unlockedTitles || []).map(tid => {
                 const t = COSMETIC_TITLES.find(x => x.id === tid);
@@ -5496,7 +5340,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                     padding: "5px 10px", cursor: "pointer",
                     background: equipped ? `${GOLD}22` : "transparent",
                     border: `1px solid ${equipped ? GOLD : GOLD + "33"}`, borderRadius: 5,
-                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: equipped ? GOLD : MUTED, letterSpacing: 1,
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: equipped ? GOLD : MUTED, letterSpacing: TRACK,
                   }}>{t.name}</button>
                 );
               })}
@@ -5509,7 +5353,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
         {/* Recent workouts — entries slide in from alternating sides on scroll */}
         <div style={{ marginBottom: 8 }}>
           <Reveal>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 4, marginBottom: 10 }}>{_isBeast ? "[ RECENT KILLS ]" : _isShadow ? "[ SHADOW RECORD ]" : _isArchitect ? "[ ACTIVITY LOG ]" : "[ RECENT ACTIVITY ]"}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 10 }}>{_isBeast ? "[ RECENT KILLS ]" : _isShadow ? "[ SHADOW RECORD ]" : _isArchitect ? "[ ACTIVITY LOG ]" : "[ RECENT ACTIVITY ]"}</div>
           </Reveal>
           {st.workouts.length === 0 ? (
             <Reveal delay={80}>
@@ -5525,7 +5369,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{w.muscle ? MUSCLE_META[w.muscle]?.name : "Training"}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>{new Date(w.date).toLocaleDateString()}</div>
                   </div>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: GOLD }}>+{w.xp} XP</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: GOLD }}>+{w.xp} XP</div>
                 </div>
               </Reveal>
             ))
@@ -5540,34 +5384,32 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
-            border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
+            border: `1px solid ${ACCENT}22`, borderTop: `2px solid ${ACCENT}`,
             width: "100%", maxWidth: 480,
             maxHeight: "85dvh", display: "flex", flexDirection: "column",
-            position: "relative",
-            clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
-          }}>
+            position: "relative"}}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
               background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>SETTINGS</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: TRACK }}>SETTINGS</div>
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
             </div>
 
             {/* Account */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-                letterSpacing: 3, marginBottom: 10 }}>{"// ACCOUNT"}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+                letterSpacing: TRACK, marginBottom: 10 }}>{"ACCOUNT"}</div>
               {!account.supabaseConfigured ? (
-                <div style={{ background: BG3, border: `1px solid ${MUTED}33`, borderRadius: 8,
+                <div style={{ background: BG3, border: `1px solid ${MUTED}22`, borderRadius: 8,
                   padding: "12px 14px", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
                   Online features (friends, leaderboard) are disabled — backend credentials are not configured for this build.
                 </div>
               ) : account.session ? (
-                <div style={{ background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "12px 14px" }}>
+                <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "12px 14px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div>
-                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 1 }}>
+                      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: TRACK }}>
                         @{account.remoteProfile?.username || "..."}
                       </div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
@@ -5575,16 +5417,16 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                       </div>
                     </div>
                     <button onClick={onSignOut} disabled={account.busy} style={{
-                      background: `${RED}11`, border: `1px solid ${RED}55`, borderRadius: 6,
+                      background: `${RED}11`, border: `1px solid ${RED}22`, borderRadius: 6,
                       padding: "8px 14px", cursor: account.busy ? "wait" : "pointer",
-                      fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: RED, fontWeight: 700, letterSpacing: 2,
+                      fontFamily: FONT_DISPLAY, fontSize: 9, color: RED, fontWeight: 700, letterSpacing: TRACK,
                       opacity: account.busy ? 0.5 : 1,
                     }}>SIGN OUT</button>
                   </div>
 
                   {/* Display name editor */}
                   <div>
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 2, marginBottom: 5 }}>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK, marginBottom: 5 }}>
                       DISPLAY NAME
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
@@ -5595,7 +5437,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                         placeholder="Shown on your profile"
                         onChange={e => setDisplayNameDraft(e.target.value)}
                         style={{
-                          flex: 1, background: BG, border: `1px solid ${ACCENT}33`, borderRadius: 6,
+                          flex: 1, background: BG, border: `1px solid ${ACCENT}22`, borderRadius: 6,
                           padding: "8px 10px", color: TEXT,
                           fontFamily: "'Rajdhani',sans-serif", fontSize: 12, outline: "none",
                         }}
@@ -5608,7 +5450,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                           border: `1px solid ${dnDirty ? ACCENT : MUTED}55`,
                           borderRadius: 6, padding: "8px 12px",
                           cursor: dnDirty && !savingDisplayName ? "pointer" : "default",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 2,
+                          fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK,
                           color: dnDirty ? ACCENT : MUTED, opacity: savingDisplayName ? 0.5 : 1,
                         }}>
                         {savingDisplayName ? "..." : "SAVE"}
@@ -5622,8 +5464,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               ) : (
                 <button onClick={() => setSettingsOpen("account")} style={{
                   width: "100%", padding: "12px 14px", cursor: "pointer", textAlign: "left",
-                  background: `${ACCENT}11`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
-                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 2,
+                  background: `${ACCENT}11`, border: `1px solid ${ACCENT}22`, borderRadius: 8,
+                  fontFamily: FONT_DISPLAY, fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: TRACK,
                 }}>
                   SIGN IN / CREATE ACCOUNT
                 </button>
@@ -5639,7 +5481,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               return (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3 }}>{"// NAME AURA"}</div>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK }}>{"NAME AURA"}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>unlocked by overall level</div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -5659,7 +5501,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                             borderRadius: 8, opacity: locked ? 0.5 : 1, textAlign: "left",
                           }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 800 }}>
+                            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 800 }}>
                               {isAuto
                                 ? <span style={{ color: TEXT }}>{st.name.toUpperCase()}</span>
                                 : <span className={opt.className} style={{ "--aura": auraColor, ...(opt.className ? {} : { color: auraColor }) }}>{st.name.toUpperCase()}</span>}
@@ -5668,7 +5510,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                               {opt.label}{isTop ? " · your current best" : ""} — {opt.desc}
                             </div>
                           </div>
-                          <div style={{ flexShrink: 0, fontFamily: "'Orbitron',sans-serif", fontSize: 9, letterSpacing: 1,
+                          <div style={{ flexShrink: 0, fontFamily: FONT_DISPLAY, fontSize: 9, letterSpacing: TRACK,
                             color: locked ? MUTED : (selected ? ACCENT : GOLD) }}>
                             {locked ? `🔒 LVL ${opt.minLevel}` : (selected ? "EQUIPPED" : (isAuto ? "" : opt.rank))}
                           </div>
@@ -5683,8 +5525,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             {/* Profile — banner color picker (signed in only) */}
             {account.session && account.remoteProfile && (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-                  letterSpacing: 3, marginBottom: 10 }}>{"// PROFILE BANNER"}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+                  letterSpacing: TRACK, marginBottom: 10 }}>{"PROFILE BANNER"}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {BANNER_PALETTE.map(({ hex, name }) => {
                     const sel = (account.remoteProfile.banner_color || null) === hex;
@@ -5697,7 +5539,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                           width: 36, height: 36, borderRadius: 10, cursor: "pointer",
                           background: hex || `linear-gradient(135deg, ${MUTED}33, ${BG3})`,
                           border: `2px solid ${sel ? "#fff" : (hex || MUTED) + "55"}`,
-                          boxShadow: sel ? `0 0 10px ${hex || MUTED}` : "none",
+                          
                           padding: 0,
                         }}
                       />
@@ -5713,15 +5555,15 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             {/* Privacy — only shown when signed in */}
             {account.session && account.remoteProfile && (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-                  letterSpacing: 3, marginBottom: 10 }}>{"// PRIVACY"}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+                  letterSpacing: TRACK, marginBottom: 10 }}>{"PRIVACY"}</div>
                 {(() => {
                   const sharePrs = account.remoteProfile.share_prs !== false;
                   return (
                     <div onClick={onToggleSharePrs} style={{
                       display: "flex", justifyContent: "space-between", alignItems: "center",
                       padding: "12px 14px", cursor: "pointer",
-                      background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8
+                      background: BG3, border: `1px solid ${ACCENT2}22`, borderRadius: 8
                     }}>
                       <div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
@@ -5737,8 +5579,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                         position: "relative", transition: "all .2s" }}>
                         <div style={{ position: "absolute", top: 3, left: sharePrs ? 21 : 3,
                           width: 14, height: 14, borderRadius: "50%",
-                          background: sharePrs ? "#fff" : MUTED, transition: "left .2s",
-                          boxShadow: sharePrs ? `0 0 6px ${ACCENT}` : "none" }} />
+                          background: sharePrs ? "#fff" : MUTED, transition: "left .2s"}} />
                       </div>
                     </div>
                   );
@@ -5748,8 +5589,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
             {/* Monarch Themes */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT,
-                letterSpacing: 3, marginBottom: 10 }}>{"// MONARCH THEMES"}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+                letterSpacing: TRACK, marginBottom: 10 }}>{"MONARCH THEMES"}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {MONARCHS.map(m => {
                   const isActive = settings?.monarchTheme === m.id;
@@ -5761,7 +5602,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                         background: isActive ? m.gradient : BG3,
                         border: `2px solid ${isActive ? m.accentColor : m.accentColor + "33"}`,
                         borderRadius: 10, position: "relative", overflow: "hidden",
-                        boxShadow: isActive ? `0 0 20px ${m.glow}44` : "none",
+                        
                         transition: "all .2s"
                       }}>
                       {isActive && (
@@ -5771,9 +5612,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 900,
-                            color: isActive ? m.accentColor : MUTED, letterSpacing: 2,
-                            textShadow: isActive ? `0 0 12px ${m.glow}` : "none" }}>
+                          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 900,
+                            color: isActive ? m.accentColor : MUTED, letterSpacing: TRACK}}>
                             {m.name.toUpperCase()}
                           </div>
                           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
@@ -5785,7 +5625,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                               {m.swatches.map(([c,n]) => (
                                 <div key={n} style={{ display: "flex", alignItems: "center", gap: 3 }}>
                                   <div style={{ width: 7, height: 7, borderRadius: "50%",
-                                    background: c, boxShadow: `0 0 4px ${c}` }} />
+                                    background: c}} />
                                   <span style={{ fontFamily: "'Rajdhani',sans-serif",
                                     fontSize: 8, color: c }}>{n}</span>
                                 </div>
@@ -5797,8 +5637,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                           background: `radial-gradient(circle, ${m.accentColor}88, ${m.accent2Color})`,
                           border: `2px solid ${isActive ? m.accentColor : m.accentColor + "44"}`,
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          boxShadow: isActive ? `0 0 14px ${m.glow}` : "none",
-                          fontFamily: "'Orbitron',sans-serif", fontSize: 13,
+                          
+                          fontFamily: FONT_DISPLAY, fontSize: 13,
                           color: isActive ? m.accentColor : m.accentColor + "88" }}>
                           {m.glyph}
                         </div>
@@ -5813,8 +5653,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             {/* Brightness */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3 }}>{"// BRIGHTNESS"}</div>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK }}>{"BRIGHTNESS"}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: ACCENT }}>
                   {settings?.brightness === 0.5 ? "DIM" : settings?.brightness >= 1.3 ? "VIVID" : "NORMAL"}
                 </div>
               </div>
@@ -5836,9 +5676,9 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                       transition: "all .15s"
                     }}>
                       <div style={{ width: 16, height: 16, borderRadius: "50%", background: previewColor,
-                        margin: "0 auto 5px", boxShadow: `0 0 ${Math.round(val*8)}px ${previewColor}` }} />
-                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 7,
-                        color: isActive ? previewColor : MUTED, letterSpacing: 1 }}>{label}</div>
+                        margin: "0 auto 5px"}} />
+                      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 7,
+                        color: isActive ? previewColor : MUTED, letterSpacing: TRACK }}>{label}</div>
                     </button>
                   );
                 })}
@@ -5847,7 +5687,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
             {/* Weight Unit */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 10 }}>{"// WEIGHT UNIT"}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 10 }}>{"WEIGHT UNIT"}</div>
               <div style={{ display: "flex", gap: 8 }}>
                 {["lbs","kg"].map(u => {
                   const isActive = (settings?.weightUnit || "lbs") === u;
@@ -5856,8 +5696,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                       flex: 1, background: isActive ? `${ACCENT}22` : BG3,
                       border: `1px solid ${isActive ? ACCENT : ACCENT2 + "44"}`,
                       borderRadius: 8, padding: "12px", cursor: "pointer",
-                      fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700,
-                      color: isActive ? ACCENT : MUTED, letterSpacing: 2
+                      fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700,
+                      color: isActive ? ACCENT : MUTED, letterSpacing: TRACK
                     }}>{u.toUpperCase()}</button>
                   );
                 })}
@@ -5866,7 +5706,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
             {/* Modes */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 10 }}>{"// MODES"}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 10 }}>{"MODES"}</div>
               {(() => {
                 const isOn = settings?.travelMode === true;
                 const equipList = Array.isArray(settings?.travelEquipment) && settings.travelEquipment.length > 0
@@ -5897,15 +5737,14 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                         position: "relative", transition: "all .2s" }}>
                         <div style={{ position: "absolute", top: 3, left: isOn ? 21 : 3,
                           width: 14, height: 14, borderRadius: "50%",
-                          background: isOn ? "#fff" : MUTED, transition: "left .2s",
-                          boxShadow: isOn ? `0 0 6px ${GOLD}` : "none" }} />
+                          background: isOn ? "#fff" : MUTED, transition: "left .2s"}} />
                       </div>
                     </div>
 
                     {isOn && (
-                      <div style={{ background: `${GOLD}06`, border: `1px solid ${GOLD}33`, borderRadius: 8, padding: "10px 12px" }}>
-                        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GOLD, letterSpacing: 2, marginBottom: 8 }}>
-                          {"// EQUIPMENT AVAILABLE"}
+                      <div style={{ background: `${GOLD}06`, border: `1px solid ${GOLD}22`, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: GOLD, letterSpacing: TRACK, marginBottom: 8 }}>
+                          {"EQUIPMENT AVAILABLE"}
                         </div>
                         {EQUIPMENT_CATEGORIES.map(eq => {
                           const on = equipList.includes(eq.id);
@@ -5939,7 +5778,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
 
             {/* Toggles */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 10 }}>{"// NOTIFICATIONS"}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 10 }}>{"NOTIFICATIONS"}</div>
               {[
                 { key: "showXPGain",     label: "XP gain toasts",         sub: "Show +XP popup on each log" },
                 { key: "showMilestones", label: "Milestone descriptions", sub: "Show rank name on level-up" },
@@ -5950,7 +5789,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                   <div key={key} onClick={() => onUpdateSettings({ [key]: !isOn })} style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                     padding: "12px 14px", marginBottom: 6, cursor: "pointer",
-                    background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8
+                    background: BG3, border: `1px solid ${ACCENT2}22`, borderRadius: 8
                   }}>
                     <div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{label}</div>
@@ -5961,8 +5800,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                       position: "relative", transition: "all .2s" }}>
                       <div style={{ position: "absolute", top: 3, left: isOn ? 21 : 3,
                         width: 14, height: 14, borderRadius: "50%",
-                        background: isOn ? "#fff" : MUTED, transition: "left .2s",
-                        boxShadow: isOn ? `0 0 6px ${ACCENT}` : "none" }} />
+                        background: isOn ? "#fff" : MUTED, transition: "left .2s"}} />
                     </div>
                   </div>
                 );
@@ -5970,8 +5808,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             </div>
 
             {/* App info */}
-            <div style={{ background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8, padding: "12px 14px" }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 8 }}>{"// SYSTEM INFO"}</div>
+            <div style={{ background: BG3, border: `1px solid ${ACCENT2}22`, borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK, marginBottom: 8 }}>{"SYSTEM INFO"}</div>
               {[
                 ["Version", `v${APP_VERSION}`],
                 ["App", "IRON REALM"],
@@ -5980,14 +5818,14 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
               ].map(([k, v]) => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>{k}</span>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT }}>{v}</span>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: ACCENT }}>{v}</span>
                 </div>
               ))}
             </div>
 
             {/* Data backup */}
-            <div style={{ background: BG3, border: `1px solid ${ACCENT2}33`, borderRadius: 8, padding: "12px 14px" }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 10 }}>{"// DATA BACKUP"}</div>
+            <div style={{ background: BG3, border: `1px solid ${ACCENT2}22`, borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK, marginBottom: 10 }}>{"DATA BACKUP"}</div>
               <button onClick={() => {
                 try {
                   const data = localStorage.getItem("iron_realm_store_v1") || "{}";
@@ -6002,17 +5840,17 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 } catch { toast("Export failed", RED); }
               }} style={{
                 width: "100%", marginBottom: 8, padding: "11px",
-                background: `${ACCENT}15`, border: `1px solid ${ACCENT}55`,
+                background: `${ACCENT}15`, border: `1px solid ${ACCENT}22`,
                 borderRadius: 6, cursor: "pointer",
-                fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
-                color: ACCENT, letterSpacing: 2
+                fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700,
+                color: ACCENT, letterSpacing: TRACK
               }}>⬇ EXPORT DATA</button>
               <label style={{
                 display: "block", width: "100%", padding: "11px",
-                background: `${GOLD}15`, border: `1px solid ${GOLD}55`,
+                background: `${GOLD}15`, border: `1px solid ${GOLD}22`,
                 borderRadius: 6, cursor: "pointer", textAlign: "center",
-                fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700,
-                color: GOLD, letterSpacing: 2, boxSizing: "border-box"
+                fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700,
+                color: GOLD, letterSpacing: TRACK, boxSizing: "border-box"
               }}>
                 ⬆ IMPORT DATA
                 <input type="file" accept=".json" style={{ display: "none" }} onChange={e => {
@@ -6050,17 +5888,15 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           onClick={() => setSettingsOpen(null)}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{
             background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
-            border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
+            border: `1px solid ${GOLD}22`, borderTop: `2px solid ${GOLD}`,
             width: "100%", maxWidth: 480,
             maxHeight: "85dvh", display: "flex", flexDirection: "column",
-            position: "relative",
-            clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)"
-          }}>
+            position: "relative"}}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
               background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "24px 20px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>HOW TO PLAY</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: TRACK }}>HOW TO PLAY</div>
               <button onClick={() => setSettingsOpen(null)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
             </div>
 
@@ -6083,11 +5919,11 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 body: "Your rank (E → D → C → B → A → S → SS → SSS → Shadow) is determined by your overall level. Each rank has 3 milestones earned through consistent training and dedication." },
             ].map(({ icon, title, color, body }) => (
               <div key={title} style={{ marginBottom: 16, background: BG3,
-                border: `1px solid ${color}22`, borderLeft: `3px solid ${color}`,
+                border: `1px solid ${color}22`, borderLeft: `2px solid ${color}aa`,
                 borderRadius: 8, padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, color, fontWeight: 900 }}>{icon}</span>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color, letterSpacing: 2 }}>{title}</span>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color, fontWeight: 900 }}>{icon}</span>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color, letterSpacing: TRACK }}>{title}</span>
                 </div>
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>{body}</div>
               </div>
@@ -6186,11 +6022,11 @@ function ConditionReportModal({ profile, onClose }) {
       display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
-        border: `1px solid ${RED}33`, borderTop: `2px solid ${RED}`,
+        border: `1px solid ${RED}22`, borderTop: `2px solid ${RED}`,
         width: "100%", maxWidth: 480, padding: "18px 16px 40px", maxHeight: "82dvh", overflowY: "auto" }}>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 15, fontWeight: 700, color: RED, letterSpacing: 2 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700, color: RED, letterSpacing: TRACK }}>
             CONDITION REPORT
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
@@ -6208,20 +6044,20 @@ function ConditionReportModal({ profile, onClose }) {
                 { v: rows.filter(r => r.status.label === "FRESH").length, l: "FRESH", c: GREEN }].map(s => (
                 <div key={s.l} style={{ flex: 1, background: BG3, border: `1px solid ${s.c}22`,
                   borderRadius: 8, padding: "8px 6px", textAlign: "center" }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 14, fontWeight: 700, color: s.c }}>{s.v}</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{s.l}</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: s.c }}>{s.v}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: TRACK }}>{s.l}</div>
                 </div>
               ))}
             </div>
 
             {rows.map(r => (
               <div key={r.key} style={{ background: BG2, border: `1px solid ${r.meta.color}22`,
-                borderLeft: `3px solid ${r.status.color}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                borderLeft: `2px solid ${r.status.color}aa`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700,
-                    color: r.meta.color, letterSpacing: 1 }}>{r.meta.name.toUpperCase()}</span>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700,
-                    color: r.status.color, letterSpacing: 1 }}>{r.status.label}</span>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
+                    color: r.meta.color, letterSpacing: TRACK }}>{r.meta.name.toUpperCase()}</span>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8, fontWeight: 700,
+                    color: r.status.color, letterSpacing: TRACK }}>{r.status.label}</span>
                 </div>
 
                 <div style={{ position: "relative", height: 7, background: DARK1, borderRadius: 4,
@@ -6252,6 +6088,38 @@ function ConditionReportModal({ profile, onClose }) {
               </div>
             ))}
 
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: TRACK_CAPS, textTransform: "uppercase", marginBottom: 8 }}>Recovery</div>
+              <RecoveryGrid workouts={profile?.workouts || []} />
+            </div>
+            {(() => {
+              const imbalances = detectImbalances(profile?.stats || {}, profile?.subStats || {});
+              if (!imbalances.length) return null;
+              return (
+                <div style={{ marginTop: 6, marginBottom: 12 }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: TRACK_CAPS, textTransform: "uppercase", marginBottom: 8 }}>Focus</div>
+                  <div style={{ background: BG3, borderRadius: 12, padding: "12px 14px" }}>
+                    {imbalances.map((imb, i) => {
+                      const suggestions = suggestExercisesFor(imb.target, 3);
+                      return (
+                        <div key={i} style={{ marginBottom: i === imbalances.length - 1 ? 0 : 12 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: TEXT }}>{imb.pair[0]} ▸ {imb.pair[1]}</span>
+                            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED }}>{imb.ratio === Infinity ? "∞" : `${imb.ratio.toFixed(1)}×`}</span>
+                          </div>
+                          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, color: MUTED, lineHeight: 1.4, marginBottom: suggestions.length ? 6 : 0 }}>{imb.message}</div>
+                          {suggestions.length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {suggestions.map(ex => <Button key={ex.name} variant="outline" size="sm" style={{ height: 30, fontSize: 12, padding: "0 10px" }}>{ex.name}</Button>)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 10, lineHeight: 1.5 }}>
               Condition decays only after a grace window ({ATROPHY.muscular.grace}d for muscle, {ATROPHY.cardio.grace}d for endurance),
               fastest at first and levelling off toward a floor you never drop below. Each session rebuilds about a
@@ -6263,6 +6131,26 @@ function ConditionReportModal({ profile, onClose }) {
       </div>
     </div>
   , document.body);
+}
+
+// Progress sheet — the volume trend and the shadow race used to sit as two
+// full cards on the Hunter screen; now one row opens them behind a switch.
+function ProgressModal({ workouts, onClose }) {
+  const [tab, setTab] = useState("trend");
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
+      background: "rgba(0,0,0,.72)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: BG2, borderRadius: "20px 20px 0 0",
+        width: "100%", maxWidth: 480, padding: "18px 16px 40px", maxHeight: "85dvh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: TEXT }}>Progress</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+        </div>
+        <Segmented value={tab} onChange={setTab} style={{ marginBottom: 14 }}
+          options={[{ id: "trend", label: "Volume trend" }, { id: "race", label: "Shadow race" }]} />
+        {tab === "trend" ? <VolumeChart workouts={workouts} /> : <ShadowRace workouts={workouts} />}
+      </div>
+    </div>, document.body);
 }
 
 function PRHistoryModal({ workouts, prs, onClose }) {
@@ -6283,16 +6171,16 @@ function PRHistoryModal({ workouts, prs, onClose }) {
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
-        border: `1px solid ${GOLD}44`, borderTop: `2px solid ${GOLD}`,
+        border: `1px solid ${GOLD}22`, borderTop: `2px solid ${GOLD}`,
         width: "100%", maxWidth: 480, padding: "24px 20px 40px",
         maxHeight: "90vh", overflowY: "auto", position: "relative",
-        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+        
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>PERSONAL RECORDS</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: GOLD, letterSpacing: TRACK }}>PERSONAL RECORDS</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>{items.length} exercises tracked</div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
@@ -6328,10 +6216,10 @@ function PRHistoryModal({ workouts, prs, onClose }) {
                 </div>
                 <PRSparkline events={item.events} />
                 <div style={{ textAlign: "right", flexShrink: 0, minWidth: 56 }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: GOLD }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: GOLD }}>
                     {item.e1rm}
                   </div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>{wtLabel().toUpperCase()} e1RM</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: TRACK }}>{wtLabel().toUpperCase()} e1RM</div>
                 </div>
               </button>
 
@@ -6346,7 +6234,7 @@ function PRHistoryModal({ workouts, prs, onClose }) {
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT }}>
                         {wtVal(e.weight)} {wtLabel()} × {e.reps}
                       </div>
-                      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD }}>
+                      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: GOLD }}>
                         {e.e1rm} e1RM
                       </div>
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
@@ -6464,8 +6352,8 @@ function HeatmapModal({ workouts, onClose }) {
 
   const Stat = ({ label, value, color = ACCENT }) => (
     <div style={{ background: BG3, border: `1px solid ${color}22`, borderRadius: 6, padding: "8px 6px", textAlign: "center" }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginTop: 2 }}>{label}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: TRACK, marginTop: 2 }}>{label}</div>
     </div>
   );
 
@@ -6476,16 +6364,16 @@ function HeatmapModal({ workouts, onClose }) {
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="slide-up" style={{
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
-        border: `1px solid ${ACCENT}44`, borderTop: `2px solid ${ACCENT}`,
+        border: `1px solid ${ACCENT}22`, borderTop: `2px solid ${ACCENT}`,
         width: "100%", maxWidth: 480, padding: "24px 20px 40px",
         maxHeight: "90vh", overflowY: "auto", position: "relative",
-        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+        
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT}cc, transparent)` }} />
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 2 }}>TRAINING HEATMAP</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: TRACK }}>TRAINING HEATMAP</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>last {WEEKS} weeks</div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
@@ -6504,7 +6392,7 @@ function HeatmapModal({ workouts, onClose }) {
           {monthLabels.map(({ weekIdx, label }, i) => (
             <span key={i} style={{
               position: "absolute", left: weekIdx * (CELL + GAP),
-              fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1,
+              fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK,
             }}>{label}</span>
           ))}
         </div>
@@ -6515,7 +6403,7 @@ function HeatmapModal({ workouts, onClose }) {
           <div style={{ display: "grid", gridTemplateRows: `repeat(7, ${CELL}px)`, gap: GAP, width: 12 }}>
             {[0, 1, 2, 3, 4, 5, 6].map(i => (
               <div key={i} style={{
-                fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED,
+                fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED,
                 display: "flex", alignItems: "center",
               }}>{dowLabel(i)}</div>
             ))}
@@ -6539,7 +6427,7 @@ function HeatmapModal({ workouts, onClose }) {
                     background: colorForXP(c.xp),
                     border: isSelected
                       ? `1.5px solid ${GOLD}`
-                      : c.xp > 0 ? `1px solid ${ACCENT}66` : `1px solid ${ACCENT}1a`,
+                      : c.xp > 0 ? `1px solid ${ACCENT}22` : `1px solid ${ACCENT}1a`,
                     borderRadius: 2, cursor: "pointer", padding: 0,
                     transition: "transform .1s",
                     transform: isSelected ? "scale(1.15)" : "none",
@@ -6552,7 +6440,7 @@ function HeatmapModal({ workouts, onClose }) {
         </div>
 
         {/* Legend */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK, marginBottom: 16 }}>
           <span>LESS</span>
           {[0, 0.25, 0.5, 0.75, 1].map(t => {
             const a = Math.round((t === 0 ? 0 : 0.25 + t * 0.75) * 255).toString(16).padStart(2, "0");
@@ -6568,12 +6456,12 @@ function HeatmapModal({ workouts, onClose }) {
 
         {/* Selected day detail */}
         {selected && (
-          <div style={{ background: BG3, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "12px 14px" }}>
+          <div style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "12px 14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: ACCENT, letterSpacing: 2 }}>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11, color: ACCENT, letterSpacing: TRACK }}>
                 {selected.date.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}
               </span>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: GOLD }}>
                 +{selected.xp} XP
               </span>
             </div>
@@ -6588,7 +6476,7 @@ function HeatmapModal({ workouts, onClose }) {
                 <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, marginRight: 8 }}>
                   {w.exercise?.name || w.exerciseName || "Training"}
                 </span>
-                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, flexShrink: 0 }}>+{w.xp} XP</span>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: GOLD, flexShrink: 0 }}>+{w.xp} XP</span>
               </div>
             ))}
           </div>
@@ -6615,18 +6503,17 @@ function AwakeningModal({ onChoose }) {
       <div style={{
         width: "100%", maxWidth: 480, padding: "32px 22px",
         background: `linear-gradient(160deg, ${BG2}fc, ${DARK1}fa)`,
-        border: `1px solid ${GOLD}55`, borderTop: `2px solid ${GOLD}`,
+        border: `1px solid ${GOLD}22`, borderTop: `2px solid ${GOLD}`,
         borderRadius: 14, position: "relative", overflow: "hidden",
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
           background: `linear-gradient(90deg, transparent, ${GOLD}cc, transparent)` }} />
 
         <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD,
-            letterSpacing: 6, marginBottom: 6 }}>// AWAKENING</div>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900,
-            color: GOLD, letterSpacing: 3, marginBottom: 8,
-            textShadow: `0 0 20px ${GOLD}66` }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, color: GOLD,
+            letterSpacing: TRACK, marginBottom: 6 }}>AWAKENING</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 900,
+            color: GOLD, letterSpacing: TRACK, marginBottom: 8}}>
             CHOOSE YOUR PATH
           </div>
           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
@@ -6640,21 +6527,21 @@ function AwakeningModal({ onChoose }) {
           {ASPECTS.map(a => (
             <button key={a.id} onClick={() => onChoose(a.id)} style={{
               padding: "14px 16px", textAlign: "left", cursor: "pointer",
-              background: `${a.color}10`, border: `1.5px solid ${a.color}66`,
+              background: `${a.color}10`, border: `1.5px solid ${a.color}22`,
               borderRadius: 10, transition: "all .15s",
               display: "flex", alignItems: "center", gap: 14,
             }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 10, flexShrink: 0,
                 background: `radial-gradient(circle, ${a.color}55, ${a.color}11)`,
-                border: `2px solid ${a.color}88`,
+                border: `2px solid ${a.color}22`,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 22, color: a.color,
-                boxShadow: `0 0 14px ${a.color}44`,
+                
               }}>{a.glyph}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13,
-                  fontWeight: 700, color: a.color, letterSpacing: 2 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13,
+                  fontWeight: 700, color: a.color, letterSpacing: TRACK }}>
                   PATH OF THE {a.name.toUpperCase()}
                 </div>
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
@@ -6731,7 +6618,7 @@ function RecoveryGrid({ workouts }) {
   const rows = useMemo(() => _computeRecovery(workouts), [workouts]);
   return (
     <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: TRACK, marginBottom: 10 }}>
         [ MUSCLE RECOVERY ]
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -6739,17 +6626,17 @@ function RecoveryGrid({ workouts }) {
           <div key={r.key} style={{
             display: "flex", alignItems: "center", gap: 8,
             padding: "7px 9px", background: `${r.state.color}11`,
-            border: `1px solid ${r.state.color}44`, borderRadius: 6,
+            border: `1px solid ${r.state.color}22`, borderRadius: 6,
           }}>
             <div style={{
               width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-              background: r.state.color, boxShadow: `0 0 6px ${r.state.color}88`,
+              background: r.state.color, 
             }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.1 }}>
                 {r.name}
               </div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: r.state.color, letterSpacing: 1 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: r.state.color, letterSpacing: TRACK }}>
                 {r.lastDate ? _timeAgo(r.lastDate) : "never"}
               </div>
             </div>
@@ -6805,7 +6692,7 @@ function ShadowRace({ workouts }) {
   const lane = (label, pct, color, glyph, value) => (
     <div style={{ marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color, letterSpacing: 2 }}>{glyph} {label}</span>
+        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color, letterSpacing: TRACK }}>{glyph} {label}</span>
         <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{Math.round(wtVal(value)).toLocaleString()} {wtLabel()}</span>
       </div>
       <div style={{ position: "relative", height: 10, background: DARK1, borderRadius: 5, overflow: "hidden", border: `1px solid ${color}22` }}>
@@ -6813,17 +6700,17 @@ function ShadowRace({ workouts }) {
           background: `linear-gradient(90deg, ${color}22, ${color}88)`,
           transition: "width 1s cubic-bezier(.16,1,.3,1)" }} />
         <div style={{ position: "absolute", left: `calc(${pct}% - 5px)`, top: 1, width: 8, height: 8,
-          borderRadius: "50%", background: color, boxShadow: `0 0 8px ${color}, 0 0 16px ${color}66` }} />
+          borderRadius: "50%", background: color}} />
       </div>
     </div>
   );
   return (
     <div style={{ background: BG2, border: `1px solid #a855f722`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: "#a855f7", letterSpacing: 4 }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: "#a855f7", letterSpacing: TRACK }}>
           [ SHADOW RACE — THIS MONTH ]
         </div>
-        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ahead >= 0 ? GREEN : RED, letterSpacing: 1 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ahead >= 0 ? GREEN : RED, letterSpacing: TRACK }}>
           {ahead >= 0 ? "AHEAD" : "BEHIND"} {Math.round(wtVal(Math.abs(ahead))).toLocaleString()} {wtLabel()}
         </div>
       </div>
@@ -6853,7 +6740,7 @@ function VolumeChart({ workouts }) {
   if (total === 0) {
     return (
       <div style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16, textAlign: "center" }}>
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 6 }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: TRACK, marginBottom: 6 }}>
           [ VOLUME TREND ]
         </div>
         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>
@@ -6888,11 +6775,11 @@ function VolumeChart({ workouts }) {
   return (
     <div ref={wrapRef} style={{ background: BG2, border: `1px solid ${ACCENT}22`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: TRACK }}>
           [ VOLUME TREND — 12 WEEKS ]
         </div>
         {trendPct !== null && (
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: trendUp ? GREEN : RED, letterSpacing: 1 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: trendUp ? GREEN : RED, letterSpacing: TRACK }}>
             {trendUp ? "▲" : "▼"} {Math.abs(trendPct)}%
           </div>
         )}
@@ -6939,8 +6826,8 @@ function VolumeChart({ workouts }) {
           ["PEAK",      `${Math.round(wtVal(peak)).toLocaleString()} ${wtLabel()}`],
         ].map(([label, val]) => (
           <div key={label} style={{ textAlign: "center" }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: GOLD }}>{val}</div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1, marginTop: 2 }}>{label}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: GOLD }}>{val}</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED, letterSpacing: TRACK, marginTop: 2 }}>{label}</div>
           </div>
         ))}
       </div>
@@ -6984,6 +6871,8 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const [patronPickerOpen, setPatronPickerOpen] = useState(false);
   const [relicVaultOpen, setRelicVaultOpen]     = useState(false);
   const [conditionOpen, setConditionOpen]       = useState(false);
+  const [progressOpen, setProgressOpen]         = useState(false);
+  const [switcherOpen, setSwitcherOpen]         = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -7023,145 +6912,101 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
     Object.entries(subStats).map(([id, xp]) => [id, getMuscleLevel(xp)])
   );
 
-  return (
-    <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
-      {/* ── PROFILE SWITCHER ── */}
-      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>[ HUNTERS ]</div>
-          <button onClick={onCreateProfile} style={{
-            background: `${ACCENT}22`, border: `1px solid ${ACCENT}55`, borderRadius: 6,
-            padding: "4px 12px", cursor: "pointer",
-            fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: ACCENT, fontWeight: 700, letterSpacing: 1
-          }}>+ NEW</button>
-        </div>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
-          {profiles.map(p => {
-            const isActive = p.id === store.activeId;
-            const r = getRank(p.overallLevel);
-            return (
-              <button key={p.id} className="card-in" onClick={() => onSwitchProfile(p.id)} style={{
-                background: isActive ? `${ACCENT}22` : BG3,
-                border: `1px solid ${isActive ? ACCENT : ACCENT2 + "44"}`,
-                borderRadius: 10, padding: "8px 14px", cursor: "pointer", flexShrink: 0,
-                textAlign: "center", minWidth: 80, transition: "all .15s",
-                animationDelay: `${profiles.indexOf(p) * 70}ms`
-              }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 16, fontWeight: 900,
-                  color: r.color, textShadow: isActive ? `0 0 10px ${r.color}66` : "none" }}>{r.rank}</div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: isActive ? ACCENT : MUTED,
-                  letterSpacing: 1, marginTop: 2, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {p.name.toUpperCase()}
-                </div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED }}>LVL {p.overallLevel}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+  // ── Hero tile inputs ──
+  const condEntries = Object.entries(st.condition || {});
+  const freshCount  = condEntries.filter(([, v]) => v >= 0.995).length;
+  const condTotal   = condEntries.length;
+  const decaying    = condTotal - freshCount;
+  const avgCond     = condTotal ? condEntries.reduce((a, [, v]) => a + v, 0) / condTotal : 1;
+  const condColor   = decaying === 0 ? GREEN : avgCond >= 0.85 ? GOLD : RED;
+  const prCount     = Object.keys(st.prs || {}).length;
+  const relicsOwned = (st.cosmetics?.relics || []).length;
+  const openEdit = () => {
+    setEditName(st.name); setEditAge(String(st.age || "")); setEditWeight(String(st.weightLbs || 170));
+    setEditHeightFt(String(Math.floor((st.heightIn || 70) / 12))); setEditHeightIn(String((st.heightIn || 70) % 12));
+    setEditGender(st.gender || "male"); setEditMode(v => !v);
+  };
+  const sectionHead = (t) => (
+    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: TRACK_CAPS,
+      textTransform: "uppercase", padding: "0 4px", marginBottom: 8 }}>{t}</div>
+  );
 
-      <div style={{ padding: "16px 18px" }}>
-        {/* ── RANK CARD — tilts toward touch, glare tracks the pointer ── */}
-        <TiltCard>
-        <div className="card-in" style={{ background: `${rank.color}11`, border: `1px solid ${rank.color}44`,
-          borderRadius: 14, padding: "16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start",
-          position: "relative", overflow: "hidden",
-          ...(relicStyle(st.cosmetics?.equippedRelic) || {}) }}>
-          <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
-            background: "radial-gradient(circle at var(--gx,50%) var(--gy,50%), #ffffff10, transparent 55%)" }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                {/* Holographic Soul Core (three.js) */}
-                <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0,
-                  display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ position: "absolute", inset: -8, borderRadius: "50%",
-                    background: `radial-gradient(circle, ${rank.color}33 0%, transparent 60%)`,
-                    filter: "blur(8px)" }} />
-                  <Suspense fallback={null}><SoulCore color={rank.color} size={88} /></Suspense>
-                  <div style={{ position: "absolute", fontFamily: "'Orbitron',sans-serif",
-                    fontSize: 20, fontWeight: 900, color: rank.color, pointerEvents: "none",
-                    textShadow: `0 0 14px ${rank.color}, 0 0 30px ${rank.color}88`,
-                    animation: "emblemPulse 2.8s ease-in-out infinite" }}>{rank.rank}</div>
-                </div>
-                <div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 3 }}>OVERALL RANK</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 14, color: rank.color, letterSpacing: 2, fontWeight: 700 }}>{rank.label}</div>
-                </div>
-              </div>
-              <button onClick={() => { setEditMode(!editMode); setEditName(st.name); setEditAge(String(st.age||"")); setEditWeight(String(st.weightLbs||170)); setEditHeightFt(String(Math.floor((st.heightIn||70)/12))); setEditHeightIn(String((st.heightIn||70)%12)); setEditGender(st.gender||"male"); }} style={{
-                background: editMode ? `${GOLD}22` : BG3, border: `1px solid ${editMode ? GOLD : ACCENT2 + "44"}`,
-                borderRadius: 8, padding: "6px 12px", cursor: "pointer",
-                fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: editMode ? GOLD : MUTED,
-                letterSpacing: 1, fontWeight: 700
-              }}>{editMode ? "CANCEL" : "EDIT"}</button>
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: ACCENT }}>LVL {st.overallLevel}</span>
-                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}><CountUp value={current} locale duration={1200} /> / {needed.toLocaleString()} XP</span>
-              </div>
-              <div className="shimmer-bar">
-                <XPBar current={current} needed={needed} color={rank.color} height={6} />
-              </div>
+  return (
+    <div style={{ height: "100dvh", overflowY: "auto", background: BG, padding: "0 0 calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+      <div style={{ padding: "22px 18px 0" }}>
+
+        {/* ── HEADER — avatar, name, rank pill ── */}
+        <div className="card-in" style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+          <div aria-hidden="true" style={{ width: 56, height: 56, borderRadius: "50%", flexShrink: 0,
+            background: BG2, border: `2px solid ${rank.color}`, display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 700, color: rank.color }}>
+            {(st.name || "?").trim().charAt(0).toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: TEXT, lineHeight: 1.1,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.name}</div>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, padding: "3px 10px",
+              borderRadius: 999, background: `${rank.color}1a`, border: `1px solid ${rank.color}22` }}>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: rank.color }}>{rank.rank}</span>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: TEXT }}>{rank.label}</span>
             </div>
           </div>
+          <button type="button" onClick={openEdit} aria-label="Edit profile" style={{
+            width: 40, height: 40, borderRadius: "50%", border: "none", cursor: "pointer",
+            background: editMode ? `${GOLD}22` : BG2, color: editMode ? GOLD : MUTED, fontSize: 16 }}>✎</button>
         </div>
-        </TiltCard>
 
-        {/* ── EDIT FORM ── */}
+        {/* ── HERO TILES ── */}
+        <div className="card-in card-in-1" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+          <StatTile label="Level" value={st.overallLevel} color={rank.color}
+            sub={`${current.toLocaleString()} / ${needed.toLocaleString()} XP`} progress={needed ? current / needed : 0} />
+          <StatTile label="Fresh muscles" value={condTotal ? `${freshCount}/${condTotal}` : "—"} color={condColor}
+            sub={condTotal === 0 ? "Log a workout to start tracking"
+                : decaying === 0 ? "Everything is in condition"
+                : `${decaying} detraining · ${Math.round(avgCond * 100)}% avg condition`}
+            progress={condTotal ? avgCond : 0} />
+        </div>
+
+        {/* ── EDIT FORM (from the header pencil or Account → Edit profile) ── */}
         {editMode && (
-          <div className="slide-up" style={{ background: BG2, border: `1px solid ${GOLD}33`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 4, marginBottom: 14 }}>[ EDIT PROFILE ]</div>
-
+          <div className="slide-up" style={{ background: BG2, borderRadius: 16, padding: 16, marginBottom: 18 }}>
+            {sectionHead("Edit profile")}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>NAME</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Name</div>
                 <input className="input-field" value={editName} onChange={e => setEditName(e.target.value)} maxLength={20}/>
               </div>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>AGE</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Age</div>
                 <input className="input-field" type="number" value={editAge} onChange={e => setEditAge(e.target.value)} placeholder="25" min="13" max="99"/>
               </div>
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>WEIGHT (LBS)</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Weight ({wtLabel()})</div>
                 <input className="input-field" type="number" value={editWeight} onChange={e => setEditWeight(e.target.value)} placeholder="170"/>
               </div>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>HEIGHT FT</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Height ft</div>
                 <input className="input-field" type="number" value={editHeightFt} onChange={e => setEditHeightFt(e.target.value)} placeholder="5" min="3" max="7"/>
               </div>
               <div>
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 4 }}>HEIGHT IN</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Height in</div>
                 <input className="input-field" type="number" value={editHeightIn} onChange={e => setEditHeightIn(e.target.value)} placeholder="10" min="0" max="11"/>
               </div>
             </div>
-
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 2, marginBottom: 6 }}>GENDER</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {[{id:"male",label:"WARRIOR (Male)"},{id:"female",label:"SHADOW (Female)"}].map(g => (
-                  <button key={g.id} onClick={() => setEditGender(g.id)} style={{
-                    background: editGender === g.id ? `${ACCENT}22` : BG3,
-                    border: `1px solid ${editGender === g.id ? ACCENT : ACCENT2 + "33"}`,
-                    borderRadius: 8, padding: "10px", cursor: "pointer",
-                    fontFamily: "'Rajdhani',sans-serif", fontSize: 11, fontWeight: 700,
-                    color: editGender === g.id ? ACCENT : MUTED
-                  }}>{g.label}</button>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 6 }}>Gender</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[{ id: "male", label: "Male" }, { id: "female", label: "Female" }].map(g => (
+                  <Button key={g.id} variant="outline" size="sm" selected={editGender === g.id} onClick={() => setEditGender(g.id)}>{g.label}</Button>
                 ))}
               </div>
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <button onClick={handleSaveEdit} className="btn-gold" style={{ padding: "11px", fontSize: 13, letterSpacing: 2 }}>SAVE CHANGES</button>
+            <div style={{ display: "grid", gridTemplateColumns: profiles.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
+              <Button variant="primary" size="md" block onClick={handleSaveEdit}>Save changes</Button>
               {profiles.length > 1 && (
-                <button onClick={() => setDeleteConfirm(store.activeId)} style={{
-                  background: `${RED}11`, border: `1px solid ${RED}44`, borderRadius: 8, padding: "11px",
-                  cursor: "pointer", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: RED, fontWeight: 700, letterSpacing: 1
-                }}>DELETE PROFILE</button>
+                <Button variant="glass" size="md" block accent={RED} onClick={() => setDeleteConfirm(store.activeId)}>Delete hunter</Button>
               )}
             </div>
           </div>
@@ -7169,311 +7014,67 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
 
         {/* ── DELETE CONFIRM ── */}
         {deleteConfirm && (
-          <div style={{ background: `${RED}11`, border: `1px solid ${RED}55`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, color: RED, marginBottom: 8 }}>DELETE PROFILE?</div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: TEXT, marginBottom: 14, lineHeight: 1.5 }}>
-              This will permanently erase all XP, levels, and progress for <strong>{st.name}</strong>. This cannot be undone.
+          <div style={{ background: BG2, border: `1px solid ${RED}22`, borderRadius: 16, padding: 16, marginBottom: 18 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: RED, marginBottom: 6 }}>Delete this hunter?</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, color: TEXT, marginBottom: 14, lineHeight: 1.5 }}>
+              This permanently erases all XP, levels and progress for <strong>{st.name}</strong>. It cannot be undone.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <button onClick={() => setDeleteConfirm(null)} style={{
-                background: BG3, border: `1px solid ${MUTED}33`, borderRadius: 8, padding: "10px",
-                cursor: "pointer", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED
-              }}>CANCEL</button>
-              <button onClick={() => { onDeleteProfile(deleteConfirm); setDeleteConfirm(null); setEditMode(false); }} style={{
-                background: RED, border: "none", borderRadius: 8, padding: "10px",
-                cursor: "pointer", fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
-                color: "#fff", fontWeight: 700, letterSpacing: 1
-              }}>CONFIRM DELETE</button>
+              <Button variant="glass" size="md" block onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+              <Button variant="primary" size="md" block style={{ background: RED, color: "#fff" }}
+                onClick={() => { onDeleteProfile(deleteConfirm); setDeleteConfirm(null); setEditMode(false); }}>Confirm delete</Button>
             </div>
           </div>
         )}
 
-        {/* ── BODY FIGURE — holographic scan frame ── */}
-        <div className="card-in card-in-2" style={{ marginBottom: 16, padding: "0 8px" }}>
+        {/* ── BODY MATRIX ── */}
+        <div className="card-in card-in-2" style={{ background: BG2, borderRadius: 16, padding: "14px 8px 6px", marginBottom: 18 }}>
+          <div style={{ padding: "0 8px" }}>{sectionHead("Body matrix")}</div>
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
         </div>
 
-        {/* ── ATROPHY WARNING ── */}
-        {(() => {
-          // EMG-aware: a bench press keeps front delts trained, so credit every
-          // stat a workout actually touches — same mapping the rebuild uses.
-          const lastByMuscle = {};
-          const creditB = (m, d) => { if (m && d && (!lastByMuscle[m] || d > lastByMuscle[m])) lastByMuscle[m] = d; };
-          for (const w of st.workouts || []) {
-            const ex = w.exercise || {};
-            const muscle = w.muscle || ex.primary || "chest";
-            const emg = ex.emg || EXERCISE_EMG[ex.name];
-            if (ex.type === "cardio") creditB("cardio", w.date);
-            else if (emg) Object.keys(emg).forEach(svgId => creditB(SVG_TO_STAT[svgId] || muscle, w.date));
-            else {
-              const statKey = ex.type === "calisthenics" && !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
-              creditB(statKey, w.date); if (statKey !== muscle) creditB(muscle, w.date);
-            }
-          }
-          const decaying = Object.entries(lastByMuscle).filter(([m, d]) =>
-            (Date.now() - d) / 86400000 > atrophyParams(m).grace);
-          if (!decaying.length) return null;
-          const worstDays = Math.floor((Date.now() - Math.min(...decaying.map(([, d]) => d))) / 86400000);
-          return (
-            <div style={{ background: `${RED}0d`, border: `1px solid ${RED}44`, borderLeft: `3px solid ${RED}`,
-              borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: RED, letterSpacing: 2, marginBottom: 3 }}>
-                ⚠ ATROPHY ACTIVE
-              </div>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, lineHeight: 1.5 }}>
-                {decaying.length} muscle group{decaying.length > 1 ? "s" : ""} detraining — longest untrained {worstDays} days.
-                Condition fades fastest in the first weeks idle and levels off (never below 40%).
-                Each session rebuilds ~a third of what's lost — muscle memory makes the road back short.
-              </div>
-            </div>
-          );
-        })()}
+        {/* ── PROGRESS ── */}
+        <ListGroup title="Progress">
+          <ListRow icon="◔" label="Volume & pace" sub="Weekly tonnage and this month vs last" value="12 weeks" onClick={() => setProgressOpen(true)} />
+          <ListRow icon="★" label="PR history" value={`${prCount} tracked`} onClick={() => setPrHistoryOpen(true)} />
+          <ListRow icon="▦" label="Training heatmap" value="13 weeks" onClick={() => setHeatmapOpen(true)} />
+          <ListRow icon="◑" label="Condition report" sub="Detraining, recovery and what to train"
+            value={decaying ? `${decaying} decaying` : "All fresh"} tone={decaying ? RED : GREEN}
+            onClick={() => setConditionOpen(true)} last />
+        </ListGroup>
 
-        {/* ── PATRON LIFT ── */}
-        {(() => {
-          const prs = st.prs || {};
-          const prKeys = Object.keys(prs);
-          const patronLift = st.patronLift || null;
-          const patronE1RM = patronLift ? prs[patronLift] : null;
-          const hasAnyPr = prKeys.length > 0;
-          return (
-            <div style={{ marginBottom: 8 }}>
-              {patronLift ? (
-                <div style={{ background: `${GOLD}0e`, border: `1px solid ${GOLD}44`, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 2 }}>SIGNATURE LIFT</div>
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{patronLift}</div>
-                    {patronE1RM && (
-                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, marginTop: 2 }}>
-                        est. 1RM · <span style={{ fontWeight: 700 }}>{Math.round(wtVal(patronE1RM))} {wtLabel()}</span>
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={() => setPatronPickerOpen(true)} style={{
-                    background: `${GOLD}22`, border: `1px solid ${GOLD}55`, borderRadius: 7,
-                    padding: "7px 12px", cursor: "pointer",
-                    fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, fontWeight: 700, letterSpacing: 1,
-                    flexShrink: 0,
-                  }}>CHANGE</button>
-                </div>
-              ) : (
-                <button disabled={!hasAnyPr} onClick={() => hasAnyPr && setPatronPickerOpen(true)} style={{
-                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                  background: hasAnyPr ? `${GOLD}08` : BG3, border: `1px solid ${hasAnyPr ? GOLD + "33" : MUTED + "22"}`,
-                  borderRadius: 8, padding: "12px 14px", cursor: hasAnyPr ? "pointer" : "default",
-                  fontFamily: "'Rajdhani',sans-serif",
-                }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 16, opacity: hasAnyPr ? 0.7 : 0.3 }}>🏆</span>
-                    <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: hasAnyPr ? GOLD : MUTED, letterSpacing: 2, fontWeight: 700 }}>
-                      {hasAnyPr ? "PIN SIGNATURE LIFT" : "EARN A PR TO PIN"}
-                    </span>
-                  </span>
-                  {hasAnyPr && <span style={{ fontSize: 10, color: GOLD, opacity: 0.6 }}>SELECT →</span>}
-                </button>
-              )}
-            </div>
-          );
-        })()}
+        {/* ── IDENTITY ── */}
+        <ListGroup title="Identity">
+          <ListRow icon="◆" label="Signature lift"
+            sub={st.patronLift && st.prs?.[st.patronLift] ? `est. 1RM ${Math.round(wtVal(st.prs[st.patronLift]))} ${wtLabel()}` : null}
+            value={st.patronLift || (prCount ? "Not set" : "Earn a PR first")}
+            disabled={!prCount} onClick={() => setPatronPickerOpen(true)} />
+          <ListRow icon="◇" label="Relic vault" value={`${relicsOwned}/${RELIC_POOL.length}`} onClick={() => setRelicVaultOpen(true)} last />
+        </ListGroup>
 
-        {/* Patron lift picker modal */}
-        {patronPickerOpen && (() => {
-          const prs = st.prs || {};
-          const sorted = Object.entries(prs).sort((a, b) => b[1] - a[1]);
-          return (
-            createPortal(<div style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150, background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
-              onClick={() => setPatronPickerOpen(false)}>
-              <div onClick={e => e.stopPropagation()} className="slide-up" style={{
-                background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
-                border: `1px solid ${GOLD}33`, borderTop: `2px solid ${GOLD}`,
-                width: "100%", maxWidth: 480, padding: "20px 18px 40px",
-                maxHeight: "70dvh", overflowY: "auto",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: GOLD, letterSpacing: 3 }}>SELECT SIGNATURE LIFT</div>
-                  <button onClick={() => setPatronPickerOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
-                </div>
-                {st.patronLift && (
-                  <button onClick={() => { (onSetPatronLift || (n => onUpdateProfile(store.activeId, { patronLift: n })))(null); setPatronPickerOpen(false); }} style={{
-                    width: "100%", padding: "10px 14px", marginBottom: 10, cursor: "pointer",
-                    background: `${RED}11`, border: `1px solid ${RED}33`, borderRadius: 8,
-                    fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: RED, fontWeight: 700, textAlign: "left",
-                  }}>✕  REMOVE PIN</button>
-                )}
-                {sorted.map(([ex, e1rm]) => {
-                  const isPinned = ex === st.patronLift;
-                  return (
-                    <button key={ex} onClick={() => { (onSetPatronLift || (n => onUpdateProfile(store.activeId, { patronLift: n })))(ex); setPatronPickerOpen(false); }} style={{
-                      width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
-                      background: isPinned ? `${GOLD}18` : "none",
-                      border: "none", borderBottom: `1px solid ${ACCENT}11`,
-                      padding: "11px 4px", cursor: "pointer",
-                    }}>
-                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: isPinned ? GOLD : TEXT, fontWeight: isPinned ? 700 : 400 }}>
-                        {isPinned && "★ "}{ex}
-                      </span>
-                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700 }}>
-                        {Math.round(wtVal(e1rm))} {wtLabel()}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>, document.body)
-          );
-        })()}
-
-        {/* Progression entry points */}
-        <Reveal dir="left">
-        <button onClick={() => setPrHistoryOpen(true)} style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: `${GOLD}10`, border: `1px solid ${GOLD}55`, borderRadius: 8,
-          padding: "12px 14px", marginBottom: 8, cursor: "pointer",
-          fontFamily: "'Rajdhani',sans-serif",
-        }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M10 1l2.5 5.5 6 .8-4.4 4.2 1 6L10 14.7 4.9 17.5l1-6L1.5 7.3l6-.8z" stroke={GOLD} strokeWidth="1.4"/>
-            </svg>
-            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 2, fontWeight: 700 }}>PR HISTORY</span>
-          </span>
-          <span style={{ fontSize: 10, color: GOLD, opacity: 0.6 }}>
-            {Object.keys(st.prs || {}).length} TRACKED →
-          </span>
-        </button>
-        </Reveal>
-
-        <Reveal dir="left" delay={20}>
-        <button onClick={() => setConditionOpen(true)} style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: `${RED}10`, border: `1px solid ${RED}55`, borderRadius: 8,
-          padding: "12px 14px", marginBottom: 8, cursor: "pointer",
-          fontFamily: "'Rajdhani',sans-serif",
-        }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15 }}>📉</span>
-            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: RED, letterSpacing: 2, fontWeight: 700 }}>CONDITION REPORT</span>
-          </span>
-          <span style={{ fontSize: 10, color: RED, opacity: 0.7 }}>
-            {(() => {
-              const c = st.condition || {};
-              const n = Object.values(c).filter(v => v < 0.995).length;
-              return n ? `${n} decaying →` : "all fresh →";
-            })()}
-          </span>
-        </button>
-        </Reveal>
-
-        <Reveal dir="left" delay={40}>
-        <button onClick={() => setRelicVaultOpen(true)} style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: "#a855f710", border: "1px solid #a855f755", borderRadius: 8,
-          padding: "12px 14px", marginBottom: 8, cursor: "pointer",
-          fontFamily: "'Rajdhani',sans-serif",
-        }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15 }}>💎</span>
-            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: "#a855f7", letterSpacing: 2, fontWeight: 700 }}>RELIC VAULT</span>
-          </span>
-          <span style={{ fontSize: 10, color: "#a855f7", opacity: 0.6 }}>
-            {(st.cosmetics?.relics || []).length}/{RELIC_POOL.length} →
-          </span>
-        </button>
-        </Reveal>
-
-        <Reveal dir="right" delay={80}>
-        <button onClick={() => setHeatmapOpen(true)} style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: `${ACCENT}10`, border: `1px solid ${ACCENT}55`, borderRadius: 8,
-          padding: "12px 14px", marginBottom: 16, cursor: "pointer",
-          fontFamily: "'Rajdhani',sans-serif",
-        }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <rect x="2" y="2"  width="4" height="4" fill={ACCENT} opacity="0.3"/>
-              <rect x="8" y="2"  width="4" height="4" fill={ACCENT} opacity="0.7"/>
-              <rect x="14" y="2" width="4" height="4" fill={ACCENT}/>
-              <rect x="2" y="8"  width="4" height="4" fill={ACCENT} opacity="0.6"/>
-              <rect x="8" y="8"  width="4" height="4" fill={ACCENT} opacity="0.4"/>
-              <rect x="14" y="8" width="4" height="4" fill={ACCENT} opacity="0.85"/>
-              <rect x="2" y="14" width="4" height="4" fill={ACCENT} opacity="0.5"/>
-              <rect x="8" y="14" width="4" height="4" fill={ACCENT}/>
-              <rect x="14" y="14" width="4" height="4" fill={ACCENT} opacity="0.25"/>
-            </svg>
-            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 2, fontWeight: 700 }}>TRAINING HEATMAP</span>
-          </span>
-          <span style={{ fontSize: 10, color: ACCENT, opacity: 0.6 }}>
-            13 WEEKS →
-          </span>
-        </button>
-        </Reveal>
-
-        {/* ── STATS ── */}
-        <Reveal dir="scale">
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ SPECIAL ATTRIBUTES ]</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-            {specialStats.map(m => <StatBadge key={m} muscle={m} level={st.levels[m]||1} xp={st.stats[m]||0}/>)}
+        {/* ── ACCOUNT ── */}
+        <ListGroup title="Account">
+          <ListRow icon="✎" label="Edit profile" value={`${st.age ? st.age + " · " : ""}${Math.round(wtVal(st.weightLbs || 0))} ${wtLabel()}`} onClick={openEdit} />
+          <ListRow icon="⇄" label="Switch hunter" value={profiles.length > 1 ? `${profiles.length} hunters` : "Only one"} onClick={() => setSwitcherOpen(v => !v)} />
+          <ListRow icon="+" label="New hunter" onClick={onCreateProfile} last />
+        </ListGroup>
+        {switcherOpen && (
+          <div className="slide-up" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 2px 6px", marginTop: -8, marginBottom: 18 }}>
+            {profiles.map(p => {
+              const isActive = p.id === store.activeId; const r = getRank(p.overallLevel);
+              return (
+                <Button key={p.id} variant="outline" size="sm" selected={isActive} onClick={() => onSwitchProfile(p.id)}
+                  icon={<span style={{ color: isActive ? undefined : r.color, fontWeight: 700 }}>{r.rank}</span>}>
+                  {p.name} · L{p.overallLevel}
+                </Button>
+              );
+            })}
           </div>
-        </Reveal>
+        )}
 
-        {/* ── MIND & SPIRIT ── */}
-        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: "#8b8cf6", letterSpacing: 4, marginBottom: 10 }}>[ MIND & SPIRIT ]</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-          {["intelligence", "faith"].map(s => {
-            const xp = mindStatXP(st, s);
-            return <StatBadge key={s} muscle={s} level={getMuscleLevel(xp)} xp={xp} />;
-          })}
-        </div>
-
-        <Reveal><VolumeChart workouts={st.workouts || []} /></Reveal>
-
-        <Reveal><ShadowRace workouts={st.workouts || []} /></Reveal>
-
-        <Reveal><RecoveryGrid workouts={st.workouts || []} /></Reveal>
-
-        {(() => {
-          const imbalances = detectImbalances(st.stats || {}, st.subStats || {});
-          if (imbalances.length === 0) return null;
-          return (
-            <div style={{ background: `${GOLD}08`, border: `1px solid ${GOLD}33`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, letterSpacing: 4, marginBottom: 10 }}>
-                [ FOCUS RECOMMENDATIONS ]
-              </div>
-              {imbalances.map((imb, i) => {
-                const suggestions = suggestExercisesFor(imb.target, 3);
-                return (
-                  <div key={i} style={{ marginBottom: i === imbalances.length - 1 ? 0 : 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: GOLD, fontWeight: 700, letterSpacing: 1 }}>
-                        {imb.pair[0]} ▸ {imb.pair[1]}
-                      </span>
-                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED }}>
-                        {imb.ratio === Infinity ? "∞" : `${imb.ratio.toFixed(1)}×`}
-                      </span>
-                    </div>
-                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, lineHeight: 1.4, marginBottom: suggestions.length ? 6 : 0 }}>
-                      {imb.message}
-                    </div>
-                    {suggestions.length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                        {suggestions.map(ex => (
-                          <span key={ex.name} style={{
-                            fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                            background: BG3, border: `1px solid ${GOLD}22`, borderRadius: 4,
-                            padding: "3px 8px",
-                          }}>{ex.name}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-
+        {/* ── MUSCLE LEVELS ── */}
         <Reveal>
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4, marginBottom: 10 }}>[ MUSCLE LEVELS ]</div>
+          {sectionHead("Muscle levels")}
           <StatTree
             condition={st.condition || {}}
             lastTrained={st.lastTrained || {}}
@@ -7488,66 +7089,63 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         </Reveal>
       </div>
 
+      {/* ── SHEETS ── */}
+      {progressOpen && <ProgressModal workouts={st.workouts || []} onClose={() => setProgressOpen(false)} />}
       {conditionOpen && <ConditionReportModal profile={st} onClose={() => setConditionOpen(false)} />}
-      {relicVaultOpen && (
-        createPortal(<div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
-          background: "rgba(3,6,15,0.92)", backdropFilter: "blur(10px)",
-          display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-          <div onClick={e => e.stopPropagation()} className="slide-up" style={{
-            background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`,
-            border: "1px solid #a855f733", borderTop: "2px solid #a855f7",
-            width: "100%", maxWidth: 480, padding: "20px 18px 40px",
-            maxHeight: "70dvh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: "#a855f7", letterSpacing: 3 }}>RELIC VAULT</div>
+      {prHistoryOpen && <PRHistoryModal workouts={st.workouts} prs={st.prs} onClose={() => setPrHistoryOpen(false)} />}
+      {heatmapOpen && <HeatmapModal workouts={st.workouts} onClose={() => setHeatmapOpen(false)} />}
+
+      {patronPickerOpen && (() => {
+        const sorted = Object.entries(st.prs || {}).sort((a, b) => b[1] - a[1]);
+        const pick = (n) => { (onSetPatronLift || (v => onUpdateProfile(store.activeId, { patronLift: v })))(n); setPatronPickerOpen(false); };
+        return createPortal(
+          <div onClick={() => setPatronPickerOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
+            background: "rgba(0,0,0,.72)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+            <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: BG2, borderRadius: "20px 20px 0 0",
+              width: "100%", maxWidth: 480, padding: "18px 16px 40px", maxHeight: "70dvh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: TEXT }}>Signature lift</div>
+                <button onClick={() => setPatronPickerOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+              </div>
+              <ListGroup>
+                {st.patronLift && <ListRow icon="✕" label="Remove pin" tone={RED} onClick={() => pick(null)} />}
+                {sorted.map(([ex, e1rm], i) => (
+                  <ListRow key={ex} icon={ex === st.patronLift ? "★" : "☆"} label={ex}
+                    value={`${Math.round(wtVal(e1rm))} ${wtLabel()}`} tone={ex === st.patronLift ? GOLD : undefined}
+                    onClick={() => pick(ex)} last={i === sorted.length - 1} />
+                ))}
+              </ListGroup>
+            </div>
+          </div>, document.body);
+      })()}
+
+      {relicVaultOpen && createPortal(
+        <div onClick={() => setRelicVaultOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1150,
+          background: "rgba(0,0,0,.72)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: BG2, borderRadius: "20px 20px 0 0",
+            width: "100%", maxWidth: 480, padding: "18px 16px 40px", maxHeight: "70dvh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: TEXT }}>Relic vault</div>
               <button onClick={() => setRelicVaultOpen(false)} style={{ background: "none", border: "none", color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
             </div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginBottom: 14 }}>
-              Card frames dropped by setting new PRs. Tap to equip.
-            </div>
-            {RELIC_POOL.map(r => {
-              const owned = (st.cosmetics?.relics || []).some(x => x.id === r.id);
-              const equipped = st.cosmetics?.equippedRelic === r.id;
-              const rar = RELIC_RARITIES[r.rarity];
-              const c = RELIC_FRAME_COLORS[r.id];
-              return (
-                <button key={r.id} disabled={!owned}
-                  onClick={() => onUpdateProfile(store.activeId, { cosmetics: { ...(st.cosmetics || {}), equippedRelic: equipped ? null : r.id } })}
-                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
-                    background: equipped ? `${c}18` : (owned ? BG3 : "transparent"),
-                    border: `1px solid ${equipped ? c : (owned ? c + "44" : MUTED + "22")}`,
-                    borderRadius: 8, padding: "10px 12px", marginBottom: 8,
-                    cursor: owned ? "pointer" : "default", opacity: owned ? 1 : 0.45, textAlign: "left" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 16 }}>{r.rarity === "legendary" ? "👑" : r.rarity === "epic" ? "🔮" : r.rarity === "rare" ? "💠" : "🛡️"}</span>
-                    <span>
-                      <span style={{ display: "block", fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: owned ? c : MUTED, letterSpacing: 1 }}>{r.name}</span>
-                      <span style={{ display: "block", fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: rar.color, letterSpacing: 1 }}>{rar.name.toUpperCase()}</span>
-                    </span>
-                  </span>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 1,
-                    color: equipped ? c : MUTED }}>{equipped ? "EQUIPPED" : (owned ? "TAP TO EQUIP" : "🔒 SET A PR")}</span>
-                </button>
-              );
-            })}
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 12 }}>Card frames dropped by setting new PRs. Tap to equip.</div>
+            <ListGroup>
+              {RELIC_POOL.map((r, i) => {
+                const owned = (st.cosmetics?.relics || []).some(x => x.id === r.id);
+                const equipped = st.cosmetics?.equippedRelic === r.id;
+                const c = RELIC_FRAME_COLORS[r.id];
+                return (
+                  <ListRow key={r.id} icon={r.rarity === "legendary" ? "👑" : r.rarity === "epic" ? "🔮" : r.rarity === "rare" ? "💠" : "🛡️"}
+                    label={r.name} sub={RELIC_RARITIES[r.rarity].name}
+                    value={equipped ? "Equipped" : owned ? "Tap to equip" : "Set a PR"} tone={equipped ? c : undefined}
+                    disabled={!owned} last={i === RELIC_POOL.length - 1}
+                    onClick={() => onUpdateProfile(store.activeId, { cosmetics: { ...(st.cosmetics || {}), equippedRelic: equipped ? null : r.id } })} />
+                );
+              })}
+            </ListGroup>
           </div>
-        </div>, document.body)
-      )}
-      {prHistoryOpen && (
-        <PRHistoryModal
-          workouts={st.workouts}
-          prs={st.prs}
-          onClose={() => setPrHistoryOpen(false)}
-        />
-      )}
-      {heatmapOpen && (
-        <HeatmapModal
-          workouts={st.workouts}
-          onClose={() => setHeatmapOpen(false)}
-        />
-      )}
+        </div>, document.body)}
     </div>
-
   );
 }
 
@@ -7773,7 +7371,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
         border: `1px solid ${(profile.banner_color || ACCENT)}33`, borderTop: `2px solid ${profile.banner_color || ACCENT}`,
         width: "100%", maxWidth: 480, padding: "24px 20px 40px",
         maxHeight: "90vh", overflowY: "auto", position: "relative",
-        clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)",
+        
       }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${(profile.banner_color || ACCENT)}cc, transparent)` }} />
 
@@ -7781,19 +7379,19 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{
               width: 44, height: 44, borderRadius: 8,
-              background: `${rc}22`, border: `2px solid ${rc}88`,
+              background: `${rc}22`, border: `2px solid ${rc}22`,
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 20, fontWeight: 900, color: rc,
+              fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 900, color: rc,
             }}>{profile.rank_label || "E"}</div>
             <div>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: ACCENT }}>@{profile.username}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: ACCENT }}>@{profile.username}</div>
               {profile.equipped_title && (
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, fontStyle: "italic", marginTop: 2 }}>
                   {profile.equipped_title}
                 </div>
               )}
               {profile.equipped_aspect && (
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 2,
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, letterSpacing: TRACK,
                   color: ASPECTS.find(a => a.name === profile.equipped_aspect)?.color || MUTED, marginTop: 2 }}>
                   ⟡ PATH OF THE {profile.equipped_aspect.toUpperCase()}
                 </div>
@@ -7808,7 +7406,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
 
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 2 }}>LVL {profile.overall_level}</span>
+            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK }}>LVL {profile.overall_level}</span>
             <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{(profile.overall_xp || 0).toLocaleString()} XP</span>
           </div>
           <div style={{ height: 4, background: `${ACCENT}22`, borderRadius: 2 }}>
@@ -7824,7 +7422,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
             ["FRIENDS",  (profile.friend_count ?? "—")],
           ].map(([label, val]) => (
             <div key={label} style={{ background: BG3, border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 6px", textAlign: "center" }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 12, fontWeight: 700, color: GOLD }}>{val}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: GOLD }}>{val}</div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{label}</div>
             </div>
           ))}
@@ -7834,7 +7432,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
           <div style={{
             width: 6, height: 6, borderRadius: "50%",
             background: _activityColor(profile.updated_at),
-            boxShadow: `0 0 4px ${_activityColor(profile.updated_at)}`,
+            
           }} />
           <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
             Last active {_timeAgo(profile.updated_at)}
@@ -7842,12 +7440,12 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
         </div>
 
         {profile.patron_lift && (
-          <div style={{ background: `${GOLD}0e`, border: `1px solid ${GOLD}44`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 3 }}>SIGNATURE LIFT</div>
+          <div style={{ background: `${GOLD}0e`, border: `1px solid ${GOLD}22`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: GOLD, letterSpacing: TRACK, marginBottom: 3 }}>SIGNATURE LIFT</div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>{profile.patron_lift}</span>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: TEXT }}>{profile.patron_lift}</span>
               {profile.prs?.[profile.patron_lift] && (
-                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: GOLD }}>
                   {Math.round(profile.prs[profile.patron_lift])} lbs est. 1RM
                 </span>
               )}
@@ -7857,22 +7455,22 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
 
         {profile.prs && Object.keys(profile.prs).length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GOLD, letterSpacing: 3, marginBottom: 10 }}>{"// PERSONAL RECORDS"}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK, marginBottom: 10 }}>{"PERSONAL RECORDS"}</div>
             {Object.entries(profile.prs)
               .sort((a, b) => b[1] - a[1])
               .slice(0, 8)
               .map(([ex, e1rm]) => (
                 <div key={ex} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${ACCENT}11` }}>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT }}>{ex}</span>
-                  <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, fontWeight: 700, color: GOLD }}>{Math.round(e1rm)} lbs</span>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: GOLD }}>{Math.round(e1rm)} lbs</span>
                 </div>
               ))}
           </div>
         )}
 
         {isAdmin && (
-          <div style={{ background: `${RED}08`, border: `1px solid ${RED}33`, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: RED, letterSpacing: 3, marginBottom: 10 }}>{"// ADMIN CONTROLS"}</div>
+          <div style={{ background: `${RED}08`, border: `1px solid ${RED}22`, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: RED, letterSpacing: TRACK, marginBottom: 10 }}>{"ADMIN CONTROLS"}</div>
 
             {/* Toggleable rows */}
             {[
@@ -7886,7 +7484,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
                 borderBottom: `1px solid ${ACCENT}11`,
               }}>
                 <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>{label}</span>
-                <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: valColor, letterSpacing: 1 }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: valColor, letterSpacing: TRACK }}>
                   {valLabel} <span style={{ opacity: 0.5, fontSize: 8 }}>↻</span>
                 </span>
               </button>
@@ -7894,20 +7492,20 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", marginBottom: 10 }}>
               <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>Joined</span>
-              <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED }}>{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"}</span>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED }}>{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"}</span>
             </div>
 
             {/* Action buttons */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
               <button disabled={busy} onClick={sendPasswordReset} style={{
                 padding: "9px", cursor: busy ? "default" : "pointer",
-                background: `${GREEN}11`, border: `1px solid ${GREEN}55`, color: GREEN,
-                fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+                background: `${GREEN}11`, border: `1px solid ${GREEN}22`, color: GREEN,
+                fontFamily: FONT_DISPLAY, fontSize: 8, fontWeight: 700, letterSpacing: TRACK,
               }}>RESET PW</button>
               <button disabled={busy} onClick={resetStats} style={{
                 padding: "9px", cursor: busy ? "default" : "pointer",
-                background: `${RED}11`, border: `1px solid ${RED}55`, color: RED,
-                fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+                background: `${RED}11`, border: `1px solid ${RED}22`, color: RED,
+                fontFamily: FONT_DISPLAY, fontSize: 8, fontWeight: 700, letterSpacing: TRACK,
               }}>WIPE STATS</button>
             </div>
 
@@ -7915,7 +7513,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
               width: "100%", padding: "10px", cursor: busy ? "default" : "pointer",
               background: viewHidden ? `${GREEN}22` : `${ACCENT}22`,
               border: `1px solid ${viewHidden ? GREEN : ACCENT}66`,
-              fontFamily: "'Orbitron',sans-serif", fontSize: 9, fontWeight: 700, letterSpacing: 1,
+              fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK,
               color: viewHidden ? GREEN : ACCENT,
             }}>
               {viewHidden ? `REVEAL TO @${profile.username}` : `HIDE FROM @${profile.username}`}
@@ -7924,9 +7522,9 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
             {/* Audit log — collapsible */}
             <button onClick={toggleAuditOpen} style={{
               width: "100%", marginTop: 10, padding: "8px 10px", cursor: "pointer",
-              background: "none", border: `1px solid ${MUTED}33`,
+              background: "none", border: `1px solid ${MUTED}22`,
               display: "flex", justifyContent: "space-between", alignItems: "center",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 2,
+              fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK,
             }}>
               <span>{auditOpen ? "▾ AUDIT LOG" : "▸ AUDIT LOG"}</span>
               <span style={{ opacity: 0.6 }}>{auditEntries.length > 0 ? `${auditEntries.length}` : ""}</span>
@@ -7948,7 +7546,7 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
                       <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, fontWeight: 600 }}>
                         {_auditLabel(entry.action)}
                       </span>
-                      <span style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, whiteSpace: "nowrap" }}>
+                      <span style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, whiteSpace: "nowrap" }}>
                         {_timeAgo(entry.created_at)}
                       </span>
                     </div>
@@ -7972,9 +7570,9 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
 function _signInPrompt(title, body) {
   return (
     <div style={{ minHeight: "100dvh", background: BG, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px 120px" }}>
-      <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 22, fontWeight: 900, color: ACCENT, letterSpacing: 4, marginBottom: 12 }}>{title}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 900, color: ACCENT, letterSpacing: TRACK, marginBottom: 12 }}>{title}</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED, textAlign: "center", lineHeight: 1.6 }}>{body}</div>
-      <div style={{ marginTop: 20, fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 2 }}>
+      <div style={{ marginTop: 20, fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK }}>
         SIGN IN VIA HOME → GEAR ICON → ACCOUNT
       </div>
     </div>
@@ -8030,8 +7628,8 @@ function LeaderboardScreen({ account, toast }) {
   return (
     <div style={{ minHeight: "100dvh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
 
-      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
-        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
+      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}22`, padding: "14px 18px" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: ACCENT, letterSpacing: TRACK }}>
           {isAdmin ? "[ LEADERBOARD — ADMIN VIEW ]" : "[ LEADERBOARD ]"}
         </div>
       </div>
@@ -8041,7 +7639,7 @@ function LeaderboardScreen({ account, toast }) {
           {[["weekly_xp", "WEEKLY"], ["overall_xp", "TOTAL XP"], ["overall_level", "LEVEL"]].map(([key, lbl]) => (
             <button key={key} onClick={() => setSortBy(key)} style={{
               flex: 1, padding: "7px 4px", border: "none", cursor: "pointer",
-              fontFamily: "'Orbitron',sans-serif", fontSize: 8, fontWeight: 700, letterSpacing: 1,
+              fontFamily: FONT_DISPLAY, fontSize: 8, fontWeight: 700, letterSpacing: TRACK,
               background: sortBy === key ? `${ACCENT}22` : BG3,
               color: sortBy === key ? ACCENT : MUTED,
               borderBottom: `2px solid ${sortBy === key ? ACCENT : "transparent"}`,
@@ -8050,7 +7648,7 @@ function LeaderboardScreen({ account, toast }) {
         </div>
 
         {loadingBoard && (
-          <div style={{ textAlign: "center", padding: 40, fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: MUTED }}>LOADING...</div>
+          <div style={{ textAlign: "center", padding: 40, fontFamily: FONT_DISPLAY, fontSize: 10, color: MUTED }}>LOADING...</div>
         )}
 
         {!loadingBoard && board.length === 0 && (
@@ -8069,26 +7667,26 @@ function LeaderboardScreen({ account, toast }) {
                 display: "flex", alignItems: "center", gap: 12,
                 background: isMe ? `${banner}11` : BG2,
                 border: `1px solid ${isMe ? banner + "55" : banner + "1a"}`,
-                borderLeft: `3px solid ${banner}`,
+                borderLeft: `2px solid ${banner}aa`,
                 borderRadius: 10, padding: "12px 14px", marginBottom: 8, cursor: "pointer",
               }}>
-              <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, color: i < 3 ? GOLD : MUTED, fontWeight: 700, minWidth: 22, textAlign: "center" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, color: i < 3 ? GOLD : MUTED, fontWeight: 700, minWidth: 22, textAlign: "center" }}>
                 {i === 0 ? "◆" : i === 1 ? "◇" : i === 2 ? "△" : `#${i + 1}`}
               </div>
               <div style={{
                 width: 32, height: 32, borderRadius: 6, flexShrink: 0,
-                background: `${rc}22`, border: `1.5px solid ${rc}88`,
+                background: `${rc}22`, border: `1.5px solid ${rc}22`,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "'Orbitron',sans-serif", fontSize: 13, fontWeight: 900, color: rc,
+                fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 900, color: rc,
               }}>{row.rank_label || "E"}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div title={`Active ${_timeAgo(row.updated_at)}`} style={{
                     width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
                     background: _activityColor(row.updated_at),
-                    boxShadow: `0 0 4px ${_activityColor(row.updated_at)}`,
+                    
                   }} />
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, letterSpacing: TRACK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     <AuraName name={`@${row.username}${isMe ? " ◈" : ""}`}
                       level={row.overall_level} color={isMe ? ACCENT : (row.banner_color || TEXT)} />
                   </div>
@@ -8099,7 +7697,7 @@ function LeaderboardScreen({ account, toast }) {
                   </div>
                 )}
                 {row.equipped_aspect && (
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, letterSpacing: 2,
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, letterSpacing: TRACK,
                     color: ASPECTS.find(a => a.name === row.equipped_aspect)?.color || MUTED, marginTop: 1 }}>
                     ⟡ PATH OF THE {row.equipped_aspect.toUpperCase()}
                   </div>
@@ -8109,7 +7707,7 @@ function LeaderboardScreen({ account, toast }) {
                 </div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 700, color: GOLD }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: GOLD }}>
                   {sortBy === "overall_level"
                     ? `LVL ${row.overall_level}`
                     : sortBy === "overall_xp"
@@ -8260,8 +7858,8 @@ function FriendsScreen({ account, toast }) {
   return (
     <div style={{ minHeight: "100dvh", background: BG, paddingBottom: "calc(120px + env(safe-area-inset-bottom,0px))" }}>
 
-      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}44`, padding: "14px 18px" }}>
-        <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: ACCENT, letterSpacing: 4 }}>
+      <div style={{ background: `${BG2}ee`, borderBottom: `1px solid ${ACCENT2}22`, padding: "14px 18px" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: ACCENT, letterSpacing: TRACK }}>
           {isAdmin ? "[ FRIENDS — ADMIN VIEW ]" : "[ FRIENDS ]"}
         </div>
       </div>
@@ -8269,19 +7867,19 @@ function FriendsScreen({ account, toast }) {
       <div style={{ padding: "16px 16px 0" }}>
 
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: ACCENT, letterSpacing: 3, marginBottom: 8 }}>{"// FIND HUNTER"}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 8 }}>{"FIND HUNTER"}</div>
           <input
             value={searchQ}
             onChange={e => setSearchQ(e.target.value)}
             placeholder="search by username..."
             autoCapitalize="none" autoCorrect="off" spellCheck="false"
             style={{
-              width: "100%", background: BG3, border: `1px solid ${ACCENT}44`,
+              width: "100%", background: BG3, border: `1px solid ${ACCENT}22`,
               color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 14,
               padding: "10px 14px", borderRadius: 8, outline: "none", boxSizing: "border-box",
             }}
           />
-          {searching && <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, marginTop: 8 }}>SCANNING...</div>}
+          {searching && <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, marginTop: 8 }}>SCANNING...</div>}
           {searchResults.map(u => {
             const isPending  = outgoingIds.has(u.user_id);
             const isFriend   = friendIds.has(u.user_id);
@@ -8299,25 +7897,25 @@ function FriendsScreen({ account, toast }) {
                 }}>
                 <div style={{
                   width: 28, height: 28, borderRadius: 5, flexShrink: 0,
-                  background: `${rc}22`, border: `1.5px solid ${rc}66`,
+                  background: `${rc}22`, border: `1.5px solid ${rc}22`,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontFamily: "'Orbitron',sans-serif", fontSize: 11, fontWeight: 900, color: rc,
+                  fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 900, color: rc,
                 }}>{u.rank_label || "E"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{u.username}</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: TEXT }}>@{u.username}</div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
                     LVL {u.overall_level}{!canView ? " · profile locked" : ""}
                   </div>
                 </div>
                 {isFriend ? (
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: GREEN, letterSpacing: 1 }}>FRIEND</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: GREEN, letterSpacing: TRACK }}>FRIEND</div>
                 ) : isPending ? (
-                  <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 8, color: MUTED, letterSpacing: 1 }}>PENDING</div>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK }}>PENDING</div>
                 ) : (
                   <button disabled={opBusy[u.user_id]} onClick={(e) => { e.stopPropagation(); handleSendRequest(u.user_id); }} style={{
-                    background: `${ACCENT}22`, border: `1px solid ${ACCENT}66`,
-                    color: ACCENT, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
-                    padding: "6px 10px", cursor: "pointer", letterSpacing: 1,
+                    background: `${ACCENT}22`, border: `1px solid ${ACCENT}22`,
+                    color: ACCENT, fontFamily: FONT_DISPLAY, fontSize: 8,
+                    padding: "6px 10px", cursor: "pointer", letterSpacing: TRACK,
                   }}>ADD</button>
                 )}
               </div>
@@ -8327,27 +7925,27 @@ function FriendsScreen({ account, toast }) {
 
         {incoming.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: GREEN, letterSpacing: 3, marginBottom: 8 }}>{"// INCOMING REQUESTS"}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GREEN, letterSpacing: TRACK, marginBottom: 8 }}>{"INCOMING REQUESTS"}</div>
             {incoming.map(r => {
               const p = profileMap[r.from_user];
               return (
                 <div key={r.id} style={{
                   display: "flex", alignItems: "center", gap: 10,
-                  background: `${GREEN}0a`, border: `1px solid ${GREEN}33`,
+                  background: `${GREEN}0a`, border: `1px solid ${GREEN}22`,
                   borderRadius: 8, padding: "10px 12px", marginBottom: 8,
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>LVL {p?.overall_level || "?"} · wants to be friends</div>
                   </div>
                   <button disabled={opBusy[r.id]} onClick={() => handleAccept(r.id)} style={{
-                    background: `${GREEN}22`, border: `1px solid ${GREEN}66`,
-                    color: GREEN, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                    background: `${GREEN}22`, border: `1px solid ${GREEN}22`,
+                    color: GREEN, fontFamily: FONT_DISPLAY, fontSize: 8,
                     padding: "6px 10px", cursor: "pointer", marginRight: 4,
                   }}>ACCEPT</button>
                   <button disabled={opBusy[r.id]} onClick={() => handleReject(r.id)} style={{
-                    background: `${RED}11`, border: `1px solid ${RED}44`,
-                    color: RED, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                    background: `${RED}11`, border: `1px solid ${RED}22`,
+                    color: RED, fontFamily: FONT_DISPLAY, fontSize: 8,
                     padding: "6px 10px", cursor: "pointer",
                   }}>REJECT</button>
                 </div>
@@ -8358,7 +7956,7 @@ function FriendsScreen({ account, toast }) {
 
         {outgoing.length > 0 && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 9, color: MUTED, letterSpacing: 3, marginBottom: 8 }}>{"// SENT REQUESTS"}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK, marginBottom: 8 }}>{"SENT REQUESTS"}</div>
             {outgoing.map(r => {
               const p = profileMap[r.to_user];
               return (
@@ -8368,12 +7966,12 @@ function FriendsScreen({ account, toast }) {
                   borderRadius: 8, padding: "10px 12px", marginBottom: 8,
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: "'Orbitron',sans-serif", fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: TEXT }}>@{p?.username || "..."}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>Request pending</div>
                   </div>
                   <button disabled={opBusy[r.id]} onClick={() => handleCancel(r.id)} style={{
-                    background: "none", border: `1px solid ${MUTED}44`,
-                    color: MUTED, fontFamily: "'Orbitron',sans-serif", fontSize: 8,
+                    background: "none", border: `1px solid ${MUTED}22`,
+                    color: MUTED, fontFamily: FONT_DISPLAY, fontSize: 8,
                     padding: "6px 10px", cursor: "pointer",
                   }}>CANCEL</button>
                 </div>
@@ -9210,8 +8808,6 @@ export default function IronRealm() {
       <style>{CSS}</style>
       <style>{dynCSS}</style>
       <div id="iron-realm-root" style={{ minHeight: "100dvh" }}>
-      <div className="aurora-bg" />
-      <Suspense fallback={null}><SystemParticles accent={settings?.accentColor || "#00d4ff"} /></Suspense>
       <Toasts toasts={toasts} />
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
       {ceremonyLevel && <LevelUpCeremony level={ceremonyLevel} settings={settings} onDone={() => setCeremonyLevel(null)} />}

@@ -123,7 +123,7 @@ const VIEWPORTS = [
 ];
 const SCREENS = [
   { tab: 'Home', marker: /DAILY MISSION/ },
-  { tab: 'Hunter', marker: /OVERALL RANK/ },
+  { tab: 'Hunter', marker: /FRESH MUSCLES/ },
   { tab: 'Program', marker: /PROGRAM|Push/i },
   { tab: 'Schedule', marker: /TODAY'S PLAN|REST/i },
   { tab: 'Database', marker: /EXERCISE COMPENDIUM/ },
@@ -207,24 +207,24 @@ await modalChecks('exercise-log', async () => {
 
 await nav('Hunter');
 await modalChecks('pr-history', async () => {
-  await page.getByText('PR HISTORY').first().click(); await page.waitForTimeout(600);
+  await page.getByText('PR history').first().click(); await page.waitForTimeout(600);
 }, /PERSONAL RECORDS/);
 
 await modalChecks('heatmap', async () => {
-  await page.getByText('TRAINING HEATMAP').first().click(); await page.waitForTimeout(600);
+  await page.getByText('Training heatmap').first().click(); await page.waitForTimeout(600);
 }, /last \d+ weeks/i);
 
 await modalChecks('relic-vault', async () => {
-  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /RELIC VAULT/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
+  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /Relic vault/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(300);
-  await page.getByText('RELIC VAULT').first().click(); await page.waitForTimeout(600);
+  await page.getByText('Relic vault').first().click(); await page.waitForTimeout(600);
 }, /Card frames dropped/);
 
 await modalChecks('patron-picker', async () => {
-  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /SIGNATURE LIFT/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
+  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /Signature lift/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(300);
-  await page.getByText('CHANGE', { exact: true }).first().click(); await page.waitForTimeout(600);
-}, /SELECT SIGNATURE LIFT/);
+  await page.getByText('Signature lift').first().click(); await page.waitForTimeout(600);
+}, /Remove pin/);
 
 // ═══ C. AWAKENING MODAL (lvl 30+) on small viewport ═══
 await page.goto('http://localhost:3000/Iron-Realm/', { waitUntil: 'domcontentloaded' });
@@ -332,7 +332,7 @@ await t('[hstrip] vertical wheel over day strip scrolls the page (no capture)', 
   await wheelTop();
 });
 await nav('Hunter');
-await t('[hstrip] profile chips strip scrollable/visible', async () => ok(await has(/\[ HUNTERS \]/)));
+await t('[hstrip] hunter switcher reachable from Account group', async () => ok(await has(/Switch hunter/)));
 
 // ═══ F. SCROLL RESET + STAT TREE ═══
 await t('[scroll] tab switch resets scroll to top', async () => {
@@ -397,9 +397,9 @@ await t('[landscape] navbar visible', async () => {
 
 await t('[fix] modal from scrolled screen: viewport-anchored + above navbar', async () => {
   await nav('Hunter');
-  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /RELIC VAULT/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
+  await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /Relic vault/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(500);
-  await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /RELIC VAULT/.test(x.innerText)); if (b) b.click(); });
+  await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /Relic vault/.test(x.innerText)); if (b) b.click(); });
   await page.waitForTimeout(700);
   const r = await page.evaluate(() => {
     const ovl = [...document.querySelectorAll('div')].find(d => getComputedStyle(d).position === 'fixed' && /Monarch/.test(d.innerText));

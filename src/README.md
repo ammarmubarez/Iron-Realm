@@ -14,12 +14,41 @@ src/
 │   ├── cosmetics.js    Monarch themes, name auras, aspects, titles, relics
 │   ├── mind.js         Mind & Spirit activity ladders
 │   └── tips.js         Daily training tips
-├── fx/                 three.js visuals — lazy-loaded so three.js stays off the critical path
-│   ├── SystemParticles.jsx   Ambient particle field behind every screen
-│   ├── SoulCore.jsx          Rank emblem on the Character screen
-│   └── CompanionOrb.jsx      Companion orb on the Home header
+├── ui/                 The UI kit (v2.0 calm theme, modelled on Oura + Opal via Mobbin)
+│   ├── tokens.js       Palette + type tokens — the ONLY place colours are defined
+│   ├── Button.jsx      primary / glass / outline pill button (Oura)
+│   ├── ListGroup.jsx   Grouped settings list: quiet header + rows with chevrons (Opal)
+│   ├── StatTile.jsx    Hero stat tile: big number, label, thin progress bar (Opal)
+│   └── Segmented.jsx   Pill tab switch for views inside a card or sheet (Opal)
+├── fx/                 three.js visuals — NOT rendered in the calm theme, kept for reference
+│   ├── SystemParticles.jsx   Ambient particle field (retired v2.0)
+│   ├── SoulCore.jsx          Animated rank emblem (retired v2.0)
+│   └── CompanionOrb.jsx      Companion orb (retired v2.0)
 └── services/           Supabase: auth, sync, friends, admin, cloud state
 ```
+
+## v2.0 calm theme — what changed and where
+
+The v1 "System" look (neon glows, letter-spaced Orbitron caps, clip-path corners,
+holographic scan frames, an animated three.js particle field) was overstimulating.
+v2.0 rebuilt it around two Mobbin references: **Oura** for buttons, **Opal** for the
+profile/settings structure and the near-monochrome palette.
+
+- **Colour** lives only in `ui/tokens.js`. `iron-realm.jsx` imports the names it always
+  used (`BG`, `BG2`, `GOLD`, `MUTED`…), so a palette change is a one-file edit.
+  `ACCENT`/`ACCENT2` remain `let`s inside `iron-realm.jsx` because the brightness and
+  monarch-theme settings re-tint them at runtime.
+- **Type**: one face, `FONT_DISPLAY` (Rajdhani), and one tracking token, `TRACK`.
+  Orbitron is no longer loaded.
+- **Effects**: no `text-shadow`, no glow `box-shadow`, no `clip-path`, no infinite
+  pulse/shimmer/glitch keyframes, no aurora, particles, rune fields or tilt cards.
+  Event moments (level-up ceremony, relic drop) are kept.
+- **Hunter screen** follows Opal's profile: avatar + rank pill → two `StatTile`s (Level,
+  Fresh muscles) → body matrix → `ListGroup`s (Progress / Identity / Account) →
+  muscle levels. Volume trend + Shadow race moved into a Progress sheet; Recovery +
+  Focus recommendations moved into the Condition report.
+
+The transforms are scripted and self-verifying: see `scripts/theme/`.
 
 ## Conventions
 
