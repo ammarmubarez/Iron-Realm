@@ -12,7 +12,7 @@
 
 import { BG2, TEXT, MUTED, FONT_DISPLAY, TRACK_CAPS } from "./tokens";
 
-export default function ListGroup({ title, children, style }) {
+export default function ListGroup({ title, children, style, cardStyle }) {
   return (
     <section style={{ marginBottom: 18, ...style }}>
       {title && (
@@ -21,7 +21,7 @@ export default function ListGroup({ title, children, style }) {
           {title}
         </div>
       )}
-      <div style={{ background: BG2, borderRadius: 14, overflow: "hidden" }}>
+      <div style={{ background: BG2, borderRadius: 14, overflow: "hidden", ...cardStyle }}>
         {children}
       </div>
     </section>

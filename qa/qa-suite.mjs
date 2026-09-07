@@ -295,15 +295,19 @@ await t('char: navigates', async () => { await nav('Hunter'); ok(await has(/FRES
 await t('char: hero tiles render (level + condition)', async () => ok(await has(/LEVEL/) && await has(/FRESH MUSCLES/)));
 await t('char: body matrix present', async () => ok(await has(/BODY MATRIX/)));
 await t('char: condition tile reports detraining (cardio idle 40d)', async () => ok(await has(/detraining/)));
-await t('char: account group present', async () => ok(await has(/Switch hunter/) && await has(/New hunter/)));
+await t('char: account rows no longer on the Hunter screen', async () => ok(!(await has(/Switch hunter/)) && !(await has(/New hunter/))));
 await t('char: edit profile opens + saves age', async () => {
+  // account management moved to Settings → Account (v2.0.1)
+  await nav('Home');
+  await page.locator('button:has(svg circle)').first().click(); await page.waitForTimeout(700);
   await page.getByText('Edit profile').first().click(); await page.waitForTimeout(500);
-  ok(await has(/Save changes/), 'edit form did not open');
-  const age = page.locator('input[type="number"]').first();
-  await age.fill('26');
+  ok(await has(/Save changes/), 'edit form did not open in settings');
+  await page.getByPlaceholder('25').first().fill('26');
   await page.getByText('Save changes').first().click();
   await page.waitForTimeout(500);
   ok((await profile()).age === 26, 'age not saved');
+  await page.locator('button').filter({ hasText: '×' }).last().click(); await page.waitForTimeout(400);
+  await nav('Hunter');
 });
 await t('char: relic vault opens', async () => {
   await page.evaluate(() => { const el = [...document.querySelectorAll('*')].find(e => /Relic vault/.test(e.textContent || '') && e.children.length < 4); if (el) el.scrollIntoView({ block: 'center' }); });

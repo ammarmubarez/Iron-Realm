@@ -27,7 +27,7 @@ import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
 
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.0.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -4932,7 +4932,8 @@ const BANNER_PALETTE = [
 function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpdateSettings, toast,
                      account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
                      onUpdateBannerColor, onToggleRitual, onEquipTitle, onLogMind,
-                     onAddMindTask, onRemoveMindTask, onToggleMindTask, pendingCount = 0 }) {
+                     onAddMindTask, onRemoveMindTask, onToggleMindTask, pendingCount = 0,
+                     store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
@@ -5400,6 +5401,10 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
                 letterSpacing: TRACK, marginBottom: 10 }}>{"ACCOUNT"}</div>
+              {store && (
+                <HunterAccountPanel store={store} onSwitchProfile={onSwitchProfile} onCreateProfile={onCreateProfile}
+                  onDeleteProfile={onDeleteProfile} onUpdateProfile={onUpdateProfile} toast={toast} />
+              )}
               {!account.supabaseConfigured ? (
                 <div style={{ background: BG3, border: `1px solid ${MUTED}22`, borderRadius: 8,
                   padding: "12px 14px", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
@@ -6836,14 +6841,15 @@ function VolumeChart({ workouts }) {
 }
 
 
-function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, onSetPatronLift, toast }) {
+// Hunter account panel — edit / switch / create / delete hunters. Lives in
+// Settings → Account (moved off the Hunter screen in v2.0.1 so that screen is
+// only about your stats).
+function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, toast }) {
   const st = store.profiles[store.activeId];
-  const rank = getRank(st.overallLevel);
-  const { current, needed } = getLevelFromXP(st.overallXP);
   const profiles = Object.values(store.profiles);
-
   const [editMode, setEditMode] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [editName, setEditName] = useState(st.name);
   const [editAge, setEditAge] = useState(String(st.age || ""));
   const [editWeight, setEditWeight] = useState(String(st.weightLbs || 170));
@@ -6851,18 +6857,101 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const [editHeightIn, setEditHeightIn] = useState(String((st.heightIn || 70) % 12));
   const [editGender, setEditGender] = useState(st.gender || "male");
 
+  const openEdit = () => {
+    setEditName(st.name); setEditAge(String(st.age || "")); setEditWeight(String(st.weightLbs || 170));
+    setEditHeightFt(String(Math.floor((st.heightIn || 70) / 12))); setEditHeightIn(String((st.heightIn || 70) % 12));
+    setEditGender(st.gender || "male"); setEditMode(v => !v);
+  };
   const handleSaveEdit = () => {
     const totalIn = (parseInt(editHeightFt) || 5) * 12 + (parseInt(editHeightIn) || 10);
     onUpdateProfile(store.activeId, {
       name: editName.trim() || st.name,
       age: parseInt(editAge) || null,
-      weightLbs: getWtUnit()==="kg" ? (parseFloat(editWeight)||st.weightLbs)/0.453592 : (parseFloat(editWeight)||st.weightLbs),
+      weightLbs: getWtUnit() === "kg" ? (parseFloat(editWeight) || st.weightLbs) / 0.453592 : (parseFloat(editWeight) || st.weightLbs),
       heightIn: totalIn,
       gender: editGender,
     });
     setEditMode(false);
     toast("Profile updated", GREEN);
   };
+  const field = (label, node) => (
+    <div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>{label}</div>
+      {node}
+    </div>
+  );
+
+  return (
+    <div>
+      <ListGroup cardStyle={{ background: BG3 }} style={{ marginBottom: 10 }}>
+        <ListRow icon="✎" label="Edit profile" value={`${st.name} · ${st.age ? st.age + " · " : ""}${Math.round(wtVal(st.weightLbs || 0))} ${wtLabel()}`} onClick={openEdit} />
+        <ListRow icon="⇄" label="Switch hunter" value={profiles.length > 1 ? `${profiles.length} hunters` : "Only one"} onClick={() => setSwitcherOpen(v => !v)} />
+        <ListRow icon="+" label="New hunter" onClick={onCreateProfile} last />
+      </ListGroup>
+
+      {switcherOpen && (
+        <div className="slide-up" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 2px 6px", marginBottom: 12 }}>
+          {profiles.map(p => {
+            const isActive = p.id === store.activeId; const r = getRank(p.overallLevel);
+            return (
+              <Button key={p.id} variant="outline" size="sm" selected={isActive} onClick={() => onSwitchProfile(p.id)}
+                icon={<span style={{ color: isActive ? undefined : r.color, fontWeight: 700 }}>{r.rank}</span>}>
+                {p.name} · L{p.overallLevel}
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      {editMode && (
+        <div className="slide-up" style={{ background: BG3, borderRadius: 14, padding: 14, marginBottom: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            {field("Name", <input className="input-field" value={editName} onChange={e => setEditName(e.target.value)} maxLength={20}/>)}
+            {field("Age", <input className="input-field" type="number" value={editAge} onChange={e => setEditAge(e.target.value)} placeholder="25" min="13" max="99"/>)}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+            {field(`Weight (${wtLabel()})`, <input className="input-field" type="number" value={editWeight} onChange={e => setEditWeight(e.target.value)} placeholder="170"/>)}
+            {field("Height ft", <input className="input-field" type="number" value={editHeightFt} onChange={e => setEditHeightFt(e.target.value)} placeholder="5" min="3" max="7"/>)}
+            {field("Height in", <input className="input-field" type="number" value={editHeightIn} onChange={e => setEditHeightIn(e.target.value)} placeholder="10" min="0" max="11"/>)}
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 6 }}>Gender</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[{ id: "male", label: "Male" }, { id: "female", label: "Female" }].map(g => (
+                <Button key={g.id} variant="outline" size="sm" selected={editGender === g.id} onClick={() => setEditGender(g.id)}>{g.label}</Button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: profiles.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
+            <Button variant="primary" size="md" block onClick={handleSaveEdit}>Save changes</Button>
+            {profiles.length > 1 && (
+              <Button variant="glass" size="md" block accent={RED} onClick={() => setDeleteConfirm(store.activeId)}>Delete hunter</Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <div style={{ background: BG3, border: `1px solid ${RED}55`, borderRadius: 14, padding: 14, marginBottom: 12 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: RED, marginBottom: 6 }}>Delete this hunter?</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, color: TEXT, marginBottom: 14, lineHeight: 1.5 }}>
+            This permanently erases all XP, levels and progress for <strong>{st.name}</strong>. It cannot be undone.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <Button variant="glass" size="md" block onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="primary" size="md" block style={{ background: RED, color: "#fff" }}
+              onClick={() => { onDeleteProfile(deleteConfirm); setDeleteConfirm(null); setEditMode(false); }}>Confirm delete</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, onSetPatronLift, toast }) {
+  const st = store.profiles[store.activeId];
+  const rank = getRank(st.overallLevel);
+  const { current, needed } = getLevelFromXP(st.overallXP);
 
   const specialStats = ["cardio", "calisthenics"];
   const [selectedMuscle, setSelectedMuscle]   = useState(null);
@@ -6872,7 +6961,6 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const [relicVaultOpen, setRelicVaultOpen]     = useState(false);
   const [conditionOpen, setConditionOpen]       = useState(false);
   const [progressOpen, setProgressOpen]         = useState(false);
-  const [switcherOpen, setSwitcherOpen]         = useState(false);
 
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
@@ -6921,11 +7009,6 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   const condColor   = decaying === 0 ? GREEN : avgCond >= 0.85 ? GOLD : RED;
   const prCount     = Object.keys(st.prs || {}).length;
   const relicsOwned = (st.cosmetics?.relics || []).length;
-  const openEdit = () => {
-    setEditName(st.name); setEditAge(String(st.age || "")); setEditWeight(String(st.weightLbs || 170));
-    setEditHeightFt(String(Math.floor((st.heightIn || 70) / 12))); setEditHeightIn(String((st.heightIn || 70) % 12));
-    setEditGender(st.gender || "male"); setEditMode(v => !v);
-  };
   const sectionHead = (t) => (
     <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: TRACK_CAPS,
       textTransform: "uppercase", padding: "0 4px", marginBottom: 8 }}>{t}</div>
@@ -6951,9 +7034,6 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
               <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: TEXT }}>{rank.label}</span>
             </div>
           </div>
-          <button type="button" onClick={openEdit} aria-label="Edit profile" style={{
-            width: 40, height: 40, borderRadius: "50%", border: "none", cursor: "pointer",
-            background: editMode ? `${GOLD}22` : BG2, color: editMode ? GOLD : MUTED, fontSize: 16 }}>✎</button>
         </div>
 
         {/* ── HERO TILES ── */}
@@ -6966,66 +7046,6 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
                 : `${decaying} detraining · ${Math.round(avgCond * 100)}% avg condition`}
             progress={condTotal ? avgCond : 0} />
         </div>
-
-        {/* ── EDIT FORM (from the header pencil or Account → Edit profile) ── */}
-        {editMode && (
-          <div className="slide-up" style={{ background: BG2, borderRadius: 16, padding: 16, marginBottom: 18 }}>
-            {sectionHead("Edit profile")}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <div>
-                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Name</div>
-                <input className="input-field" value={editName} onChange={e => setEditName(e.target.value)} maxLength={20}/>
-              </div>
-              <div>
-                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Age</div>
-                <input className="input-field" type="number" value={editAge} onChange={e => setEditAge(e.target.value)} placeholder="25" min="13" max="99"/>
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <div>
-                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Weight ({wtLabel()})</div>
-                <input className="input-field" type="number" value={editWeight} onChange={e => setEditWeight(e.target.value)} placeholder="170"/>
-              </div>
-              <div>
-                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Height ft</div>
-                <input className="input-field" type="number" value={editHeightFt} onChange={e => setEditHeightFt(e.target.value)} placeholder="5" min="3" max="7"/>
-              </div>
-              <div>
-                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 4 }}>Height in</div>
-                <input className="input-field" type="number" value={editHeightIn} onChange={e => setEditHeightIn(e.target.value)} placeholder="10" min="0" max="11"/>
-              </div>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 6 }}>Gender</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {[{ id: "male", label: "Male" }, { id: "female", label: "Female" }].map(g => (
-                  <Button key={g.id} variant="outline" size="sm" selected={editGender === g.id} onClick={() => setEditGender(g.id)}>{g.label}</Button>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: profiles.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
-              <Button variant="primary" size="md" block onClick={handleSaveEdit}>Save changes</Button>
-              {profiles.length > 1 && (
-                <Button variant="glass" size="md" block accent={RED} onClick={() => setDeleteConfirm(store.activeId)}>Delete hunter</Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── DELETE CONFIRM ── */}
-        {deleteConfirm && (
-          <div style={{ background: BG2, border: `1px solid ${RED}22`, borderRadius: 16, padding: 16, marginBottom: 18 }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, color: RED, marginBottom: 6 }}>Delete this hunter?</div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, color: TEXT, marginBottom: 14, lineHeight: 1.5 }}>
-              This permanently erases all XP, levels and progress for <strong>{st.name}</strong>. It cannot be undone.
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <Button variant="glass" size="md" block onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-              <Button variant="primary" size="md" block style={{ background: RED, color: "#fff" }}
-                onClick={() => { onDeleteProfile(deleteConfirm); setDeleteConfirm(null); setEditMode(false); }}>Confirm delete</Button>
-            </div>
-          </div>
-        )}
 
         {/* ── BODY MATRIX ── */}
         <div className="card-in card-in-2" style={{ background: BG2, borderRadius: 16, padding: "14px 8px 6px", marginBottom: 18 }}>
@@ -7051,26 +7071,6 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
             disabled={!prCount} onClick={() => setPatronPickerOpen(true)} />
           <ListRow icon="◇" label="Relic vault" value={`${relicsOwned}/${RELIC_POOL.length}`} onClick={() => setRelicVaultOpen(true)} last />
         </ListGroup>
-
-        {/* ── ACCOUNT ── */}
-        <ListGroup title="Account">
-          <ListRow icon="✎" label="Edit profile" value={`${st.age ? st.age + " · " : ""}${Math.round(wtVal(st.weightLbs || 0))} ${wtLabel()}`} onClick={openEdit} />
-          <ListRow icon="⇄" label="Switch hunter" value={profiles.length > 1 ? `${profiles.length} hunters` : "Only one"} onClick={() => setSwitcherOpen(v => !v)} />
-          <ListRow icon="+" label="New hunter" onClick={onCreateProfile} last />
-        </ListGroup>
-        {switcherOpen && (
-          <div className="slide-up" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 2px 6px", marginTop: -8, marginBottom: 18 }}>
-            {profiles.map(p => {
-              const isActive = p.id === store.activeId; const r = getRank(p.overallLevel);
-              return (
-                <Button key={p.id} variant="outline" size="sm" selected={isActive} onClick={() => onSwitchProfile(p.id)}
-                  icon={<span style={{ color: isActive ? undefined : r.color, fontWeight: 700 }}>{r.rank}</span>}>
-                  {p.name} · L{p.overallLevel}
-                </Button>
-              );
-            })}
-          </div>
-        )}
 
         {/* ── MUSCLE LEVELS ── */}
         <Reveal>
@@ -8815,7 +8815,7 @@ export default function IronRealm() {
         onEquip={() => { const id = relicDrop.id; updateActive(p => ({ ...p, cosmetics: { ...(p.cosmetics || {}), equippedRelic: id } })); toast(`${relicDrop.name} equipped`, RELIC_FRAME_COLORS[id]); setRelicDrop(null); }}
         onClose={() => setRelicDrop(null)} />}
       <div key={screen} className="screen-wipe">
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} pendingCount={pendingCount} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} pendingCount={pendingCount} store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}

@@ -332,7 +332,13 @@ await t('[hstrip] vertical wheel over day strip scrolls the page (no capture)', 
   await wheelTop();
 });
 await nav('Hunter');
-await t('[hstrip] hunter switcher reachable from Account group', async () => ok(await has(/Switch hunter/)));
+await t('[settings] hunter account rows live in Settings → Account', async () => {
+  await nav('Home');
+  await page.locator('button:has(svg circle)').first().click(); await page.waitForTimeout(700);
+  ok(await has(/Switch hunter/) && await has(/New hunter/) && await has(/Edit profile/));
+  await closeTopModal();
+  await nav('Hunter');
+});
 
 // ═══ F. SCROLL RESET + STAT TREE ═══
 await t('[scroll] tab switch resets scroll to top', async () => {
