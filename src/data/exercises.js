@@ -539,3 +539,142 @@ export const BENCH_REQUIRED = new Set([
   "Bench Dips", "Decline Push-ups", "Incline Push-ups",
   "Decline Sit-up", "Weighted Decline Crunch",
 ]);
+
+// ─── EMG ROUTING ──────────────────────────────────────────────────────────────
+// Only ~70 lifts have a measured EMG profile above. Variants of the same
+// movement pattern borrow the parent's profile (a dumbbell bench press loads
+// the same muscles in the same proportions as a barbell one); everything else
+// gets a profile DERIVED from its ordered svgTargets, so that no exercise ever
+// credits 100 % of its work to one muscle group while its siblings credit 54 %.
+export const EMG_ALIASES = {
+  // orphaned keys (profile exists under an older name)
+  "Barbell Back Squat": "Squat", "Front Squat": "Squat", "Smith Machine Squat": "Squat",
+  "Dumbbell Squat": "Squat", "Goblet Squat": "Squat", "Bodyweight Squat": "Squat",
+  "Landmine Squat": "Squat", "Pendulum Squat": "Hack Squat", "V-Squat Machine": "Hack Squat",
+  "Zercher Squat": "Squat", "Overhead Squat": "Squat", "Jump Squats": "Squat", "Resistance Band Squat": "Squat",
+  "Back Extension Machine": "Back Extension", "Back Extension (45°)": "Back Extension",
+  "45° Back Extension (Glute)": "Back Extension", "Hyperextension": "Back Extension", "Superman": "Back Extension",
+  "Seated Leg Curl": "Leg Curl", "Lying Leg Curl": "Leg Curl", "Standing Leg Curl": "Leg Curl",
+  "Standing Calf Raises": "Calf Raises", "Calf Raise Machine": "Calf Raises", "Smith Machine Calf Raise": "Calf Raises",
+  "Standing Calf Raise Machine": "Calf Raises", "Leg Press Calf Raise": "Calf Raises", "Calf Press on Leg Press": "Calf Raises",
+  "Donkey Calf Raises": "Calf Raises", "Single-Leg Calf Raise": "Calf Raises", "Plyometric Calf Jumps": "Calf Raises",
+  "Seated Calf Raise Machine": "Seated Calf Raises",
+  "Bent-Over Rear Delt Raise": "Rear Delt Flyes", "Machine Rear Delt Fly": "Rear Delt Flyes",
+  "Cable Rear Delt Fly": "Rear Delt Flyes", "Pec Deck Reverse Fly": "Rear Delt Flyes", "Dumbbell W Raise": "Rear Delt Flyes",
+  "Seated Cable Rear Delt Row": "Rear Delt Flyes", "Banded Pull-apart": "Rear Delt Flyes",
+  "Incline Dumbbell Curl": "Incline Curl",
+  "Tricep Rope Pushdown": "Tricep Pushdown", "Tricep Bar Pushdown": "Tricep Pushdown",
+  "Reverse Tricep Pushdown": "Tricep Pushdown", "Single Arm Pushdown": "Tricep Pushdown",
+  "Resistance Band Pushdown": "Tricep Pushdown", "Tricep Machine Press": "Tricep Pushdown", "Tricep Kickback": "Tricep Pushdown",
+  "Overhead Tricep Extension": "Overhead Tricep Ext", "Overhead Cable Tricep Ext": "Overhead Tricep Ext",
+  "Cable Overhead Tricep Ext": "Overhead Tricep Ext", "Rolling Tricep Extension": "Overhead Tricep Ext",
+  "Close-Grip Bench Press": "Close-Grip Bench", "JM Press": "Close-Grip Bench", "California Press": "Close-Grip Bench",
+  "Dumbbell Skull Crushers": "Skull Crushers", "Tate Press": "Skull Crushers",
+  // pressing variants
+  "Dumbbell Bench Press": "Bench Press", "Smith Machine Bench Press": "Bench Press", "Chest Press Machine": "Bench Press",
+  "Converging Chest Press Machine": "Bench Press", "Floor Press": "Bench Press", "Hex Press": "Bench Press",
+  "Squeeze Press": "Bench Press", "Svend Press": "Pec Deck Machine",
+  "Incline Dumbbell Press": "Incline Bench Press", "Incline Chest Press Machine": "Incline Bench Press",
+  "Landmine Press": "Incline Bench Press", "Landmine Press (Single)": "Incline Bench Press",
+  "Decline Dumbbell Press": "Decline Bench Press", "Decline Chest Press Machine": "Decline Bench Press",
+  "Incline Dumbbell Flyes": "Dumbbell Flyes", "Decline Dumbbell Flyes": "Dumbbell Flyes", "Fly Machine": "Pec Deck Machine",
+  "Cable Fly": "Cable Crossover", "Low Cable Fly": "Cable Crossover", "High Cable Fly": "Cable Crossover",
+  "Single Arm Cable Fly": "Cable Crossover", "Resistance Band Fly": "Cable Crossover",
+  "Wide Push-ups": "Push-ups", "Incline Push-ups": "Push-ups", "Decline Push-ups": "Incline Bench Press",
+  "Archer Push-ups": "Push-ups", "Clap Push-ups": "Push-ups", "Ring Push-ups": "Push-ups", "Pseudo Planche Push-up": "Dips",
+  "Tricep Dips": "Dips", "Ring Dips": "Dips", "Assisted Dip Machine": "Dips", "Bench Dips": "Diamond Push-ups",
+  // pulling variants
+  "Wide-Grip Pull-ups": "Pull-ups", "Neutral-Grip Pull-ups": "Pull-ups", "Towel Pull-ups": "Pull-ups",
+  "Wide-Grip Lat Pulldown": "Lat Pulldown", "Reverse-Grip Lat Pulldown": "Chin-ups", "Neutral Grip Lat Pulldown": "Lat Pulldown",
+  "Pendlay Row": "Barbell Row", "Meadows Row": "Dumbbell Row", "Kroc Row": "Dumbbell Row", "Cable Row (Single Arm)": "Dumbbell Row",
+  "Chest Supported Row": "Seated Cable Row", "Chest Supported Row Machine": "Seated Cable Row", "Seal Row": "Seated Cable Row",
+  "Machine Row": "Seated Cable Row", "Iso-Lateral Row Machine": "Seated Cable Row", "Wide-Grip Cable Row": "Seated Cable Row",
+  "Inverted Row": "Seated Cable Row", "Inverted Row (Supinated)": "Chin-ups", "Resistance Band Row": "Seated Cable Row",
+  "Rack Pull": "Deadlift", "Trap Bar Deadlift": "Deadlift", "Smith Machine Shrug": "Shrugs",
+  // shoulders
+  "Dumbbell Shoulder Press": "Overhead Press", "Seated Dumbbell Press": "Overhead Press", "Military Press": "Overhead Press",
+  "Machine Shoulder Press": "Overhead Press", "Smith Machine OHP": "Overhead Press", "Push Press": "Overhead Press",
+  "Z Press": "Overhead Press", "Bradford Press": "Overhead Press", "Behind-the-Neck Press": "Overhead Press",
+  "Wall Handstand Push-ups": "Pike Push-ups", "Handstand Push-ups": "Pike Push-ups", "Pike Push-up Hold": "Pike Push-ups",
+  "Machine Lateral Raise": "Lateral Raises", "Landmine Lateral Raise": "Lateral Raises", "Deltoid Fly": "Lateral Raises",
+  "Cable Front Raise": "Front Raises", "Machine Front Raise": "Front Raises",
+  "Barbell Upright Row": "Upright Row", "Cable Upright Row": "Upright Row",
+  // arms
+  "Wide-Grip Barbell Curl": "Barbell Curl", "Dumbbell Curl": "Barbell Curl", "Alternating Dumbbell Curl": "Barbell Curl",
+  "21s": "Barbell Curl", "Machine Preacher Curl": "Preacher Curl", "Spider Curl": "Preacher Curl",
+  "High Cable Curl": "Cable Curl", "Low Cable Curl": "Cable Curl", "Bicep Curl Machine": "Cable Curl",
+  "Bayesian Curl": "Incline Curl", "Drag Curl": "Barbell Curl", "Waiter Curl": "Concentration Curl",
+  "Resistance Band Curl": "Cable Curl", "TRX Curl": "Chin-ups",
+  "Cable Hammer Curl": "Hammer Curl", "Cross Body Hammer Curl": "Hammer Curl", "Zottman Curl": "Hammer Curl",
+  "Reverse Barbell Curl": "Hammer Curl", "Reverse Curl": "Hammer Curl",
+  "Cable Wrist Curl": "Wrist Curls", "Cable Reverse Wrist Curl": "Reverse Wrist Curls",
+  // legs & glutes
+  "Leg Press (High Foot)": "Leg Press", "Leg Press (Low Foot)": "Leg Press", "Horizontal Leg Press": "Leg Press",
+  "Single Leg Press": "Leg Press", "Stiff-Leg Deadlift": "Romanian Deadlift", "Dumbbell Romanian Deadlift": "Romanian Deadlift",
+  "Good Mornings": "Romanian Deadlift", "Jefferson Curl": "Romanian Deadlift", "Glute Ham Raise": "Nordic Curl",
+  "Barbell Lunge": "Walking Lunges", "Reverse Lunges": "Walking Lunges", "Smith Machine Lunge": "Walking Lunges",
+  "Barbell Step-ups": "Walking Lunges", "Step-ups": "Walking Lunges", "Box Jumps": "Squat", "Broad Jumps": "Squat",
+  "Barbell Hip Thrust": "Hip Thrust", "Smith Machine Hip Thrust": "Hip Thrust", "Banded Hip Thrust": "Hip Thrust",
+  "Single-Leg Hip Thrust": "Hip Thrust", "Single-Leg Glute Bridge": "Glute Bridge", "Frog Pump": "Glute Bridge",
+  "Glute Kickback Machine": "Cable Kickbacks", "Cable Pull-Through": "Hip Thrust", "Reverse Hyperextension": "Back Extension",
+  "Standing Cable Abduction": "Abductor Machine", "Lateral Band Walk": "Fire Hydrants", "Clamshell": "Fire Hydrants",
+  // core
+  "Machine Crunch": "Crunch", "Cable Crunch (Kneeling)": "Cable Crunch", "Weighted Decline Crunch": "Cable Crunch",
+  "Decline Sit-up": "Crunch", "Weighted Sit-up": "Crunch", "Hanging Knee Raise": "Hanging Leg Raises",
+  "Toes to Bar": "Hanging Leg Raises", "Lying Leg Raise": "Hanging Leg Raises", "Reverse Crunch": "Hanging Leg Raises",
+  "V-ups": "Dragon Flag", "Ab Wheel (Kneeling)": "Ab Wheel Rollout", "Weighted Russian Twists": "Russian Twists",
+  "Side Plank with Rotation": "Side Plank", "Long-Lever Plank": "Plank", "Weighted Plank": "Plank", "Plank Reach": "Plank",
+  "Hollow Body Hold": "L-Sit", "Hollow Body Rock": "L-Sit", "Woodchop": "Russian Twists", "Cable Woodchop (High)": "Russian Twists",
+  "Cable Woodchop (Low)": "Russian Twists", "Landmine Rotation": "Russian Twists", "Pallof Press": "Side Plank",
+};
+
+// Derived profile for lifts with no measured EMG: svgTargets are listed in
+// order of importance, so the first is the prime mover and the rest taper.
+const DERIVED_WEIGHTS = [100, 70, 55, 45, 38, 32, 28, 25];
+export function emgFor(ex) {
+  if (!ex) return null;
+  if (ex.emg) return ex.emg;
+  const direct = EXERCISE_EMG[ex.name];
+  if (direct) return direct;
+  const alias = EMG_ALIASES[ex.name];
+  if (alias && EXERCISE_EMG[alias]) return EXERCISE_EMG[alias];
+  const targets = ex.svgTargets || [];
+  if (targets.length === 0) return null;
+  const out = {};
+  targets.forEach((id, i) => { out[id] = DERIVED_WEIGHTS[Math.min(i, DERIVED_WEIGHTS.length - 1)]; });
+  return out;
+}
+
+// ─── BODYWEIGHT LOAD FRACTIONS ───────────────────────────────────────────────
+// Share of body mass a bodyweight movement actually places on the working
+// muscles. Push-up values are measured (Ebben et al. 2011: 64 % standard,
+// 41 % hands-elevated, 74 % feet-elevated); the rest follow segment-mass
+// anatomy (legs ≈ 32 % of body mass, arms ≈ 10 %, head + trunk ≈ 58 %). A
+// 220 lb hunter's push-up is therefore a ~140 lb press, and a hanging leg
+// raise moves ~75 lb of legs — not 220 lb of "bodyweight".
+export const BW_FRACTION = {
+  "Push-ups": .64, "Wide Push-ups": .64, "Diamond Push-ups": .64, "Shoulder Tap Push-ups": .64,
+  "Archer Push-ups": .75, "Clap Push-ups": .70, "Ring Push-ups": .68, "Incline Push-ups": .45,
+  "Decline Push-ups": .74, "Pseudo Planche Push-up": .80, "Pike Push-ups": .70, "Pike Push-up Hold": .70,
+  "Wall Handstand Push-ups": .90, "Handstand Push-ups": .95, "Handstand": .90, "Planche": 1.0,
+  "Dips": .95, "Tricep Dips": .95, "Ring Dips": .95, "Bench Dips": .60,
+  "Pull-ups": .95, "Wide-Grip Pull-ups": .95, "Chin-ups": .95, "Neutral-Grip Pull-ups": .95, "Towel Pull-ups": .95,
+  "Muscle-up": .95, "Scapular Pull-ups": .95, "Dead Hang": .95, "Inverted Row": .60, "Inverted Row (Supinated)": .60,
+  "TRX Curl": .50, "Front Lever": .90, "Back Lever": .90, "Human Flag": .90,
+  "Bodyweight Squat": .88, "Jump Squats": .88, "Pistol Squat": .88, "Sissy Squat": .80, "Spanish Squat": .85,
+  "Cossack Squat": .88, "Step-ups": .88, "Box Jumps": .88, "Broad Jumps": .88, "Wall Sit": .80,
+  "Nordic Curl": .65, "Glute Ham Raise": .65, "Single-Leg Hip Thrust": .60, "Glute Bridge": .50,
+  "Single-Leg Glute Bridge": .55, "Frog Pump": .45, "Donkey Kicks": .25, "Fire Hydrants": .20, "Clamshell": .15,
+  "Lateral Band Walk": .30, "Single-Leg Calf Raise": 1.0, "Plyometric Calf Jumps": 1.0, "Hyperextension": .60, "Superman": .30,
+  "Plank": .60, "Long-Lever Plank": .65, "Side Plank": .55, "Side Plank with Rotation": .55, "Copenhagen Plank": .60,
+  "Plank Reach": .60, "Hollow Body Hold": .45, "Hollow Body Rock": .45, "L-Sit": .50, "Dragon Flag": .70,
+  "Hanging Leg Raises": .35, "Hanging Knee Raise": .30, "Toes to Bar": .40, "Lying Leg Raise": .32, "Reverse Crunch": .30,
+  "Crunch": .30, "Decline Sit-up": .45, "V-ups": .45, "Russian Twists": .30, "Bicycle Crunch": .35, "Dead Bug": .30,
+  "Bird Dog": .30, "Ab Wheel Rollout": .65, "Ab Wheel (Kneeling)": .50, "Stir the Pot": .60, "GHD Sit-up": .55, "Burpees": .70,
+};
+export function bodyweightFraction(ex) {
+  if (!ex) return 0;
+  const f = BW_FRACTION[ex.name];
+  if (f != null) return f;
+  return ex.type === "calisthenics" ? 0.70 : 0;
+}

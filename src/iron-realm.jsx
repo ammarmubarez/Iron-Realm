@@ -2,9 +2,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { _MUSCLE_PATHS, _BODY_PATHS } from "./data/bodyPaths";
-import { EXERCISE_EMG, SVG_TO_STAT, EXERCISE_DB, MACHINE_NAME_PATTERNS, BAR_NAME_PATTERNS, BENCH_REQUIRED } from "./data/exercises";
+import { SVG_TO_STAT, EXERCISE_DB, MACHINE_NAME_PATTERNS, BAR_NAME_PATTERNS, BENCH_REQUIRED, emgFor, bodyweightFraction } from "./data/exercises";
 import { MALE_PROGRAMS, FEMALE_PROGRAMS } from "./data/programs";
-import { OVERALL_THRESHOLDS, MUSCLE_THRESHOLDS, OVERALL_MILESTONE_NAMES, OVERALL_MILESTONE_DESC, MUSCLE_MILESTONE_NAMES, MUSCLE_MILESTONE_DESC, MET_VALUES, ATROPHY } from "./data/progression";
+import { OVERALL_THRESHOLDS, MUSCLE_THRESHOLDS, OVERALL_MILESTONE_NAMES, OVERALL_MILESTONE_DESC, MUSCLE_MILESTONE_NAMES, MUSCLE_MILESTONE_DESC, MET_VALUES, ATROPHY,
+  WORK_KCAL_PER_KG_REP, STIM, effortFactor, loadFactor, repFactor, volumeFactor, ageDetrainingFactor } from "./data/progression";
 import { MUSCLE_META, _ID_TO_MUSCLE, ANGLE_GROUPS, SELECTION_RULES, _ANGLE_GROUP_LABELS, _CUSTOM_SUB_OPTIONS } from "./data/muscles";
 import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTIVITY_LEVELS, DAILY_RITUALS } from "./data/profile";
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
@@ -27,7 +28,7 @@ import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
 
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.2.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -359,38 +360,6 @@ function rpeWeightSuggestion(rpe, weight) {
   return null;
 }
 
-// Intensity modifier: reward training close to your max [2]
-function intensityModifier(pct) {
-  if (pct < 0.40) return 0.50;
-  if (pct < 0.60) return 0.80;
-  if (pct < 0.75) return 1.00;
-  if (pct < 0.85) return 1.15;
-  if (pct < 0.95) return 1.25;
-  return 1.10; // at/above 95% — max effort but low volume
-}
-
-// RIR modifier: reward proximity to failure [3]
-// Estimates reps-in-reserve via inverted Epley: maxReps = (1RM/weight - 1) × 30
-function rirModifier(weight, reps, e1rm) {
-  if (!e1rm || e1rm <= 0) return 1.0;
-  const maxRepsAtWeight = (e1rm / weight - 1) * 30;
-  const rir = Math.max(0, maxRepsAtWeight - reps);
-  if (rir <= 1) return 1.30;
-  if (rir <= 3) return 1.10;
-  if (rir <= 5) return 1.00;
-  if (rir <= 8) return 0.85;
-  return 0.65;
-}
-
-// PR bonus: reward progressive overload [4]
-function prBonus(newE1RM, storedE1RM) {
-  if (!storedE1RM || newE1RM <= storedE1RM) return 1.0;
-  const improvement = (newE1RM - storedE1RM) / storedE1RM;
-  if (improvement >= 0.10) return 1.30;
-  if (improvement >= 0.05) return 1.20;
-  return 1.10;
-}
-
 // Build a chronological history of PR-setting events, exercise by exercise.
 // Walks workouts oldest-first, tracks the running max e1RM per exercise,
 // and emits an event whenever a workout sets a new high.
@@ -422,51 +391,208 @@ function getPRTimeline(workouts) {
   return timeline;
 }
 
-// XP for a single strength set with all modifiers applied
-// Bodyweight work carries a SIGNED load: positive adds a plate or vest,
-// negative is machine assistance (an assisted pull-up/dip counterweight
-// offsets part of your bodyweight). Floored at 10% of bodyweight — you are
-// always moving your limbs, and past full assistance the number is nonsense
-// rather than easier, so it must never produce zero or negative XP.
-function effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs) {
+// Load a bodyweight movement puts on the working muscles, in lbs. Only the
+// fraction of body mass the movement actually lifts counts (a push-up presses
+// ~64 % of you, a hanging leg raise lifts ~35 %), plus a SIGNED added load:
+// positive is a plate or vest, negative is machine assistance. Floored at 10 %
+// of bodyweight — you are always moving your limbs, and past full assistance
+// the number is nonsense rather than easier.
+function effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs, exercise = null) {
   const bw = bodyWeightLbs || 0;
-  return Math.max(bw * 0.1, bw + (setWeightLbs || 0));
+  const frac = exercise ? bodyweightFraction(exercise) : 1;
+  return Math.max(bw * 0.1, bw * (frac || 1) + (setWeightLbs || 0));
 }
 
-function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, storedE1RM) {
-  // Isometric holds: the logged value is SECONDS of tension, not reps. Duration
-  // is the hold time itself — no rep→time conversion, and no e1RM (an Epley
-  // estimate from a hold time is meaningless).
+// ── HUNTER XP: kilocalories for one set ──────────────────────────────────────
+// Time under load at the movement's MET, plus the mechanical work of moving
+// the load. Body mass scales the metabolic term (a heavier body costs more to
+// move); the load scales the work term (a 315 lb bench costs more than 45 lb).
+// No hypertrophy modifiers live here any more — they belong to muscle XP.
+function calcSetXP(exercise, reps, setWeightLbs, bodyWeightLbs, _storedE1RM) {
+  const bodyKg = (bodyWeightLbs || 170) * 0.453592;
   if (exercise.iso) {
+    // The logged value is SECONDS of tension. Static work has no displacement,
+    // so it is metabolic cost only.
     const seconds = reps || 0;
     const table = exercise.type === "strength" ? MET_VALUES.strength : MET_VALUES.calisthenics;
     const isoMet = table[exercise.diff] || 5.5;
-    const totalKg = effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs) * 0.453592;
-    return Math.round(isoMet * totalKg * (seconds / 3600));
+    return Math.round(isoMet * bodyKg * (seconds / 3600));
   }
-  const weightKg = bodyWeightLbs * 0.453592;
-  const met = MET_VALUES.strength[exercise.diff] || 5.0;
-  // Pure rep-volume: ~6s per controlled strength rep, no per-set overhead.
-  // Two sets of 10 now earn the same baseXP as one set of 20.
-  const durationHours = (reps * 6) / 3600;
-  const baseXP = met * weightKg * durationHours;
-
-  // Calisthenics: bodyweight + any added weight (plate, vest, etc.)
   if (exercise.type === "calisthenics") {
     const caliMet = MET_VALUES.calisthenics[exercise.diff] || 5.5;
-    const caliDur = (reps * 4) / 3600;
-    const totalKg = effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs) * 0.453592;
-    return Math.round(caliMet * totalKg * caliDur);
+    const loadKg  = effectiveCaliLoadLbs(bodyWeightLbs, setWeightLbs, exercise) * 0.453592;
+    return Math.round(caliMet * bodyKg * (reps * 4 / 3600) + loadKg * reps * WORK_KCAL_PER_KG_REP);
   }
+  const met    = MET_VALUES.strength[exercise.diff] || 5.0;
+  const loadKg = Math.max(0, setWeightLbs || 0) * 0.453592;
+  return Math.round(met * bodyKg * (reps * 6 / 3600) + loadKg * reps * WORK_KCAL_PER_KG_REP);
+}
 
-  const newE1RM  = epley1RM(setWeightLbs, reps);
-  const e1rm     = newE1RM || storedE1RM || (setWeightLbs * 1.3);
-  const pct      = setWeightLbs / e1rm;
-  const iMod     = intensityModifier(pct);
-  const rMod     = rirModifier(setWeightLbs, reps, e1rm);
-  const pBonus   = prBonus(newE1RM, storedE1RM);
+// ── MUSCLE XP: hypertrophy stimulus for one set ──────────────────────────────
+// Reps in reserve come from the logged RPE when there is one; otherwise from
+// the lifter's previous best (inverted Epley: how many reps this load allows
+// against the stored e1RM) — never from the set itself, which would make every
+// set look like failure. With neither, assume a typical working set (2 RIR).
+function estimateRIR(exercise, reps, setWeightLbs, storedE1RM, rpe) {
+  if (rpe) return Math.max(0, 10 - rpe);
+  if (exercise.type !== "calisthenics" && storedE1RM > 0 && setWeightLbs > 0) {
+    const maxReps = (storedE1RM / setWeightLbs - 1) * 30;
+    return Math.max(0, Math.min(10, maxReps - reps));
+  }
+  return STIM.DEFAULT_RIR;
+}
 
-  return Math.round(baseXP * iMod * rMod * pBonus);
+function calcSetStim(exercise, set, bodyWeightLbs, storedE1RM) {
+  const reps = parseFloat(set.reps) || 0;
+  const w    = parseFloat(set.weight) || 0;
+  if (reps <= 0) return 0;
+  const effort = effortFactor(estimateRIR(exercise, reps, w, storedE1RM, set.rpe));
+  if (exercise.iso) {
+    if (reps < STIM.ISO_MIN_SECONDS) return 0;
+    const setsEq = Math.min(STIM.ISO_MAX_SETS, reps / STIM.ISO_SECONDS_PER_SET);
+    return STIM.SET * setsEq * effort;
+  }
+  let pct = null;
+  if (exercise.type === "calisthenics") {
+    // Assistance can push a bodyweight lift under the 30 % band; added load never does.
+    if (w < 0) {
+      const full = (bodyWeightLbs || 170) * (bodyweightFraction(exercise) || 1);
+      pct = effectiveCaliLoadLbs(bodyWeightLbs, w, exercise) / full;
+    }
+  } else if (storedE1RM > 0 && w > 0) {
+    pct = w / storedE1RM;
+  }
+  let stim = STIM.SET * loadFactor(pct) * repFactor(reps) * effort;
+  // Progressive overload: a set that beats the stored e1RM on this lift.
+  if (exercise.type !== "calisthenics" && storedE1RM > 0) {
+    const e = epley1RM(w, reps);
+    if (e && e > storedE1RM) stim *= STIM.PR_BONUS;
+  }
+  return stim;
+}
+
+// Whole-workout stimulus. Cardio: minutes × MET ÷ 7 — duration × relative
+// intensity is the endurance training load, and body mass plays no part.
+function calcWorkoutStim(exercise, setsDetail, bodyWeightLbs, storedE1RM, cardio = null) {
+  if (exercise.type === "cardio") {
+    const minutes = cardio?.minutes || 0;
+    const met = cardio?.met || exercise.met || MET_VALUES.cardio[exercise.diff] || 7;
+    return Math.round(minutes * met / STIM.CARDIO_MET_REF);
+  }
+  return Math.round((setsDetail || []).reduce((s, set) => s + calcSetStim(exercise, set, bodyWeightLbs, storedE1RM), 0));
+}
+
+// Stat shares for a workout: { stat: fraction } summing to 1, from the
+// exercise's EMG profile (measured, aliased or derived). Bodyweight skill work
+// also feeds Agility as a side credit, on top of — not instead of — the
+// muscles it trains.
+function statShares(exercise, muscle) {
+  const emg = emgFor(exercise);
+  const byStat = {};
+  if (emg) {
+    const total = Object.values(emg).reduce((s, v) => s + v, 0) || 1;
+    Object.entries(emg).forEach(([svgId, act]) => {
+      const stat = SVG_TO_STAT[svgId] || muscle;
+      byStat[stat] = (byStat[stat] || 0) + act / total;
+    });
+  } else {
+    byStat[muscle || exercise.primary || "chest"] = 1;
+  }
+  return byStat;
+}
+function subShares(exercise) {
+  const emg = emgFor(exercise);
+  if (!emg) return {};
+  const total = Object.values(emg).reduce((s, v) => s + v, 0) || 1;
+  return Object.fromEntries(Object.entries(emg).map(([id, act]) => [id, act / total]));
+}
+
+// Legacy entries carry only sets/reps/weight; rebuild a per-set list for them.
+function setsDetailOf(w) {
+  if (Array.isArray(w.sets_detail) && w.sets_detail.length) return w.sets_detail;
+  const n = Math.max(1, Math.round(w.sets || 1));
+  return Array.from({ length: n }, () => ({ reps: w.reps || 0, weight: w.weight || 0 }));
+}
+function cardioOf(w) {
+  if (w.cardioData) return w.cardioData;
+  return { minutes: w.reps || 0, met: w.exercise?.met || null };
+}
+
+// Rebuild every derived stat from the workout ledger — the one source of
+// truth. Used on load, on log, on edit and on delete, so stats can never drift
+// from the log. Chronological so that weekly-volume discounting, PR-based RIR
+// and atrophy all see history in order.
+function rebuildProfileStats(p) {
+  const workouts = [...(p.workouts || [])].sort((a, b) => (a.date || 0) - (b.date || 0));
+  const bw = p.weightLbs || 170;
+  const statEvents = {}, subEvents = {};
+  const addE = (m, key, date, xp, share = 1) => { (m[key] = m[key] || []).push({ date, xp, share }); };
+  const runningPR = {};             // exercise → best e1RM seen BEFORE this workout
+  const recent = [];                // [{ date, stat, sets }] trailing window for weekly volume
+  const WEEK = 7 * 86400000;
+  let newOverallXP = 0;
+  const stimOf = {};
+  for (const w of workouts) {
+    const ex = w.exercise || {};
+    const muscle = w.muscle || ex.primary || "chest";
+    const kcal = w.xp || 0;
+    newOverallXP += kcal;
+    const name = ex.name || w.exerciseName;
+    const storedE1RM = name ? runningPR[name] || null : null;
+    const mult = w.stimMult == null ? 1 : w.stimMult;
+    if (ex.type === "cardio") {
+      const stim = Math.round(calcWorkoutStim(ex, null, bw, null, cardioOf(w)) * mult);
+      stimOf[w.date + "|" + name] = stim;
+      addE(statEvents, "cardio", w.date, stim, 1);
+      continue;
+    }
+    const sets = setsDetailOf(w);
+    const rawStim = calcWorkoutStim(ex, sets, bw, storedE1RM);
+    const shares = statShares(ex, muscle);
+    // weekly dose per stat before this session
+    while (recent.length && recent[0].date < (w.date || 0) - WEEK) recent.shift();
+    const weekly = {};
+    recent.forEach(r => { weekly[r.stat] = (weekly[r.stat] || 0) + r.sets; });
+    let total = 0;
+    Object.entries(shares).forEach(([stat, share]) => {
+      const amt = Math.round(rawStim * share * volumeFactor(weekly[stat]) * mult);
+      total += amt;
+      addE(statEvents, stat, w.date, amt, share);
+      recent.push({ date: w.date || 0, stat, sets: sets.length * share });
+    });
+    if (ex.type === "calisthenics") {
+      addE(statEvents, "calisthenics", w.date, Math.round(rawStim * STIM.AGILITY_SIDE_CREDIT * mult), STIM.AGILITY_SIDE_CREDIT);
+    }
+    Object.entries(subShares(ex)).forEach(([svgId, share]) => {
+      const parent = SVG_TO_STAT[svgId] || muscle;
+      addE(subEvents, svgId, w.date, Math.round(rawStim * share * volumeFactor(weekly[parent]) * mult), share);
+    });
+    stimOf[w.date + "|" + name] = total;
+    // PR bookkeeping for the NEXT workout's RIR estimate
+    const e = Number.isFinite(w.newE1RM) && w.newE1RM > 0 ? w.newE1RM
+      : sets.reduce((best, s) => Math.max(best, epley1RM(s.weight, s.reps) || 0), 0);
+    if (name && e > (runningPR[name] || 0)) runningPR[name] = e;
+  }
+  const newStats = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
+  const newCondition = {}, newLastTrained = {}, newEarned = {};
+  Object.entries(statEvents).forEach(([k, evts]) => {
+    const s = atrophyState(evts, atrophyParams(k, p));
+    newStats[k] = s.xp; newCondition[k] = s.condition; newLastTrained[k] = s.last; newEarned[k] = s.earned;
+  });
+  const newSubStats = {};
+  Object.entries(subEvents).forEach(([k, evts]) => { newSubStats[k] = atrophiedXP(evts, atrophyParams(k, p)); });
+  newOverallXP += mindOverallBonus(p.mindLog);
+  const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
+  const tl = getPRTimeline(workouts);
+  const newPrs = Object.fromEntries(Object.entries(tl).map(([n, evts]) => [n, evts[evts.length - 1].e1rm]));
+  return { newStats, newSubStats, newLevels, newPrs, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level,
+    newCondition, newLastTrained, newEarned, stimOf };
+}
+function withRebuiltStats(p) {
+  const r = rebuildProfileStats(p);
+  return { ...p, stats: r.newStats, subStats: r.newSubStats, levels: r.newLevels, prs: r.newPrs,
+    overallXP: r.newOverallXP, overallLevel: r.newOverallLevel,
+    condition: r.newCondition, lastTrained: r.newLastTrained, earnedStats: r.newEarned };
 }
 
 // Main XP function — handles all exercise types
@@ -487,6 +613,14 @@ function calcXP(exercise, sets, repsOrTime, weightLbs = 170, extraData = {}) {
 
   // Fallback: old-style aggregate (sets × reps × weight)
   return calcCalories(exercise, sets, repsOrTime, weightLbs, extraData);
+}
+
+// Rough Hunter-XP (kcal) preview for a typical 3-set session of an exercise.
+function estimateSessionXP(ex, bodyWeightLbs) {
+  if (ex.type === "cardio") return calcXP(ex, 1, 20, bodyWeightLbs, {});
+  const reps = ex.iso ? 30 : 10;
+  const load = ex.type === "strength" ? 135 : 0;
+  return 3 * calcSetXP(ex, reps, load, bodyWeightLbs, null);
 }
 
 // Overall level: based on fat-burn (3,500 cal = 1 lb fat = 1 level)
@@ -1645,10 +1779,18 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
         isSpeed ? { speedMph: parsedSpeed } : isSpm ? { stepsPerMin: parsedSpm } : {}) : 0)
     : validSets.reduce((sum, r) => {
         const reps = parseFloat(r.reps) || 0;
-        const w    = parseFloat(r.weight) || 0;
+        const w    = wtValBack(parseFloat(r.weight) || 0);
         if (reps <= 0) return sum;
         return sum + calcSetXP(exercise, reps, w, weightLbs, storedE1RM);
       }, 0);
+
+  // Muscle XP (hypertrophy stimulus) — hard sets, not calories.
+  const previewMet = isSpm ? metFromStepRate(parsedSpm) : isSpeed ? metFromSpeed(parsedSpeed) : exercise.met;
+  const rawStim = isCardio
+    ? (parsedMins > 0 ? calcWorkoutStim(exercise, null, weightLbs, null, { minutes: parsedMins, met: previewMet }) : 0)
+    : calcWorkoutStim(exercise, validSets.map(r => ({ reps: parseFloat(r.reps) || 0,
+        weight: wtValBack(parseFloat(r.weight) || 0), rpe: r.rpe })), weightLbs, storedE1RM);
+  const shareOfPrimary = Math.round((statShares(exercise, muscle)[muscle] || 0) * 100);
 
   const sessionBestE1RM = isCali || isCardio || isIso ? null : validSets.reduce((best, r) => {
     const reps = parseFloat(r.reps) || 0;
@@ -1669,6 +1811,10 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const _proteinEaten  = _todayFood ? (_todayFood.protein || 0) : 0;
   const _proteinTarget = profile ? calcProteinTarget(profile) : 160;
   const netXP      = calcNetXP(totalXP, _calsEaten, _tdee, _proteinEaten, _proteinTarget);
+  // Protein gates muscle protein synthesis (Morton 2018); a calorie surplus does
+  // not shrink hypertrophy, so it only nets the calorie-based Hunter XP.
+  const stimMult   = calcProteinMultiplier(_proteinEaten, _proteinTarget);
+  const netStim    = Math.round(rawStim * stimMult);
   const meta       = MUSCLE_META[muscle] || MUSCLE_META.chest;
   const diffColor  = { beginner: GREEN, intermediate: ACCENT, advanced: GOLD, elite: RED }[exercise.diff];
 
@@ -1953,33 +2099,41 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                 {isFirstLog ? "FIRST LOG — 1RM ESTABLISHED" : `NEW PR! ${wtVal(storedE1RM).toFixed(0)} → ${wtVal(sessionBestE1RM).toFixed(0)} ${wtLabel()} EST. 1RM`}
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
               <div>
                 <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>
-                  {isPR ? "BOOSTED XP (PR BONUS)" : "HYPERTROPHY XP"}
+                  {isPR ? "MUSCLE XP · PR BONUS" : "MUSCLE XP"}
                 </div>
-                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 900, color: GOLD}}>+{totalXP}</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 900, color: GOLD}}>+{netStim}</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>
+                  {isCardio ? `${parsedMins} min · endurance` : `${validSets.length} set${validSets.length !== 1 ? "s" : ""} · ${shareOfPrimary}% to ${meta.name.toLowerCase()}`}
+                </div>
               </div>
-              {netXP < totalXP && (
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>NET XP (AFTER FOOD)</div>
-                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 900, color: RED}}>+{netXP}</div>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{validSets.length} sets logged</div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK, marginBottom: 4 }}>
+                  {netXP < totalXP ? "HUNTER XP · AFTER FOOD" : "HUNTER XP"}
                 </div>
-              )}
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 900, color: netXP < totalXP ? RED : TEXT }}>+{netXP}</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>{totalXP} kcal burned</div>
+              </div>
             </div>
             {netXP < totalXP && (
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: RED, marginTop: 6, letterSpacing: TRACK }}>
-                -{totalXP - netXP} XP absorbed by today's calorie surplus
+                -{totalXP - netXP} Hunter XP absorbed by today's calorie surplus
               </div>
             )}
-            {netXP === totalXP && (
+            {stimMult < 1 && (
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, marginTop: 4, letterSpacing: TRACK }}>
+                Muscle XP at {Math.round(stimMult * 100)}% — protein below target today
+              </div>
+            )}
+            {netXP === totalXP && stimMult === 1 && (
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GREEN, marginTop: 6, letterSpacing: TRACK }}>
-                Full XP active — eating at deficit or maintenance
+                Full XP — fed, and every set counted
               </div>
             )}
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 7, color: MUTED, marginTop: 8, letterSpacing: TRACK }}>
-              {FIRST_OVERALL_THRESHOLD.toLocaleString()} XP = LVL 2 · {FIRST_MUSCLE_THRESHOLD.toLocaleString()} XP = MUSCLE LVL 2
+              A HARD SET (0–1 RIR) = {STIM.SET} MUSCLE XP · {FIRST_MUSCLE_THRESHOLD} = MUSCLE LVL 2 · {FIRST_OVERALL_THRESHOLD.toLocaleString()} KCAL = LVL 2
             </div>
           </div>
         )}
@@ -2024,9 +2178,9 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
           if (!canLog) return;
           if (isCardio) {
             onConfirm({ sets: 1, reps: parsedMins, weight: weightLbs, xp: totalXP, cals: totalXP,
+              stim: rawStim, stimMult,
               cardioData: { minutes: parsedMins, speedMph: isSpeed ? parsedSpeed : null,
-                stepsPerMin: isSpm ? parsedSpm : null,
-                met: isSpm ? metFromStepRate(parsedSpm) : exercise.met } });
+                stepsPerMin: isSpm ? parsedSpm : null, met: previewMet } });
           } else {
             const setsDetail = validSets.map(r => ({
               reps: parseFloat(r.reps) || 0,
@@ -2037,7 +2191,8 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             const avgWeight = setsDetail.reduce((s, r) => s + r.weight, 0) / setsDetail.length;
             const avgReps   = setsDetail.reduce((s, r) => s + r.reps, 0) / setsDetail.length;
             onConfirm({ sets: setsDetail.length, reps: Math.round(avgReps), weight: Math.round(avgWeight),
-              sets_detail: setsDetail, newE1RM: sessionBestE1RM, isPR, xp: totalXP, cals: totalXP });
+              sets_detail: setsDetail, newE1RM: sessionBestE1RM, isPR, xp: totalXP, cals: totalXP,
+              stim: rawStim, stimMult });
           }
         }} style={{ width: "100%", padding: "15px", fontSize: 15, letterSpacing: TRACK,
           opacity: canLog ? 1 : 0.4, cursor: canLog ? "pointer" : "not-allowed" }}>
@@ -2519,7 +2674,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
             const entry = { exerciseName: modal.exercise.name, muscle: modal.muscle,
               exercise: modal.exercise, sets: data.sets, reps: data.reps,
               weight: data.weight, sets_detail: data.sets_detail,
-              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, cardioData: data.cardioData,
+              newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, stim: data.stim, cardioData: data.cardioData,
               supersetGroup, date: Date.now() };
             if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
             onLogExercise(entry);
@@ -2778,7 +2933,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                 <div style={{ display: "flex", gap: 12 }}>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD }}>{ex.diff} effort</span>
                   <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
-                    ~{calcXP(ex, 3, ex.type === "strength" ? 135 : 10, st.weightLbs || 170)} XP est.
+                    ~{estimateSessionXP(ex, st.weightLbs || 170)} XP est.
                   </span>
                 </div>
               </div>
@@ -3155,7 +3310,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                     {subs && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                       color: mm.color, opacity: 0.8 }}>{subs}</div>}
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
-                      ~{calcXP(ex, 3, 135, st.weightLbs||170)} XP est.
+                      ~{estimateSessionXP(ex, st.weightLbs || 170)} XP est.
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -3642,7 +3797,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               onLogExercise({ exerciseName: modal.exercise.name, muscle: modal.muscle,
                 exercise: modal.exercise, sets: data.sets, reps: data.reps,
                 weight: data.weight, sets_detail: data.sets_detail,
-                newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, cardioData: data.cardioData,
+                newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, stim: data.stim, cardioData: data.cardioData,
                 date: entryDate });
               // If editing, unlog the original entry first
               if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
@@ -3937,7 +4092,12 @@ function mindOverallBonus(mindLog) {
 }
 
 const _LN2 = Math.log(2);
-function atrophyParams(statKey) { return statKey === "cardio" ? ATROPHY.cardio : ATROPHY.muscular; }
+// Decay constants for a stat, with the half-life shortened for older hunters.
+function atrophyParams(statKey, profile = null) {
+  const base = statKey === "cardio" ? ATROPHY.cardio : ATROPHY.muscular;
+  const f = ageDetrainingFactor(profile?.age);
+  return f === 1 ? base : { ...base, halfLife: base.halfLife * f };
+}
 // Decay condition c across a rest gap (grace days are free).
 function decayCondition(c, gapDays, prm) {
   const d = Math.max(0, gapDays - prm.grace);
@@ -6007,7 +6167,7 @@ function ConditionReportModal({ profile, onClose }) {
   const rows = Object.keys(MUSCLE_META)
     .filter(k => MUSCLE_META[k] && (earnedStats[k] > 0 || stats[k] > 0))
     .map(k => {
-      const prm = atrophyParams(k);
+      const prm = atrophyParams(k, profile);
       const c = condition[k] == null ? 1 : condition[k];
       const last = lastTrained[k] || null;
       const daysIdle = last ? Math.floor((Date.now() - last) / 86400000) : null;
@@ -8090,75 +8250,11 @@ export default function IronRealm() {
               levels: Object.fromEntries(Object.keys(p.levels || {}).map(k => [k, 1])),
               overallXP: mindXP, overallLevel: getLevelFromXP(mindXP).level }];
           }
-          const statEvents = {};
-          const addEvt = (key, date, xp, share = 1) => { (statEvents[key] = statEvents[key] || []).push({ date, xp, share }); };
-          let newOverallXP = 0;
-          for (const w of p.workouts) {
-            const xp = w.xp || 0;
-            const ex = w.exercise || {};
-            const muscle = w.muscle || ex.primary || "chest";
-            const emg = ex.emg || EXERCISE_EMG[ex.name];
-            if (ex.type === "cardio") {
-              addEvt("cardio", w.date, xp);
-            } else if (emg) {
-              const total = Object.values(emg).reduce((s,v) => s+v, 0);
-              // several svg heads can map to one stat — sum their shares
-              const byStat = {};
-              Object.entries(emg).forEach(([svgId, activation]) => {
-                const stat = SVG_TO_STAT[svgId] || muscle;
-                byStat[stat] = (byStat[stat] || 0) + activation;
-              });
-              Object.entries(byStat).forEach(([stat, act]) => {
-                addEvt(stat, w.date, Math.round(xp * act / total), act / total);
-              });
-            } else {
-              const statKey = ex.type === "calisthenics" &&
-                !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
-              addEvt(statKey, w.date, xp, 1);
-              if (statKey !== muscle) addEvt(muscle, w.date, Math.round(xp * 0.4), 0.4);
-            }
-            newOverallXP += xp;
-          }
-          // Atrophy: fold each muscle's chronology through the condition model
-          const newStats = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
-          const newCondition = {}, newLastTrained = {};
-          const newEarned = {};
-          Object.entries(statEvents).forEach(([k, evts]) => {
-            const s = atrophyState(evts, atrophyParams(k));
-            newStats[k] = s.xp;
-            newCondition[k] = s.condition;
-            newLastTrained[k] = s.last;
-            newEarned[k] = s.earned;
-          });
-          const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
-          const subEvents = {};
-          const addSub = (svgId, date, xp, share = 1) => { (subEvents[svgId] = subEvents[svgId] || []).push({ date, xp, share }); };
-          for (const w of p.workouts) {
-            const xp2 = w.xp || 0; const ex2 = w.exercise || {};
-            const emg2 = ex2.emg || EXERCISE_EMG[ex2.name];
-            if (emg2) {
-              const total2 = Object.values(emg2).reduce((s,v)=>s+v,0);
-              Object.entries(emg2).forEach(([svgId,act]) => addSub(svgId, w.date, Math.round(xp2*act/total2), act/total2));
-            } else {
-              (ex2.svgTargets||[]).forEach(svgId => addSub(svgId, w.date, Math.round(xp2/((ex2.svgTargets||[1]).length))));
-            }
-          }
-          const newSubStats2 = {};
-          Object.entries(subEvents).forEach(([k, evts]) => {
-            newSubStats2[k] = atrophiedXP(evts, ATROPHY.muscular);
-          });
           // Migrate v1.10.0 quran entries logged at undiluted hasanat rates
           const mindLogM = (p.mindLog || []).map(e =>
             e.activity === "quran_read" && e.xp > 54 * (e.qty || 1) * 1.5
               ? { ...e, xp: 54 * (e.qty || 1) } : e);
-          p = { ...p, mindLog: mindLogM };
-          newOverallXP += mindOverallBonus(p.mindLog);
-          // Rebuild stored PRs from the workout log (they were never persisted before)
-          const tl = getPRTimeline(p.workouts);
-          const rebuiltPrs = Object.fromEntries(Object.entries(tl).map(([name, evts]) => [name, evts[evts.length - 1].e1rm]));
-          return [id, { ...p, stats: newStats, subStats: newSubStats2, levels: newLevels, prs: rebuiltPrs,
-            condition: newCondition, lastTrained: newLastTrained, earnedStats: newEarned,
-            overallXP: newOverallXP, overallLevel: getLevelFromXP(newOverallXP).level }];
+          return [id, withRebuiltStats({ ...p, mindLog: mindLogM })];
         })
       );
       return { ...loaded, profiles: repairedProfiles };
@@ -8442,131 +8538,42 @@ export default function IronRealm() {
     setStore(s => ({ ...s, profiles: { ...s.profiles, [id]: { ...s.profiles[id], ...updates } } }));
   };
 
-  // Rebuild stats/subStats/XP from scratch using the workout log as source of truth
-  const recomputeStats = (p) => {
-    const statEvents = {}, subEvents = {};
-    const addE = (m, key, date, xp, share = 1) => { (m[key] = m[key] || []).push({ date, xp, share }); };
-    let newOverallXP  = 0;
-    for (const w of (p.workouts || [])) {
-      const xp    = w.xp || 0;
-      const ex    = w.exercise || {};
-      const muscle = w.muscle || ex.primary || "chest";
-      const emg   = ex.emg || EXERCISE_EMG[ex.name];
-      if (ex.type === "cardio") {
-        addE(statEvents, "cardio", w.date, xp);
-      } else if (emg) {
-        const total = Object.values(emg).reduce((s,v) => s+v, 0);
-        const byStat = {};
-        Object.entries(emg).forEach(([svgId, activation]) => {
-          const stat = SVG_TO_STAT[svgId] || muscle;
-          byStat[stat] = (byStat[stat] || 0) + activation;
-          addE(subEvents, svgId, w.date, Math.round(xp * activation / total), activation / total);
-        });
-        Object.entries(byStat).forEach(([stat, act]) => {
-          addE(statEvents, stat, w.date, Math.round(xp * act / total), act / total);
-        });
-      } else {
-        const targets = ex.svgTargets || [];
-        if (targets.length > 0) {
-          const share = Math.round(xp / targets.length);
-          targets.forEach(svgId => addE(subEvents, svgId, w.date, share));
-        }
-        const statKey = ex.type === "calisthenics" &&
-          !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
-        addE(statEvents, statKey, w.date, xp, 1);
-        if (statKey !== muscle) addE(statEvents, muscle, w.date, Math.round(xp * 0.4), 0.4);
-      }
-      newOverallXP += xp;
-    }
-    const newStats = Object.fromEntries(Object.keys(p.stats || {}).map(k => [k, 0]));
-    Object.entries(statEvents).forEach(([k, evts]) => { newStats[k] = atrophiedXP(evts, atrophyParams(k)); });
-    const newSubStats = {};
-    Object.entries(subEvents).forEach(([k, evts]) => { newSubStats[k] = atrophiedXP(evts, ATROPHY.muscular); });
-    newOverallXP += mindOverallBonus(p.mindLog);
-    const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
-    const tl = getPRTimeline(p.workouts);
-    const newPrs = Object.fromEntries(Object.entries(tl).map(([name, evts]) => [name, evts[evts.length - 1].e1rm]));
-    return { newStats, newSubStats, newLevels, newPrs, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level };
-  };
-
-  const applyXP = (p, exercise, muscle, xp) => {
-    const newStats    = { ...p.stats };
-    const newSubStats = { ...(p.subStats || {}) };
-    const newLevels   = { ...p.levels };
-    if (exercise.type === "cardio") {
-      newStats.cardio = (newStats.cardio || 0) + xp;
-      Object.keys(newStats).forEach(k => { newLevels[k] = getMuscleLevel(newStats[k] || 0); });
-      const newOverallXP = (p.overallXP || 0) + xp;
-      return { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level, statKey: "cardio" };
-    }
-    const emg = exercise.emg || EXERCISE_EMG[exercise.name];
-    if (emg) {
-      const total = Object.values(emg).reduce((s,v) => s+v, 0);
-      let primaryStat = muscle, primaryXP = 0;
-      Object.entries(emg).forEach(([svgId, activation]) => {
-        const xpShare = Math.round(xp * activation / total);
-        const stat = SVG_TO_STAT[svgId] || muscle;
-        newStats[stat] = (newStats[stat] || 0) + xpShare;
-        newSubStats[svgId] = (newSubStats[svgId] || 0) + xpShare;
-        if (xpShare > primaryXP) { primaryXP = xpShare; primaryStat = stat; }
-      });
-      Object.keys(newStats).forEach(k => { newLevels[k] = getMuscleLevel(newStats[k] || 0); });
-      const newOverallXP = (p.overallXP || 0) + xp;
-      return { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level, statKey: primaryStat };
-    }
-    // No EMG — distribute evenly across svgTargets if available
-    const targets = exercise.svgTargets || [];
-    if (targets.length > 0) {
-      const share = Math.round(xp / targets.length);
-      targets.forEach(svgId => {
-        newSubStats[svgId] = (newSubStats[svgId] || 0) + share;
-      });
-    }
-    const statKey = exercise.type === "calisthenics" && !["chest","arms","core"].includes(muscle) ? "calisthenics" : muscle;
-    newStats[statKey] = (newStats[statKey] || 0) + xp;
-    if (statKey !== muscle) newStats[muscle] = (newStats[muscle] || 0) + Math.round(xp * 0.4);
-    Object.keys(newStats).forEach(k => { newLevels[k] = getMuscleLevel(newStats[k] || 0); });
-    const newOverallXP = (p.overallXP || 0) + xp;
-    return { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level, statKey };
-  };
-
   const handleLogExercise = (entry) => {
     updateActive(p => {
-      // Apply net XP: workout XP reduced by any calorie surplus from today's food
+      // Hunter XP (kcal) is netted against today's calorie surplus; muscle XP
+      // is scaled by protein (already folded into entry.stimMult by the modal).
       const todayFood = getTodayFood(p);
       const calsEaten = todayFood ? todayFood.calories : 0;
       const tdee = calcTDEE(p);
-      const proteinEaten  = todayFood?.protein || 0;
-      const proteinTarget = calcProteinTarget(p);
-      const netXP = calcNetXP(entry.xp, calsEaten, tdee, proteinEaten, proteinTarget);
-      const absorbed = entry.xp - netXP; // XP cancelled by food surplus
-      const { newStats, newSubStats, newLevels, newOverallXP, newOverallLevel, statKey } = applyXP(p, entry.exercise, entry.muscle, netXP);
-      if (newOverallLevel > p.overallLevel) { setTimeout(() => setCeremonyLevel(newOverallLevel), 350); }
-      if (newLevels[statKey] > (p.levels[statKey] || 1)) setTimeout(() => toast(`${MUSCLE_META[statKey]?.name} LVL ${newLevels[statKey]}!`, MUSCLE_META[statKey]?.color), 700);
-      if (absorbed > 0) setTimeout(() => toast(`-${absorbed} XP absorbed by food surplus`, RED), 200);
-      // Persist PRs (fixes prs never being written) and roll a relic on a
-      // genuine PR — a previously recorded e1RM that just got beaten.
+      const surplus  = Math.max(0, calsEaten - tdee);
+      const netXP    = Math.max(0, (entry.xp || 0) - surplus);
+      const absorbed = (entry.xp || 0) - netXP;
       const exName = entry.exerciseName || entry.exercise?.name;
-      let newPrs = p.prs || {};
+      const logged = { ...entry, xp: netXP, rawXP: entry.xp, absorbed,
+        stimMult: entry.stimMult == null ? 1 : entry.stimMult,
+        date: entry.targetDate || entry.date || Date.now() };
+      const next = withRebuiltStats({ ...p, workouts: [...p.workouts, logged] });
+      // Which stat did this session load most? Drives the level-up toast.
+      const shares = statShares(entry.exercise || {}, entry.muscle);
+      const statKey = entry.exercise?.type === "cardio" ? "cardio"
+        : Object.entries(shares).sort((x, y) => y[1] - x[1])[0]?.[0] || entry.muscle;
+      if (next.overallLevel > p.overallLevel) { setTimeout(() => setCeremonyLevel(next.overallLevel), 350); }
+      if (next.levels[statKey] > (p.levels[statKey] || 1)) setTimeout(() => toast(`${MUSCLE_META[statKey]?.name} LVL ${next.levels[statKey]}!`, MUSCLE_META[statKey]?.color), 700);
+      if (absorbed > 0) setTimeout(() => toast(`-${absorbed} XP absorbed by food surplus`, RED), 200);
+      // Roll a relic on a genuine PR — a previously recorded e1RM that just got beaten.
       let newCosmetics = p.cosmetics || {};
       if (exName && Number.isFinite(entry.newE1RM) && entry.newE1RM > 0) {
         const prevPR = (p.prs || {})[exName] || 0;
-        if (entry.newE1RM > prevPR) {
-          newPrs = { ...(p.prs || {}), [exName]: Math.round(entry.newE1RM) };
-          if (prevPR > 0) {
-            const relic = rollRelic((p.cosmetics?.relics || []).map(r => r.id));
-            if (relic) {
-              newCosmetics = { ...(p.cosmetics || {}),
-                relics: [...(p.cosmetics?.relics || []), { id: relic.id, date: Date.now(), source: exName }] };
-              setTimeout(() => setRelicDrop(relic), 400);
-            }
+        if (prevPR > 0 && entry.newE1RM > prevPR) {
+          const relic = rollRelic((p.cosmetics?.relics || []).map(r => r.id));
+          if (relic) {
+            newCosmetics = { ...(p.cosmetics || {}),
+              relics: [...(p.cosmetics?.relics || []), { id: relic.id, date: Date.now(), source: exName }] };
+            setTimeout(() => setRelicDrop(relic), 400);
           }
         }
       }
-      return { ...p, stats: newStats, subStats: newSubStats, levels: newLevels,
-        overallXP: newOverallXP, overallLevel: newOverallLevel, prs: newPrs, cosmetics: newCosmetics,
-        workouts: [...p.workouts, { ...entry, xp: netXP, rawXP: entry.xp, absorbed,
-          date: entry.targetDate || entry.date || Date.now() }] };
+      return { ...next, cosmetics: newCosmetics };
     });
   };
 
@@ -8576,11 +8583,7 @@ export default function IronRealm() {
       // This guarantees stats always match the workout log — no drift possible
       const newWorkouts = (p.workouts || []).filter(w =>
         !(w.date === entry.date && w.exerciseName === entry.exerciseName));
-      const rebuilt = recomputeStats({ ...p, workouts: newWorkouts });
-      return { ...p, workouts: newWorkouts,
-        stats: rebuilt.newStats, subStats: rebuilt.newSubStats,
-        levels: rebuilt.newLevels, prs: rebuilt.newPrs, overallXP: rebuilt.newOverallXP,
-        overallLevel: rebuilt.newOverallLevel };
+      return withRebuiltStats({ ...p, workouts: newWorkouts });
     });
     toast(`${entry.exerciseName} removed`, MUTED);
   };

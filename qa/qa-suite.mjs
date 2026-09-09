@@ -536,12 +536,24 @@ await t('integrity: overall = workouts + mind bonus', async () => {
   ok(p.overallXP === wkXP + mind, `overall ${p.overallXP} != ${wkXP}+${mind}`);
 });
 await t('integrity: cardio atrophied (40d idle, 7d grace)', async () => {
+  // 30 min at 7 MET = 30 muscle XP earned; 33 days past grace on a 100-day half-life ≈ 88 % condition
   const p = await profile();
-  ok(p.stats.cardio > 190 && p.stats.cardio < 265, `cardio ${p.stats.cardio}, expected ~233 of 300`);
+  ok(p.earnedStats.cardio === 30, `cardio earned ${p.earnedStats.cardio}, expected 30 (30 min × 7 MET ÷ 7)`);
+  ok(p.stats.cardio >= 24 && p.stats.cardio <= 28, `cardio ${p.stats.cardio}, expected ~26 of 30`);
+  ok(p.condition.cardio > 0.85 && p.condition.cardio < 0.9, `condition ${p.condition.cardio}`);
 });
 await t('integrity: shoulders EMG-maintained (bench 3d ago)', async () => {
+  // Shoulders are only trained through bench (16 % share) — they earn a slice and stay fresh
   const p = await profile();
-  ok(p.stats.shoulders > 10000, `shoulders ${p.stats.shoulders} should be maintained by bench EMG shares`);
+  ok(p.earnedStats.shoulders > 20 && p.earnedStats.shoulders < 200, `shoulders earned ${p.earnedStats.shoulders} from bench shares`);
+  ok(p.condition.shoulders >= 0.99, `shoulders condition ${p.condition.shoulders} should be maintained by bench 3d ago`);
+  ok(p.stats.shoulders === p.earnedStats.shoulders, 'no decay inside the grace window');
+});
+await t('integrity: muscle XP is stimulus, not calories', async () => {
+  const p = await profile();
+  const kcal = p.workouts.filter(w => w.muscle === 'chest').reduce((s, w) => s + (w.xp || 0), 0);
+  ok(p.earnedStats.chest < kcal / 10, `chest earned ${p.earnedStats.chest} should be far below ${kcal} kcal`);
+  ok(p.earnedStats.chest > 100, `chest earned ${p.earnedStats.chest} from 11 sessions × 3 sets`);
 });
 await t('integrity: levels match stats curve', async () => {
   const p = await profile();
