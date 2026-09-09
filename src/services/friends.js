@@ -57,10 +57,14 @@ export async function setFriendHidden(targetUserId, adminUserId, hidden) {
 
 export async function searchUsers(query) {
   if (!isConfigured || !query || query.trim().length < 2) return [];
+  // profile_directory exposes public columns only (never prs, flags, or
+  // suspended users); direct profile reads are owner-only.
+  const q = query.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+  if (q.length < 2) return [];
   const { data, error } = await supabase
-    .from("profiles")
+    .from("profile_directory")
     .select("user_id, username, display_name, overall_level, rank_label")
-    .ilike("username", `${query.trim().toLowerCase()}%`)
+    .like("username", `${q}%`)
     .limit(10);
   if (error) throw error;
   return data || [];
@@ -93,7 +97,7 @@ export async function fetchRequests(myUserId) {
   let profileMap = {};
   if (userIds.length) {
     const { data: profs } = await supabase
-      .from("profiles")
+      .from("profile_directory")
       .select("user_id, username, display_name, overall_level")
       .in("user_id", userIds);
     (profs || []).forEach((p) => {

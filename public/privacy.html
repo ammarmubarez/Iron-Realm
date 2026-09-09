@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Iron Realm — Privacy Policy</title>
+  <style>
+    body { margin: 0; background: #000; color: #f3efe9; font: 16px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 28px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 28px 0 8px; color: #e8c44a; }
+    p, li { color: #d5d1ca; } .muted { color: #8b9099; font-size: 14px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; } td, th { border: 1px solid #2a2d33; padding: 8px; text-align: left; vertical-align: top; }
+    a { color: #e8c44a; } .todo { background: #3a2a00; color: #f6dd8a; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="muted">Iron Realm · Effective <span class="todo">[date]</span> · Operator: <span class="todo">[your name or company, address]</span> · Contact: <span class="todo">[contact email]</span></p>
+  <p class="muted">Items marked like <span class="todo">this</span> must be completed before publishing. This document describes what the app actually does as of v2.3; keep it in step with the code.</p>
+
+  <h2>1. The short version</h2>
+  <ul>
+    <li><strong>Local by default.</strong> Everything you log — workouts, body weight, height, age, sex, nutrition, and Mind &amp; Spirit entries — is stored on your device. Nothing leaves it unless you create an account.</li>
+    <li><strong>No ads, no analytics, no tracking.</strong> The app contains no advertising or analytics SDKs and does not fingerprint or track you across apps or websites. Fonts are bundled, so no third-party request is made to render the app.</li>
+    <li><strong>If you sign in</strong>, we store your email, a public profile your friends can see, and an encrypted-in-transit backup of your full app data so you can restore it on another device.</li>
+    <li><strong>You can delete everything</strong> from Settings → Privacy → Delete account, at any time, without contacting us.</li>
+  </ul>
+
+  <h2>2. Data we process and why</h2>
+  <table>
+    <tr><th>Data</th><th>Where it lives</th><th>Purpose</th></tr>
+    <tr><td>Workout log (exercises, sets, reps, load, duration), personal records, calculated levels and condition</td><td>Your device; cloud backup only if signed in</td><td>Core function: tracking and progression</td></tr>
+    <tr><td>Body metrics: weight, height, age, sex, activity level, goal</td><td>Your device; cloud backup only if signed in</td><td>Calorie, protein and load calculations</td></tr>
+    <tr><td>Nutrition log (calories, protein)</td><td>Your device; cloud backup only if signed in</td><td>Optional: nets Hunter XP against intake</td></tr>
+    <tr><td>Mind &amp; Spirit log, which may include reading, study, and religious practice you choose to record</td><td>Your device; cloud backup only if signed in</td><td>Optional: the Intelligence and Faith attributes. This may be sensitive data about your beliefs; you control whether you record it at all and whether it is backed up (by signing in).</td></tr>
+    <tr><td>Email address and password (hashed by our provider)</td><td>Supabase (see §4)</td><td>Account sign-in, password reset</td></tr>
+    <tr><td>Public profile: username, display name, level, rank, weekly XP, total workouts, personal records (can be hidden), chosen theme, banner colour, title</td><td>Supabase</td><td>Friends leaderboard and username search. Visible to your friends; username, display name, level and rank are searchable by any signed-in user.</td></tr>
+    <tr><td>Friend requests and friendships</td><td>Supabase</td><td>Social features</td></tr>
+    <tr><td>Full-state backup (a compressed copy of all the device data above)</td><td>Supabase Storage, private bucket, readable only by your account</td><td>Restore on a new device</td></tr>
+  </table>
+
+  <h2>3. What we do not do</h2>
+  <ul>
+    <li>We do not sell, rent or share your data with advertisers or data brokers.</li>
+    <li>We do not use health, fitness or religious-practice data for advertising, profiling or any purpose other than showing it back to you.</li>
+    <li>We do not read your device contacts, location, camera, microphone or photos.</li>
+    <li>We do not read data from Apple Health, Health Connect or any other app. If a future version adds that integration, it will ask for permission first and this policy will be updated before release.</li>
+  </ul>
+
+  <h2>4. Service providers</h2>
+  <p>Account, database and backup storage are provided by <a href="https://supabase.com/privacy" rel="noopener noreferrer">Supabase</a>, hosted in <span class="todo">[region of your Supabase project]</span>. Supabase processes data on our behalf under its data processing terms. The web version of the app is served from GitHub Pages (GitHub, Inc.), which may log standard web-server data such as IP address for security purposes.</p>
+
+  <h2>5. Moderation</h2>
+  <p>A small number of administrator accounts can view public profiles, suspend accounts that abuse the social features, and send a standard password-reset email to a user who requests it. Administrators cannot see your password and cannot open your private backup. Administrative actions are logged.</p>
+
+  <h2>6. Retention and deletion</h2>
+  <ul>
+    <li>Device data stays until you clear it in the app, uninstall it, or clear the browser's site data.</li>
+    <li>Account data stays until you delete the account. <strong>Settings → Privacy → Delete account</strong> removes your backup, profile, friendships and sign-in immediately and permanently. Your on-device data is kept unless you clear it.</li>
+    <li>You can export all of your data at any time as a JSON file from Settings → Data backup.</li>
+  </ul>
+
+  <h2>7. Your rights</h2>
+  <p>Depending on where you live (for example the EU/UK under GDPR, or California under CCPA/CPRA), you have the right to access, correct, export, restrict or delete your personal data, and to object to processing. The export and delete tools above satisfy most requests instantly; for anything else contact <span class="todo">[contact email]</span>. We will respond within 30 days. You may also complain to your local data-protection authority.</p>
+
+  <h2>8. Children</h2>
+  <p>Iron Realm is not directed at children under 13 (or the age of digital consent in your country) and we do not knowingly collect data from them. If you believe a child has created an account, contact us and we will delete it.</p>
+
+  <h2>9. Security</h2>
+  <p>Data in transit is encrypted with TLS. Cloud data is protected by per-user row-level security so accounts can only read and write their own records. Passwords are hashed by our provider and never stored in plain text. No system is perfectly secure; if you discover a vulnerability please report it to <span class="todo">[security contact email]</span>.</p>
+
+  <h2>10. Changes</h2>
+  <p>We will update this page and the effective date when practices change. Material changes will be announced in the app before they take effect.</p>
+</main>
+</body>
+</html>

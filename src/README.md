@@ -27,6 +27,19 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state
 ```
 
+## v2.3 security & store readiness
+
+- `scripts/security/postbuild-csp.js` injects the production CSP into `build/index.html`
+  (`npm run build` and `npm run build:native` both run it). No inline scripts
+  (`INLINE_RUNTIME_CHUNK=false` in `.env`), fonts self-hosted in `public/fonts/`.
+- Store builds bundle the web app: `npm run build:native && npx cap sync`. Never point a
+  store build at a remote URL. The GitHub Pages auto-update only runs on that origin.
+- Cloud authorisation is server-side: see `supabase/migrations/011_security_hardening.sql`
+  (privileged-column trigger, owner-only profile reads, `profile_directory` view,
+  friend-request rate limit, `delete_own_account()`).
+- Legal pages: `public/privacy.html`, `public/terms.html` (fill the `[…]` placeholders).
+- Full findings: `docs/SECURITY.md`. Store checklist: `docs/APP_STORE_READINESS.md`.
+
 ## v2.2 physiology pass — how XP, levels and decay work
 
 Two currencies, computed per set in `iron-realm.jsx` from constants in `data/progression.js`:

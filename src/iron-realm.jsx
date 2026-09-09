@@ -28,7 +28,7 @@ import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
 
 
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.3.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -60,6 +60,27 @@ function applyBrightness(hex, mult) {
   return '#' + [clamp(r),clamp(g),clamp(b)].map(v=>v.toString(16).padStart(2,'0')).join('');
 }
 
+
+// Shape-check an imported backup before it replaces the store. JSON.parse
+// cannot smuggle code, but a hand-edited file can still crash every screen
+// with the wrong types; reject anything that is not a plausible store.
+function validateBackup(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid backup");
+  const profiles = parsed.profiles;
+  if (!profiles || typeof profiles !== "object" || Array.isArray(profiles)) throw new Error("Invalid backup");
+  const ids = Object.keys(profiles);
+  if (ids.length === 0 || ids.length > 50) throw new Error("Invalid backup");
+  for (const id of ids) {
+    const p = profiles[id];
+    if (!p || typeof p !== "object") throw new Error("Invalid backup");
+    if (p.workouts != null && !Array.isArray(p.workouts)) throw new Error("Invalid backup");
+    if (p.name != null && typeof p.name !== "string") throw new Error("Invalid backup");
+    if (typeof p.name === "string" && p.name.length > 60) p.name = p.name.slice(0, 60);
+  }
+  if (parsed.activeId != null && !profiles[parsed.activeId]) parsed.activeId = ids[0];
+  if (parsed.settings != null && (typeof parsed.settings !== "object" || Array.isArray(parsed.settings))) delete parsed.settings;
+  return parsed;
+}
 
 // Get today's tip — rotates daily based on day of year
 const getTodayTip = () => {
@@ -836,7 +857,7 @@ function getMuscleRank(level) {
 
 // ─── CSS — SOLO LEVELING SYSTEM UI ───────────────────────────────────────────
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
+  /* Rajdhani is self-hosted from public/fonts (linked in index.html) */
   ${buttonCSS}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { overscroll-behavior-y: none; }
@@ -4963,8 +4984,15 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
             {busy ? "..." : mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}
           </button>
 
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", marginTop: 6 }}>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", marginTop: 6, lineHeight: 1.5 }}>
             Your local profile stays on this device. Signing in only shares a public summary with friends.
+            {mode === "signup" && (
+              <span> By creating an account you agree to the{" "}
+                <a href={`${process.env.PUBLIC_URL || ""}/terms.html`} target="_blank" rel="noopener noreferrer" style={{ color: ACCENT }}>Terms of Use</a>
+                {" "}and{" "}
+                <a href={`${process.env.PUBLIC_URL || ""}/privacy.html`} target="_blank" rel="noopener noreferrer" style={{ color: ACCENT }}>Privacy Policy</a>.
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -5100,11 +5128,14 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                      account, onSignIn, onSignUp, onSignOut, onToggleSharePrs, onUpdateDisplayName,
                      onUpdateBannerColor, onToggleRitual, onEquipTitle, onLogMind,
                      onAddMindTask, onRemoveMindTask, onToggleMindTask, pendingCount = 0,
-                     store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile }) {
+                     store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile,
+                     onDeleteAccount }) {
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
   const [settingsOpen, setSettingsOpen] = useState(null); // null | "settings" | "help" | "account"
   const [importError, setImportError] = useState(null);
+  const [confirmDeleteAcct, setConfirmDeleteAcct] = useState(false);
+  const [deletingAcct, setDeletingAcct] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [savingDisplayName, setSavingDisplayName] = useState(false);
 
@@ -5753,8 +5784,55 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                     </div>
                   );
                 })()}
+                {/* Account deletion — required in-app by Apple 5.1.1(v) and Google Play */}
+                <div style={{ marginTop: 8, background: BG3, border: `1px solid ${RED}22`, borderRadius: 8, padding: "12px 14px" }}>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>Delete account</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2, lineHeight: 1.4 }}>
+                    Permanently removes your cloud backup, public profile, friendships and sign-in. Progress saved on this device is kept unless you clear it.
+                  </div>
+                  {!confirmDeleteAcct ? (
+                    <button onClick={() => setConfirmDeleteAcct(true)} style={{
+                      marginTop: 10, padding: "9px 14px", background: "transparent", border: `1px solid ${RED}55`,
+                      borderRadius: 6, cursor: "pointer", fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
+                      color: RED, letterSpacing: TRACK }}>DELETE MY ACCOUNT</button>
+                  ) : (
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <button disabled={deletingAcct} onClick={async () => {
+                        setDeletingAcct(true);
+                        const ok = await onDeleteAccount?.();
+                        setDeletingAcct(false);
+                        if (ok) { setConfirmDeleteAcct(false); setSettingsOpen(null); }
+                      }} style={{
+                        flex: 1, padding: "9px", background: RED, border: "none", borderRadius: 6, cursor: "pointer",
+                        fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: "#fff", letterSpacing: TRACK,
+                        opacity: deletingAcct ? .5 : 1 }}>{deletingAcct ? "DELETING…" : "YES, DELETE EVERYTHING"}</button>
+                      <button onClick={() => setConfirmDeleteAcct(false)} style={{
+                        flex: 1, padding: "9px", background: "transparent", border: `1px solid ${MUTED}44`, borderRadius: 6,
+                        cursor: "pointer", fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: MUTED, letterSpacing: TRACK }}>KEEP IT</button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
+
+            {/* Legal */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT,
+                letterSpacing: TRACK, marginBottom: 10 }}>{"LEGAL"}</div>
+              <div style={{ background: BG3, border: `1px solid ${ACCENT2}22`, borderRadius: 8, overflow: "hidden" }}>
+                {[["Privacy Policy", "privacy.html"], ["Terms of Use", "terms.html"]].map(([label, file], i) => (
+                  <a key={file} href={`${process.env.PUBLIC_URL || ""}/${file}`} target="_blank" rel="noopener noreferrer" style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px",
+                    textDecoration: "none", color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700,
+                    borderBottom: i === 0 ? `1px solid ${ACCENT2}22` : "none" }}>
+                    <span>{label}</span><span style={{ color: MUTED }}>↗</span>
+                  </a>
+                ))}
+              </div>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6 }}>
+                Iron Realm v{APP_VERSION} · Workouts, body stats and nutrition stay on this device unless you sign in.
+              </div>
+            </div>
 
             {/* Monarch Themes */}
             <div style={{ marginBottom: 20 }}>
@@ -6028,8 +6106,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                   const reader = new FileReader();
                   reader.onload = ev => {
                     try {
-                      const parsed = JSON.parse(ev.target.result);
-                      if (!parsed.profiles) throw new Error("Invalid backup file");
+                      if (file.size > 25 * 1024 * 1024) throw new Error("Backup too large");
+                      const parsed = validateBackup(JSON.parse(ev.target.result));
                       localStorage.setItem("iron_realm_store_v1", JSON.stringify(parsed));
                       toast("Data restored! Reloading…", GOLD);
                       setTimeout(() => window.location.reload(), 1200);
@@ -8304,6 +8382,11 @@ export default function IronRealm() {
 
   useEffect(() => {
     const BASE = "https://ammarmubarez.github.io/Iron-Realm";
+    // Only the GitHub Pages PWA self-updates. A bundled Capacitor app (or any
+    // other host) must never be redirected to the remote site: it updates
+    // through the store, and navigating a native shell to a remote origin
+    // would turn it back into a remote web view.
+    if (window.location.origin !== new URL(BASE).origin) return;
     const check = async () => {
       try {
         const res = await fetch(`${BASE}/version.json?_=${Date.now()}`, { cache: "no-store" });
@@ -8459,6 +8542,26 @@ export default function IronRealm() {
       setAuthBusy(false);
     }
   }, [toast]);
+
+  // Server-side RPC deletes only auth.uid(); local progress is left alone so a
+  // user who only wants out of the cloud does not lose their device history.
+  const handleDeleteAccount = useCallback(async () => {
+    if (!session?.user) return false;
+    setAuthBusy(true);
+    try {
+      await authService.deleteAccount();
+      setSession(null);
+      setRemoteProfile(null);
+      setPendingCount(0);
+      toast("Account deleted. Local progress kept on this device.", GOLD);
+      return true;
+    } catch (e) {
+      toast(e.message || "Could not delete account", RED);
+      return false;
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [session, toast]);
 
   const handleToggleSharePrs = useCallback(async () => {
     if (!session?.user || !remoteProfile) return;
@@ -8833,7 +8936,7 @@ export default function IronRealm() {
         onEquip={() => { const id = relicDrop.id; updateActive(p => ({ ...p, cosmetics: { ...(p.cosmetics || {}), equippedRelic: id } })); toast(`${relicDrop.name} equipped`, RELIC_FRAME_COLORS[id]); setRelicDrop(null); }}
         onClose={() => setRelicDrop(null)} />}
       <div key={screen} className="screen-wipe">
-      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} pendingCount={pendingCount} store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} />}
+      {screen === "menu"      && <MenuScreen st={st} setScreen={setScreen} onLogFood={handleLogFood} onUpdateWeight={handleUpdateWeight} settings={settings} onUpdateSettings={handleUpdateSettings} toast={toast} account={account} onSignIn={handleSignIn} onSignUp={handleSignUp} onSignOut={handleSignOut} onToggleSharePrs={handleToggleSharePrs} onUpdateDisplayName={handleUpdateDisplayName} onUpdateBannerColor={handleUpdateBannerColor} onToggleRitual={handleToggleRitual} onEquipTitle={handleEquipTitle} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} pendingCount={pendingCount} store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onDeleteAccount={handleDeleteAccount} />}
       {screen === "schedule"  && <ScheduleScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} onUpdateSchedule={handleUpdateSchedule} onLogFood={handleLogFood} settings={settings} toast={toast} />}
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}

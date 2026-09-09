@@ -38,6 +38,17 @@ export async function signOut() {
   await supabase.auth.signOut();
 }
 
+// Permanently deletes the signed-in user's account: cloud backup, public
+// profile (friendships and requests cascade) and the auth user. Server-side
+// RPC scoped to auth.uid(), so it can only ever delete the caller.
+export async function deleteAccount() {
+  if (!isConfigured) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.rpc("delete_own_account");
+  if (error) throw error;
+  await supabase.auth.signOut().catch(() => {});
+  return true;
+}
+
 export async function getSession() {
   if (!isConfigured) return null;
   const { data } = await supabase.auth.getSession();

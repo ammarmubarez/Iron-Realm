@@ -10,13 +10,10 @@ export async function isUsernameAvailable(username) {
   if (!isConfigured) return true;
   const u = (username || "").trim().toLowerCase();
   if (!u) return false;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .eq("username", u)
-    .maybeSingle();
+  // Definer RPC: works before sign-in (profiles are owner-only readable).
+  const { data, error } = await supabase.rpc("username_taken", { u });
   if (error) throw error;
-  return !data;
+  return data !== true;
 }
 
 export async function getProfileRow(userId) {

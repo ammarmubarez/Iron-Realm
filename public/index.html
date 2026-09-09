@@ -3,22 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#03060f" />
+    <!-- Security: a production CSP is injected here by scripts/security/postbuild-csp.js
+         (dev mode needs eval/inline for hot reload, so it is not set in this file). -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#000000" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Iron Realm" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="description" content="RPG Gym Tracker — level up your body" />
 
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/icons/apple-touch-icon-180.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="%PUBLIC_URL%/icons/icon-512.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/icons/icon-192.png" />
 
-    <!-- Fonts used by Iron Realm -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet" />
+    <!-- Rajdhani is self-hosted: no request leaves the app for a font, and the
+         app renders offline and under a strict CSP. -->
+    <link rel="preload" href="%PUBLIC_URL%/fonts/rajdhani-600-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="%PUBLIC_URL%/fonts/rajdhani.css" />
 
     <title>Iron Realm</title>
 
@@ -31,7 +34,7 @@
       html, body {
         margin: 0;
         padding: 0;
-        background: #03060f;
+        background: #000000;
         overscroll-behavior: none;
         overflow: hidden;
         height: 100%;
@@ -44,7 +47,7 @@
     </style>
   </head>
   <body>
+    <noscript>Iron Realm needs JavaScript to run.</noscript>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

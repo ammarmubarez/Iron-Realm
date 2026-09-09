@@ -21,3 +21,11 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# native signing keys — never commit
+android/*.keystore
+android/*.jks
+android/app/*.keystore
+android/app/*.jks
+android/app/build
+ios/App/build
