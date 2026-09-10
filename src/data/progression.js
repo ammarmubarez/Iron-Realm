@@ -33,16 +33,17 @@ export const OVERALL_THRESHOLDS = [500, 1516, 2900, 4595, 6566, 8790, 11249, 139
 // XP needed to go from level n to n+1. Anchored on the natural-hypertrophy
 // timeline (McDonald / Aragon models: ~50 % of lifetime potential in year 1,
 // 25 % in year 2, halving thereafter) at a reference dose of ~12 hard sets per
-// week for the muscle (≈ 84 muscle XP/wk once compound sharing is included):
+// week for the muscle. A hard set at 2 RIR is 9.2 XP and a prime mover gets
+// full set credit, so the reference week is ≈ 110 muscle XP:
 //
 //   LVL 2  ≈ 1 week      LVL 4  ≈ 7 weeks     LVL 7  ≈ 7 months (C-rank)
 //   LVL 12 ≈ 2 years (B) LVL 20 ≈ 5 years (A) LVL 30 ≈ 8+ years (S)
 //
 // The tanh shape rises steeply through the novice window and settles to a
-// near-constant ~1,600 XP per level: past the intermediate stage each level is
+// near-constant ~2,100 XP per level: past the intermediate stage each level is
 // a similar slab of work, and the calendar time per level grows because the
 // weekly dose is what limits you, not the curve.
-export const muscleLevelIncrement = (n) => Math.round(1600 * Math.pow(Math.tanh(n / 8), 1.5));
+export const muscleLevelIncrement = (n) => Math.round(2100 * Math.pow(Math.tanh(n / 8), 1.5));
 export const MUSCLE_THRESHOLDS = Array.from({ length: 100 }, (_, i) => muscleLevelIncrement(i + 1));
 
 // ── LEVEL MILESTONE NAMES ─────────────────────────────────────────────────────
@@ -229,6 +230,34 @@ export const ATROPHY = {
   cardio:   { grace: 7,  halfLife: 100, floor: 0.40 },
   REGAIN: 0.35,
 };
+
+// Per-muscle detraining speed (half-life multipliers). Two things make a
+// muscle hold its training longer: a higher share of type I fibres (type II
+// fibres shrink first in detraining — Staron 1991; fibre-type fractions from
+// Johnson 1973: soleus ~88 % type I, tibialis ~73 %, erectors ~60 %, deltoid
+// ~53 %, glute max ~52 %, vasti ~45 %, rectus abdominis ~46 %, pecs ~42 %,
+// biceps ~42 %, triceps ~33 %) and daily loading that keeps stimulating it
+// outside the gym (walking and stairs load calves, quads and glute medius;
+// posture loads the erectors and trunk; hands grip all day). Chest, triceps
+// and delts get neither and fade fastest.
+export const ATROPHY_MUSCLE_FACTOR = {
+  // stats
+  chest: 0.90, tricep: 0.90, shoulders: 0.95, bicep: 1.00, back: 1.10, forearms: 1.30,
+  core: 1.15, glutes: 1.20, legs: 1.25, calves: 1.60, calisthenics: 1.00, cardio: 1.00,
+  // sub-muscles
+  "upper-pectoralis": 0.90, "mid-lower-pectoralis": 0.90,
+  "lats": 1.00, "lowerback": 1.40, "upper-trapezius": 1.15, "traps-middle": 1.15, "lower-trapezius": 1.15,
+  "anterior-deltoid": 0.95, "lateral-deltoid": 0.95, "posterior-deltoid": 0.95,
+  "short-head-bicep": 1.00, "long-head-bicep": 1.00,
+  "medial-head-triceps": 0.90, "long-head-triceps": 0.90, "lateral-head-triceps": 0.90,
+  "wrist-flexors": 1.30, "wrist-extensors": 1.30,
+  "upper-abdominals": 1.15, "lower-abdominals": 1.15, "obliques": 1.15,
+  "gluteus-maximus": 1.20, "gluteus-medius": 1.30,
+  "outer-quadricep": 1.30, "rectus-femoris": 1.25, "inner-quadricep": 1.30, "inner-thigh": 1.10,
+  "lateral-hamstrings": 1.00, "medial-hamstrings": 1.00,
+  "gastrocnemius": 1.40, "soleus": 1.80, "tibialis": 1.50,
+};
+export const muscleDetrainingFactor = (key) => ATROPHY_MUSCLE_FACTOR[key] || 1.0;
 
 // Half-life multiplier by age: 1.0 up to 40, sliding to 0.7 at 65+.
 export function ageDetrainingFactor(age) {

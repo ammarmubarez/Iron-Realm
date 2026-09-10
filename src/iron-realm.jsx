@@ -5,7 +5,7 @@ import { _MUSCLE_PATHS, _BODY_PATHS } from "./data/bodyPaths";
 import { SVG_TO_STAT, EXERCISE_DB, MACHINE_NAME_PATTERNS, BAR_NAME_PATTERNS, BENCH_REQUIRED, emgFor, bodyweightFraction } from "./data/exercises";
 import { MALE_PROGRAMS, FEMALE_PROGRAMS } from "./data/programs";
 import { OVERALL_THRESHOLDS, MUSCLE_THRESHOLDS, OVERALL_MILESTONE_NAMES, OVERALL_MILESTONE_DESC, MUSCLE_MILESTONE_NAMES, MUSCLE_MILESTONE_DESC, MET_VALUES, ATROPHY,
-  WORK_KCAL_PER_KG_REP, STIM, effortFactor, loadFactor, repFactor, volumeFactor, ageDetrainingFactor } from "./data/progression";
+  WORK_KCAL_PER_KG_REP, STIM, effortFactor, loadFactor, repFactor, volumeFactor, ageDetrainingFactor, muscleDetrainingFactor } from "./data/progression";
 import { MUSCLE_META, _ID_TO_MUSCLE, ANGLE_GROUPS, SELECTION_RULES, _ANGLE_GROUP_LABELS, _CUSTOM_SUB_OPTIONS } from "./data/muscles";
 import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTIVITY_LEVELS, DAILY_RITUALS } from "./data/profile";
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
@@ -26,9 +26,11 @@ import * as friendsService from "./services/friends";
 import * as adminService from "./services/admin";
 import * as cloudStateService from "./services/cloudState";
 import { isConfigured as supabaseConfigured } from "./services/supabaseClient";
+import { Capacitor } from "@capacitor/core";
+import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "2.4.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -503,29 +505,36 @@ function calcWorkoutStim(exercise, setsDetail, bodyWeightLbs, storedE1RM, cardio
   return Math.round((setsDetail || []).reduce((s, set) => s + calcSetStim(exercise, set, bodyWeightLbs, storedE1RM), 0));
 }
 
-// Stat shares for a workout: { stat: fraction } summing to 1, from the
-// exercise's EMG profile (measured, aliased or derived). Bodyweight skill work
-// also feeds Agility as a side credit, on top of — not instead of — the
-// muscles it trains.
-function statShares(exercise, muscle) {
+// SET CREDIT per muscle group. A compound set is a full hard set for its
+// prime mover and a fractional set for every helper — the way weekly volume
+// is counted in the dose-response literature (Schoenfeld 2017 counts indirect
+// sets at ~½). Credit is the best-activated head in the group, mapped through
+// a^1.5 so a 50 %-activation helper earns ~⅓ of a set and a 30 % stabiliser
+// ~⅙, not a linear slice. Summing raw activations was wrong: a group with
+// many sub-muscles (legs: 8) out-summed a single huge prime mover (glute max)
+// on its own best exercise.
+const setCredit = (activation) => Math.pow(Math.max(0, Math.min(100, activation)) / 100, 1.5);
+function statCredits(exercise, muscle) {
   const emg = emgFor(exercise);
-  const byStat = {};
+  const best = {};
   if (emg) {
-    const total = Object.values(emg).reduce((s, v) => s + v, 0) || 1;
     Object.entries(emg).forEach(([svgId, act]) => {
       const stat = SVG_TO_STAT[svgId] || muscle;
-      byStat[stat] = (byStat[stat] || 0) + act / total;
+      best[stat] = Math.max(best[stat] || 0, act);
     });
   } else {
-    byStat[muscle || exercise.primary || "chest"] = 1;
+    best[muscle || exercise.primary || "chest"] = 100;
   }
-  return byStat;
+  return Object.fromEntries(Object.entries(best).map(([k, a]) => [k, setCredit(a)]));
 }
-function subShares(exercise) {
+function subCredits(exercise) {
   const emg = emgFor(exercise);
   if (!emg) return {};
-  const total = Object.values(emg).reduce((s, v) => s + v, 0) || 1;
-  return Object.fromEntries(Object.entries(emg).map(([id, act]) => [id, act / total]));
+  return Object.fromEntries(Object.entries(emg).map(([id, act]) => [id, setCredit(act)]));
+}
+// Convenience for the UI: credits sorted high→low as [stat, credit].
+function creditList(exercise, muscle) {
+  return Object.entries(statCredits(exercise, muscle)).sort((a, b) => b[1] - a[1]);
 }
 
 // Legacy entries carry only sets/reps/weight; rebuild a per-set list for them.
@@ -569,24 +578,26 @@ function rebuildProfileStats(p) {
     }
     const sets = setsDetailOf(w);
     const rawStim = calcWorkoutStim(ex, sets, bw, storedE1RM);
-    const shares = statShares(ex, muscle);
+    const credits = statCredits(ex, muscle);
     // weekly dose per stat before this session
     while (recent.length && recent[0].date < (w.date || 0) - WEEK) recent.shift();
     const weekly = {};
     recent.forEach(r => { weekly[r.stat] = (weekly[r.stat] || 0) + r.sets; });
     let total = 0;
-    Object.entries(shares).forEach(([stat, share]) => {
-      const amt = Math.round(rawStim * share * volumeFactor(weekly[stat]) * mult);
+    Object.entries(credits).forEach(([stat, credit]) => {
+      const amt = Math.round(rawStim * credit * volumeFactor(weekly[stat]) * mult);
+      if (amt <= 0) return;
       total += amt;
-      addE(statEvents, stat, w.date, amt, share);
-      recent.push({ date: w.date || 0, stat, sets: sets.length * share });
+      addE(statEvents, stat, w.date, amt, credit);
+      recent.push({ date: w.date || 0, stat, sets: sets.length * credit });
     });
     if (ex.type === "calisthenics") {
       addE(statEvents, "calisthenics", w.date, Math.round(rawStim * STIM.AGILITY_SIDE_CREDIT * mult), STIM.AGILITY_SIDE_CREDIT);
     }
-    Object.entries(subShares(ex)).forEach(([svgId, share]) => {
+    Object.entries(subCredits(ex)).forEach(([svgId, credit]) => {
       const parent = SVG_TO_STAT[svgId] || muscle;
-      addE(subEvents, svgId, w.date, Math.round(rawStim * share * volumeFactor(weekly[parent]) * mult), share);
+      const amt = Math.round(rawStim * credit * volumeFactor(weekly[parent]) * mult);
+      if (amt > 0) addE(subEvents, svgId, w.date, amt, credit);
     });
     stimOf[w.date + "|" + name] = total;
     // PR bookkeeping for the NEXT workout's RIR estimate
@@ -1811,7 +1822,9 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
     ? (parsedMins > 0 ? calcWorkoutStim(exercise, null, weightLbs, null, { minutes: parsedMins, met: previewMet }) : 0)
     : calcWorkoutStim(exercise, validSets.map(r => ({ reps: parseFloat(r.reps) || 0,
         weight: wtValBack(parseFloat(r.weight) || 0), rpe: r.rpe })), weightLbs, storedE1RM);
-  const shareOfPrimary = Math.round((statShares(exercise, muscle)[muscle] || 0) * 100);
+  // e.g. "chest ×1.0 · tricep ×0.4 · shoulders ×0.5" — set credit per group
+  const creditLine = creditList(exercise, muscle).filter(([, c]) => c >= 0.1).slice(0, 4)
+    .map(([k, c]) => `${MUSCLE_META[k]?.name.toLowerCase() || k} ×${c.toFixed(1)}`).join(" · ");
 
   const sessionBestE1RM = isCali || isCardio || isIso ? null : validSets.reduce((best, r) => {
     const reps = parseFloat(r.reps) || 0;
@@ -2127,7 +2140,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
                 </div>
                 <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 900, color: GOLD}}>+{netStim}</div>
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 2 }}>
-                  {isCardio ? `${parsedMins} min · endurance` : `${validSets.length} set${validSets.length !== 1 ? "s" : ""} · ${shareOfPrimary}% to ${meta.name.toLowerCase()}`}
+                  {isCardio ? `${parsedMins} min · endurance` : `${validSets.length} set${validSets.length !== 1 ? "s" : ""} · ${creditLine}`}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -4116,7 +4129,7 @@ const _LN2 = Math.log(2);
 // Decay constants for a stat, with the half-life shortened for older hunters.
 function atrophyParams(statKey, profile = null) {
   const base = statKey === "cardio" ? ATROPHY.cardio : ATROPHY.muscular;
-  const f = ageDetrainingFactor(profile?.age);
+  const f = ageDetrainingFactor(profile?.age) * muscleDetrainingFactor(statKey);
   return f === 1 ? base : { ...base, halfLife: base.halfLife * f };
 }
 // Decay condition c across a rest gap (grace days are free).
@@ -4878,6 +4891,55 @@ function OnboardScreen({ onComplete }) {
   );
 }
 
+// ─── HARDWARE / BROWSER BACK ─────────────────────────────────────────────────
+// Every sheet in the app is a full-screen fixed overlay that closes on a
+// backdrop tap or its × button, so "back" can be handled generically: close
+// the topmost overlay, else return Home, else (native only) exit on a second
+// press. Same rule the QA suites use to dismiss sheets.
+function topOverlay() {
+  const els = [...document.querySelectorAll("div")].filter(d => {
+    const cs = getComputedStyle(d);
+    if (cs.position !== "fixed" || cs.pointerEvents === "none" || cs.visibility === "hidden") return false;
+    const r = d.getBoundingClientRect();
+    return r.width >= window.innerWidth * 0.9 && r.height >= window.innerHeight * 0.8 && (parseInt(cs.zIndex, 10) || 0) >= 300;
+  });
+  els.sort((a, b) => (parseInt(getComputedStyle(b).zIndex, 10) || 0) - (parseInt(getComputedStyle(a).zIndex, 10) || 0));
+  return els[0] || null;
+}
+function closeTopOverlay() {
+  const el = topOverlay();
+  if (!el) return false;
+  const btn = [...el.querySelectorAll("button")].find(b => b.textContent.trim() === "×" || b.getAttribute("aria-label") === "Close");
+  if (btn) btn.click();
+  else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  return true;
+}
+
+// ─── LEGAL SHEET ─────────────────────────────────────────────────────────────
+// Privacy policy / terms rendered inside the app. Opening them in a new tab
+// left native users with no way back (the WebView has no tab bar and the
+// hardware back button exited the app).
+function LegalSheet({ doc, onClose }) {
+  const title = doc === "terms.html" ? "Terms of Use" : "Privacy Policy";
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1300,
+      background: "rgba(0,0,0,0.9)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background: BG2, width: "100%", maxWidth: 480,
+        height: "92dvh", borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px 10px",
+          borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: TEXT }}>{title}</div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: MUTED, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+        <iframe title={title} src={`${process.env.PUBLIC_URL || ""}/${doc}`} sandbox="allow-same-origin"
+          style={{ flex: 1, width: "100%", border: "none", background: "#000" }} />
+        <div style={{ padding: "10px 16px calc(12px + env(safe-area-inset-bottom, 0px))" }}>
+          <Button block onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </div>, document.body);
+}
+
 // ─── AUTH PANEL ───────────────────────────────────────────────────────────────
 // Sign-in / create-account modal. Mounted from the Settings modal when the
 // user picks "Sign in / create account".
@@ -4888,6 +4950,7 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [localErr, setLocalErr] = useState(null);
+  const [legalDoc, setLegalDoc] = useState(null);
 
   const submit = async () => {
     setLocalErr(null);
@@ -4988,14 +5051,15 @@ function AuthPanel({ onClose, onSignIn, onSignUp, busy, error, initialMode = "si
             Your local profile stays on this device. Signing in only shares a public summary with friends.
             {mode === "signup" && (
               <span> By creating an account you agree to the{" "}
-                <a href={`${process.env.PUBLIC_URL || ""}/terms.html`} target="_blank" rel="noopener noreferrer" style={{ color: ACCENT }}>Terms of Use</a>
+                <button type="button" onClick={() => setLegalDoc("terms.html")} style={{ background: "none", border: "none", padding: 0, color: ACCENT, font: "inherit", cursor: "pointer" }}>Terms of Use</button>
                 {" "}and{" "}
-                <a href={`${process.env.PUBLIC_URL || ""}/privacy.html`} target="_blank" rel="noopener noreferrer" style={{ color: ACCENT }}>Privacy Policy</a>.
+                <button type="button" onClick={() => setLegalDoc("privacy.html")} style={{ background: "none", border: "none", padding: 0, color: ACCENT, font: "inherit", cursor: "pointer" }}>Privacy Policy</button>.
               </span>
             )}
           </div>
         </div>
       </div>
+      {legalDoc && <LegalSheet doc={legalDoc} onClose={() => setLegalDoc(null)} />}
     </div>, document.body)
   );
 }
@@ -5136,6 +5200,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
   const [importError, setImportError] = useState(null);
   const [confirmDeleteAcct, setConfirmDeleteAcct] = useState(false);
   const [deletingAcct, setDeletingAcct] = useState(false);
+  const [legalDoc, setLegalDoc] = useState(null);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [savingDisplayName, setSavingDisplayName] = useState(false);
 
@@ -5821,12 +5886,13 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
                 letterSpacing: TRACK, marginBottom: 10 }}>{"LEGAL"}</div>
               <div style={{ background: BG3, border: `1px solid ${ACCENT2}22`, borderRadius: 8, overflow: "hidden" }}>
                 {[["Privacy Policy", "privacy.html"], ["Terms of Use", "terms.html"]].map(([label, file], i) => (
-                  <a key={file} href={`${process.env.PUBLIC_URL || ""}/${file}`} target="_blank" rel="noopener noreferrer" style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px",
-                    textDecoration: "none", color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700,
+                  <button key={file} type="button" onClick={() => setLegalDoc(file)} style={{
+                    width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px",
+                    background: "transparent", border: "none", cursor: "pointer", textAlign: "left",
+                    color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700,
                     borderBottom: i === 0 ? `1px solid ${ACCENT2}22` : "none" }}>
-                    <span>{label}</span><span style={{ color: MUTED }}>↗</span>
-                  </a>
+                    <span>{label}</span><span style={{ color: MUTED }}>›</span>
+                  </button>
                 ))}
               </div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6 }}>
@@ -6179,6 +6245,8 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
           </div>
         </div>, document.body)
       )}
+
+      {legalDoc && <LegalSheet doc={legalDoc} onClose={() => setLegalDoc(null)} />}
 
       {/* ── ACCOUNT MODAL ── */}
       {settingsOpen === "account" && (
@@ -8415,6 +8483,34 @@ export default function IronRealm() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
   }, []);
 
+  // Android hardware back + browser/PWA back: close the top sheet, else go
+  // Home, else exit on a second press (native only). A trap history entry keeps
+  // the PWA from leaving the app while there is something to close.
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  useEffect(() => {
+    const handle = () => {
+      if (closeTopOverlay()) return true;
+      if (screenRef.current !== "menu") { setScreen("menu"); return true; }
+      return false;
+    };
+    try { window.history.pushState({ irTrap: 1 }, ""); } catch {}
+    const onPop = () => { if (handle()) { try { window.history.pushState({ irTrap: 1 }, ""); } catch {} } };
+    window.addEventListener("popstate", onPop);
+    let sub = null, lastBack = 0;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener("backButton", () => {
+        if (handle()) return;
+        const now = Date.now();
+        if (now - lastBack < 2000) { CapApp.exitApp(); return; }
+        lastBack = now;
+        toast("Press back again to exit", MUTED);
+      }).then(h => { sub = h; }).catch(() => {});
+    }
+    return () => { window.removeEventListener("popstate", onPop); if (sub) sub.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Auth: load session on mount, subscribe to changes ──
   useEffect(() => {
     if (!supabaseConfigured) return;
@@ -8657,9 +8753,8 @@ export default function IronRealm() {
         date: entry.targetDate || entry.date || Date.now() };
       const next = withRebuiltStats({ ...p, workouts: [...p.workouts, logged] });
       // Which stat did this session load most? Drives the level-up toast.
-      const shares = statShares(entry.exercise || {}, entry.muscle);
       const statKey = entry.exercise?.type === "cardio" ? "cardio"
-        : Object.entries(shares).sort((x, y) => y[1] - x[1])[0]?.[0] || entry.muscle;
+        : creditList(entry.exercise || {}, entry.muscle)[0]?.[0] || entry.muscle;
       if (next.overallLevel > p.overallLevel) { setTimeout(() => setCeremonyLevel(next.overallLevel), 350); }
       if (next.levels[statKey] > (p.levels[statKey] || 1)) setTimeout(() => toast(`${MUSCLE_META[statKey]?.name} LVL ${next.levels[statKey]}!`, MUSCLE_META[statKey]?.color), 700);
       if (absorbed > 0) setTimeout(() => toast(`-${absorbed} XP absorbed by food surplus`, RED), 200);
