@@ -256,6 +256,8 @@ export const ATROPHY_MUSCLE_FACTOR = {
   "outer-quadricep": 1.30, "rectus-femoris": 1.25, "inner-quadricep": 1.30, "inner-thigh": 1.10,
   "lateral-hamstrings": 1.00, "medial-hamstrings": 1.00,
   "gastrocnemius": 1.40, "soleus": 1.80, "tibialis": 1.50,
+  // v2.5 regions: rotator cuff and hip flexors are postural/gait muscles; grip muscles work all day
+  "serratus-anterior": 0.95, "infraspinatus": 1.15, "brachialis": 1.00, "brachioradialis": 1.30, "hip-flexors": 1.30,
 };
 export const muscleDetrainingFactor = (key) => ATROPHY_MUSCLE_FACTOR[key] || 1.0;
 

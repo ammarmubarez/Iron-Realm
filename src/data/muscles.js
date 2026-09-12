@@ -51,9 +51,15 @@ export const MUSCLE_META = {
   "gastrocnemius":       { name: "Gastrocnemius",       color: "#059669", parent: "calves"    },
   "soleus":              { name: "Soleus",              color: "#047857", parent: "calves"    },
   "tibialis":            { name: "Tibialis",            color: "#065f46", parent: "calves"    },
+  // ── v2.5 additions (see data/emg.js anatomy notes) ──
+  "serratus-anterior":   { name: "Serratus Anterior",   color: "#f07070", parent: "chest"     },
+  "infraspinatus":       { name: "Rotator Cuff",        color: "#6a3fd0", parent: "shoulders" },
+  "brachialis":          { name: "Brachialis",          color: "#d08a2a", parent: "bicep"     },
+  "brachioradialis":     { name: "Brachioradialis",     color: "#b06a30", parent: "forearms"  },
+  "hip-flexors":         { name: "Hip Flexors",         color: "#0aa3c2", parent: "core"      },
 };
 
-export const _ID_TO_MUSCLE = {"mid-lower-pectoralis":"chest","upper-pectoralis":"chest","lats":"back","lowerback":"back","traps-middle":"back","lower-trapezius":"back","upper-trapezius":"back","upper-trapzeius":"back","anterior-deltoid":"shoulders","lateral-deltoid":"shoulders","posterior-deltoid":"shoulders","short-head-bicep":"bicep","long-head-bicep":"bicep","medial-head-triceps":"tricep","long-head-triceps":"tricep","lateral-head-triceps":"tricep","later-head-triceps":"tricep","wrist-flexors":"forearms","wrist-extensors":"forearms","upper-abdominals":"core","lower-abdominals":"core","obliques":"core","gluteus-maximus":"glutes","gluteus-medius":"glutes","outer-quadricep":"legs","rectus-femoris":"legs","inner-quadricep":"legs","inner-thigh":"legs","lateral-hamstrings":"legs","medial-hamstrings":"legs","gastrocnemius":"calves","soleus":"calves","tibialis":"calves"};
+export const _ID_TO_MUSCLE = {"mid-lower-pectoralis":"chest","upper-pectoralis":"chest","lats":"back","lowerback":"back","traps-middle":"back","lower-trapezius":"back","upper-trapezius":"back","upper-trapzeius":"back","anterior-deltoid":"shoulders","lateral-deltoid":"shoulders","posterior-deltoid":"shoulders","short-head-bicep":"bicep","long-head-bicep":"bicep","medial-head-triceps":"tricep","long-head-triceps":"tricep","lateral-head-triceps":"tricep","later-head-triceps":"tricep","wrist-flexors":"forearms","wrist-extensors":"forearms","upper-abdominals":"core","lower-abdominals":"core","obliques":"core","gluteus-maximus":"glutes","gluteus-medius":"glutes","outer-quadricep":"legs","rectus-femoris":"legs","inner-quadricep":"legs","inner-thigh":"legs","lateral-hamstrings":"legs","medial-hamstrings":"legs","gastrocnemius":"calves","soleus":"calves","tibialis":"calves","serratus-anterior":"chest","infraspinatus":"shoulders","brachialis":"bicep","brachioradialis":"forearms","hip-flexors":"core"};
 
 // ─── WORKOUT RANDOMIZER ───────────────────────────────────────────────────────
 export const ANGLE_GROUPS = {
@@ -107,13 +113,13 @@ export const _ANGLE_GROUP_LABELS = {
 
 // Sub-muscle options per muscle group (for custom exercise builder)
 export const _CUSTOM_SUB_OPTIONS = {
-  chest:     [["upper-pectoralis","Upper Chest"],["mid-lower-pectoralis","Mid/Lower Chest"]],
+  chest:     [["upper-pectoralis","Upper Chest"],["mid-lower-pectoralis","Mid/Lower Chest"],["serratus-anterior","Serratus"]],
   back:      [["lats","Lats"],["lowerback","Lower Back"],["upper-trapezius","Upper Traps"],["traps-middle","Mid Traps"],["lower-trapezius","Lower Traps"]],
-  shoulders: [["anterior-deltoid","Front Delt"],["lateral-deltoid","Side Delt"],["posterior-deltoid","Rear Delt"]],
-  bicep:     [["short-head-bicep","Short Head"],["long-head-bicep","Long Head"]],
+  shoulders: [["anterior-deltoid","Front Delt"],["lateral-deltoid","Side Delt"],["posterior-deltoid","Rear Delt"],["infraspinatus","Rotator Cuff"]],
+  bicep:     [["short-head-bicep","Short Head"],["long-head-bicep","Long Head"],["brachialis","Brachialis"]],
   tricep:    [["lateral-head-triceps","Lateral Head"],["medial-head-triceps","Medial Head"],["long-head-triceps","Long Head"]],
-  forearms:  [["wrist-flexors","Flexors"],["wrist-extensors","Extensors"]],
-  core:      [["upper-abdominals","Upper Abs"],["lower-abdominals","Lower Abs"],["obliques","Obliques"]],
+  forearms:  [["wrist-flexors","Flexors"],["wrist-extensors","Extensors"],["brachioradialis","Brachioradialis"]],
+  core:      [["upper-abdominals","Upper Abs"],["lower-abdominals","Lower Abs"],["obliques","Obliques"],["hip-flexors","Hip Flexors"]],
   glutes:    [["gluteus-maximus","Glute Max"],["gluteus-medius","Glute Med"]],
   legs:      [["outer-quadricep","Outer Quad"],["rectus-femoris","Rectus Femoris"],["inner-quadricep","Inner Quad"],["inner-thigh","Inner Thigh"],["lateral-hamstrings","Outer Hamstring"],["medial-hamstrings","Inner Hamstring"]],
   calves:    [["gastrocnemius","Gastrocnemius"],["soleus","Soleus"],["tibialis","Tibialis"]],

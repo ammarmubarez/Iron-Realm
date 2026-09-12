@@ -27,6 +27,24 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state
 ```
 
+## v2.5 body diagram — five new regions
+
+`data/bodyPaths.js` now has 38 regions: serratus anterior, brachialis, brachioradialis and
+hip flexors (iliopsoas) on the front views, infraspinatus (rotator cuff) and
+brachioradialis on the back views, for both genders. They are hand-drawn in the figure's
+own coordinate space and mirrored about x = 338.245; `data/emg.js` credits them
+(184 profiles re-scored), `data/muscles.js` / `exercises.js` map them to stats, and
+`data/progression.js` gives them detraining factors. The female views' two misspelled
+keys (`upper-trapzeius`, `later-head-triceps`) were corrected at the same time.
+
+**Restoring the classic 33-region figure**: the pre-v2.5 data is on the branch
+`checkpoint/v2.4.0-diagram`. To roll the diagram back while keeping everything else:
+
+```
+git checkout checkpoint/v2.4.0-diagram -- src/data/bodyPaths.js src/data/muscles.js src/data/exercises.js src/data/emg.js src/data/progression.js
+node scripts/physiology/validate-emg.mjs --write
+```
+
 ## v2.3 security & store readiness
 
 - `scripts/security/postbuild-csp.js` injects the production CSP into `build/index.html`

@@ -1,4 +1,4 @@
-// Muscle activation profiles for every exercise (v2.4 anatomy pass).
+// Muscle activation profiles for every exercise (v2.4 anatomy pass, v2.5 new regions).
 // Pure data — no runtime dependencies. Edit here, not in iron-realm.jsx.
 //
 // WHAT A PROFILE MEANS
@@ -36,13 +36,17 @@
 //     leg-raising favours the lower portion slightly. Profiles reflect that;
 //     they never give one end 100 and the other 0.
 //   · Leg raises, sit-ups, L-sits and hanging work are HIP-FLEXOR dominant
-//     (Escamilla 2006). The figure has no iliopsoas, so hip-flexion work is
-//     credited to rectus femoris, the one hip flexor it does have.
-//   · There is no serratus anterior, rotator cuff, brachialis or brachio-
-//     radialis region. Serratus work (push-ups, punches) is dropped; brachialis
-//     and brachioradialis effort is credited to the biceps long head / wrist
-//     extensors respectively, which is where a hammer-grip curl's work lands
-//     on the figure.
+//     (Escamilla 2006). Since v2.5 the figure has an iliopsoas region (HF) and
+//     it leads those lifts; rectus femoris keeps a secondary share as the one
+//     quad that also flexes the hip.
+//   · v2.5 added serratus anterior (push-ups, dips, overhead and landmine
+//     pressing, scaption, rollouts — Ekstrom 2003, Youdas 2010), the rotator
+//     cuff (infraspinatus/teres minor: face pulls, rear-delt work, pull-ups at
+//     ~79 % MVIC in Youdas 2010, rows, lateral raises), brachialis (every curl;
+//     strongest elbow flexor, maximal with neutral/pronated grips) and
+//     brachioradialis (hammer/reverse curls, pronated pull-ups, grip work).
+//     Before v2.5 those were dropped or credited to the nearest mapped muscle.
+//     Subscapularis and supraspinatus are still not on the figure (deep).
 //   · Abduction machines and clamshells do NOT train the adductors; the old
 //     data credited inner thigh there, which was simply wrong.
 //   · The pull-over and straight-arm pulldown are pec-dominant, not lat-
@@ -60,6 +64,8 @@
 //   GM glute max · GMD glute med · VL/RF/VM outer quad/rectus femoris/inner quad
 //   ADD adductors (inner thigh) · BF/ST lateral/medial hamstrings
 //   GAS/SOL/TIB gastrocnemius/soleus/tibialis
+//   SA serratus anterior · INF rotator cuff (infraspinatus/teres minor) ·
+//   BRA brachialis · BRD brachioradialis · HF hip flexors (iliopsoas)
 
 const CODES = {
   UP: "upper-pectoralis", MP: "mid-lower-pectoralis",
@@ -73,6 +79,8 @@ const CODES = {
   VL: "outer-quadricep", RF: "rectus-femoris", VM: "inner-quadricep", ADD: "inner-thigh",
   BF: "lateral-hamstrings", ST: "medial-hamstrings",
   GAS: "gastrocnemius", SOL: "soleus", TIB: "tibialis",
+  // v2.5 regions
+  SA: "serratus-anterior", INF: "infraspinatus", BRA: "brachialis", BRD: "brachioradialis", HF: "hip-flexors",
 };
 
 const RAW = {
@@ -80,20 +88,20 @@ const RAW = {
   // Flat pressing: sternal pec leads, clavicular ~75 % of it, front delt ~60,
   // triceps ~half. Incline raises clavicular + front delt (Trebs 2010; at 44°
   // the front delt is the single most active muscle); decline drops both.
-  "Bench Press":                    "MP100 UP75 AD60 TLA55 TM50 TLO40",
-  "Dumbbell Bench Press":           "MP100 UP75 AD60 TLA45 TM40 TLO30",     // DBs: more pec, less triceps (Saeterbakken 2011)
-  "Smith Machine Bench Press":      "MP100 UP70 AD55 TLA60 TM55 TLO40",     // fixed path: less stabiliser, more triceps
-  "Chest Press Machine":            "MP100 UP70 AD55 TLA55 TM50 TLO35",
-  "Converging Chest Press Machine": "MP100 UP75 AD55 TLA50 TM45 TLO30",
+  "Bench Press":                    "MP100 UP75 AD60 TLA55 TM50 TLO40 SA30",
+  "Dumbbell Bench Press":           "MP100 UP75 AD60 TLA45 TM40 TLO30 SA35",     // DBs: more pec, less triceps (Saeterbakken 2011)
+  "Smith Machine Bench Press":      "MP100 UP70 AD55 TLA60 TM55 TLO40 SA25",     // fixed path: less stabiliser, more triceps
+  "Chest Press Machine":            "MP100 UP70 AD55 TLA55 TM50 TLO35 SA25",
+  "Converging Chest Press Machine": "MP100 UP75 AD55 TLA50 TM45 TLO30 SA30",
   "Floor Press":                    "MP90 UP55 AD50 TLA100 TM90 TLO60",      // half ROM removes the pec stretch; lockout is triceps
   "Hex Press":                      "MP100 UP70 AD45 TLA60 TM55 TLO40",
   "Squeeze Press":                  "MP100 UP75 AD45 TLA55 TM50 TLO35",
   "Svend Press":                    "MP100 UP80 AD40 TM20",                  // isometric squeeze; almost no elbow extension
-  "Incline Bench Press":            "UP100 MP65 AD85 TLA50 TM45 TLO35",
-  "Incline Dumbbell Press":         "UP100 MP65 AD85 TLA40 TM35 TLO30",
-  "Incline Chest Press Machine":    "UP100 MP65 AD80 TLA45 TM40 TLO30",
-  "Landmine Press":                 "UP100 MP60 AD90 TLA55 TM50 TLO40 UA20 OB25",
-  "Landmine Press (Single)":        "UP95 MP55 AD100 TLA55 TM50 TLO40 OB40 UA25",
+  "Incline Bench Press":            "UP100 MP65 AD85 TLA50 TM45 TLO35 SA40",
+  "Incline Dumbbell Press":         "UP100 MP65 AD85 TLA40 TM35 TLO30 SA40",
+  "Incline Chest Press Machine":    "UP100 MP65 AD80 TLA45 TM40 TLO30 SA35",
+  "Landmine Press":                 "UP100 MP60 AD90 TLA55 TM50 TLO40 SA55 UA20 OB25",
+  "Landmine Press (Single)":        "UP95 MP55 AD100 TLA55 TM50 TLO40 SA55 OB40 UA25",
   "Decline Bench Press":            "MP100 UP50 AD40 TLA55 TM50 TLO40",
   "Decline Dumbbell Press":         "MP100 UP50 AD40 TLA45 TM40 TLO30",
   "Decline Chest Press Machine":    "MP100 UP50 AD40 TLA50 TM45 TLO35",
@@ -101,37 +109,37 @@ const RAW = {
   "Close-Grip Bench":               "TLA100 TM95 TLO75 MP80 UP55 AD60",
   // Flyes and cable work: shoulder adduction, elbow fixed → pec + front delt,
   // essentially no triceps; the elbow-flexed hold puts a little on the biceps.
-  "Dumbbell Flyes":                 "MP100 UP75 AD45 BS20",
-  "Incline Dumbbell Flyes":         "UP100 MP70 AD60 BS20",
+  "Dumbbell Flyes":                 "MP100 UP75 AD45 SA25 BS20",
+  "Incline Dumbbell Flyes":         "UP100 MP70 AD60 SA30 BS20",
   "Decline Dumbbell Flyes":         "MP100 UP50 AD30 BS20",
-  "Pec Deck Machine":               "MP100 UP75 AD35",
-  "Fly Machine":                    "MP100 UP75 AD35",
-  "Cable Crossover":                "MP100 UP70 AD40",
-  "Cable Fly":                      "MP100 UP70 AD40",
-  "Single Arm Cable Fly":           "MP100 UP70 AD40 OB30 UA20",
-  "Low Cable Fly":                  "UP100 MP70 AD55",                       // low-to-high: clavicular fibres lead
+  "Pec Deck Machine":               "MP100 UP75 AD35 SA20",
+  "Fly Machine":                    "MP100 UP75 AD35 SA20",
+  "Cable Crossover":                "MP100 UP70 AD40 SA30",
+  "Cable Fly":                      "MP100 UP70 AD40 SA30",
+  "Single Arm Cable Fly":           "MP100 UP70 AD40 SA35 OB30 UA20",
+  "Low Cable Fly":                  "UP100 MP70 AD55 SA35",                       // low-to-high: clavicular fibres lead
   "High Cable Fly":                 "MP100 UP50 AD30",                       // high-to-low: sternal/abdominal fibres
-  "Resistance Band Fly":            "MP100 UP70 AD40",
+  "Resistance Band Fly":            "MP100 UP70 AD40 SA30",
   // Pull-over: pec-dominant with the lats and long-head triceps assisting
   // (Marchetti 2011).
-  "Dumbbell Pullover":              "MP100 UP60 LAT70 TLO65 PD25",
-  "Lever Pullover Machine":         "MP90 UP55 LAT100 TLO60 PD30 LT30",     // machine arc keeps the arms locked → lats lead slightly
+  "Dumbbell Pullover":              "MP100 UP60 LAT70 TLO65 SA45 PD25 INF25",
+  "Lever Pullover Machine":         "MP90 UP55 LAT100 TLO60 SA40 PD30 LT30 INF25",     // machine arc keeps the arms locked → lats lead slightly
   // Push-ups: chest ~ triceps ~ 60–70 % MVIC, front delt ~ 45, rectus/obliques
   // 20–30 % as stabilisers (Freeman 2006, Youdas 2010).
-  "Push-ups":                       "MP100 UP70 AD60 TLA65 TM60 TLO45 UA25 LA20 OB20",
-  "Wide Push-ups":                  "MP100 UP70 AD60 TLA50 TM45 TLO35 UA25 LA20 OB20",
-  "Incline Push-ups":               "MP100 UP60 AD45 TLA50 TM45 TLO35 UA15 LA15",
-  "Decline Push-ups":               "UP100 MP80 AD80 TLA65 TM60 TLO45 UA30 LA25 OB25",
-  "Diamond Push-ups":               "TLA100 TM95 TLO70 MP85 UP55 AD55 UA25 LA20 OB20",
-  "Shoulder Tap Push-ups":          "MP100 UP65 AD65 TLA60 TM55 TLO40 OB60 UA50 LA45",
-  "Archer Push-ups":                "MP100 UP70 AD65 TLA75 TM70 TLO50 UA30 LA25 OB35",
-  "Clap Push-ups":                  "MP100 UP70 AD70 TLA75 TM70 TLO50 UA35 LA30 OB25",
-  "Ring Push-ups":                  "MP100 UP70 AD65 TLA65 TM60 TLO45 UA35 LA30 OB30",
-  "Pseudo Planche Push-up":         "AD100 UP80 MP85 TLA70 TM70 TLO55 UA45 LA40 OB35 WF35",
-  "Dips":                           "MP100 UP50 AD70 TLA75 TM70 TLO55",      // forward lean: pec and triceps both high
-  "Ring Dips":                      "MP100 UP50 AD75 TLA80 TM75 TLO60 UA25 LA20",
-  "Assisted Dip Machine":           "TLA100 TM95 TLO70 MP80 UP40 AD65",      // upright machine dip: triceps lead
-  "Tricep Dips":                    "TLA100 TM95 TLO70 MP60 UP35 AD65",
+  "Push-ups":                       "MP100 UP70 AD60 TLA65 TM60 TLO45 SA55 UA25 LA20 OB20",
+  "Wide Push-ups":                  "MP100 UP70 AD60 TLA50 TM45 TLO35 SA45 UA25 LA20 OB20",
+  "Incline Push-ups":               "MP100 UP60 AD45 TLA50 TM45 TLO35 SA45 UA15 LA15",
+  "Decline Push-ups":               "UP100 MP80 AD80 TLA65 TM60 TLO45 SA60 UA30 LA25 OB25",
+  "Diamond Push-ups":               "TLA100 TM95 TLO70 MP85 UP55 AD55 SA45 UA25 LA20 OB20",
+  "Shoulder Tap Push-ups":          "MP100 UP65 AD65 TLA60 TM55 TLO40 SA55 OB60 UA50 LA45",
+  "Archer Push-ups":                "MP100 UP70 AD65 TLA75 TM70 TLO50 SA50 UA30 LA25 OB35",
+  "Clap Push-ups":                  "MP100 UP70 AD70 TLA75 TM70 TLO50 SA60 UA35 LA30 OB25",
+  "Ring Push-ups":                  "MP100 UP70 AD65 TLA65 TM60 TLO45 SA60 UA35 LA30 OB30",
+  "Pseudo Planche Push-up":         "AD100 UP80 MP85 TLA70 TM70 TLO55 SA70 UA45 LA40 OB35 WF35",
+  "Dips":                           "MP100 UP50 AD70 TLA75 TM70 TLO55 SA40",      // forward lean: pec and triceps both high
+  "Ring Dips":                      "MP100 UP50 AD75 TLA80 TM75 TLO60 SA45 UA25 LA20",
+  "Assisted Dip Machine":           "TLA100 TM95 TLO70 MP80 UP40 AD65 SA30",      // upright machine dip: triceps lead
+  "Tricep Dips":                    "TLA100 TM95 TLO70 MP60 UP35 AD65 SA30",
   "Bench Dips":                     "TLA100 TM95 TLO65 AD60 MP45 UP30",
 
   // ── BACK: hip hinges ─────────────────────────────────────────────────────
@@ -154,91 +162,91 @@ const RAW = {
   "Superman":                       "LB100 GM55 MT40 LT40 PD30 ST30 BF30",
   // Rows: lats + mid/lower traps + rear delt, biceps assist, erectors hold
   // the hinge in free-standing versions (Fenwick 2009).
-  "Barbell Row":                    "LAT100 MT90 LT70 PD75 BL60 BS55 LB70 UT50 WF40",
-  "Pendlay Row":                    "LAT100 MT95 LT70 PD75 BL55 BS50 LB55 UT45 WF40",
-  "T-Bar Row":                      "LAT100 MT85 LT65 PD65 BL55 BS50 LB60 WF40",
-  "Dumbbell Row":                   "LAT100 MT75 LT60 PD65 BL55 BS50 OB30 LB30 WF40",
-  "Kroc Row":                       "LAT100 MT80 LT60 PD65 BL55 BS50 UT40 OB30 WF55",
-  "Meadows Row":                    "LAT100 MT80 LT60 PD70 BL60 BS50 OB30 WF45",
-  "Cable Row (Single Arm)":         "LAT100 MT75 LT60 PD60 BL55 BS50 OB35 WF35",
-  "Seated Cable Row":               "LAT100 MT90 LT70 PD70 BL55 BS50 LB35 WF40",
-  "Wide-Grip Cable Row":            "MT100 PD85 LT70 LAT65 BL40 BS35",
-  "Chest Supported Row":            "MT100 LAT90 LT75 PD70 BL50 BS45 WF30",
-  "Chest Supported Row Machine":    "MT100 LAT90 LT75 PD70 BL50 BS45 WF30",
-  "Seal Row":                       "MT100 LAT90 LT75 PD70 BL50 BS45 WF30",
-  "Machine Row":                    "MT100 LAT90 LT70 PD65 BL50 BS45",
-  "Iso-Lateral Row Machine":        "LAT100 MT80 LT60 PD60 BL55 BS50",
-  "Resistance Band Row":            "LAT100 MT80 LT60 PD55 BL50 BS45",
-  "Inverted Row":                   "MT100 LAT85 PD80 LT70 BS60 BL55 LB25 WF35",   // Youdas 2016
-  "Inverted Row (Supinated)":       "BS100 BL95 LAT85 MT90 PD65 LT60 WF35",
-  "TRX Curl":                       "BS100 BL85 LAT30 LB20 WF30",
+  "Barbell Row":                    "LAT100 MT90 LT70 PD75 INF45 BL60 BS55 BRA50 BRD40 LB70 UT50 WF40",
+  "Pendlay Row":                    "LAT100 MT95 LT70 PD75 INF45 BL55 BS50 BRA45 BRD40 LB55 UT45 WF40",
+  "T-Bar Row":                      "LAT100 MT85 LT65 PD65 INF45 BL55 BS50 BRA50 BRD40 LB60 WF40",
+  "Dumbbell Row":                   "LAT100 MT75 LT60 PD65 INF45 BL55 BS50 BRA50 BRD40 OB30 LB30 WF40",
+  "Kroc Row":                       "LAT100 MT80 LT60 PD65 INF40 BL55 BS50 BRA50 BRD45 UT40 OB30 WF55",
+  "Meadows Row":                    "LAT100 MT80 LT60 PD70 INF45 BL60 BS50 BRA50 BRD45 OB30 WF45",
+  "Cable Row (Single Arm)":         "LAT100 MT75 LT60 PD60 INF45 BL55 BS50 BRA50 BRD40 OB35 WF35",
+  "Seated Cable Row":               "LAT100 MT90 LT70 PD70 INF45 BL55 BS50 BRA50 BRD40 LB35 WF40",
+  "Wide-Grip Cable Row":            "MT100 PD85 LT70 LAT65 INF55 BL40 BS35 BRA40 BRD35",
+  "Chest Supported Row":            "MT100 LAT90 LT75 PD70 INF45 BL50 BS45 BRA45 BRD35 WF30",
+  "Chest Supported Row Machine":    "MT100 LAT90 LT75 PD70 INF45 BL50 BS45 BRA45 BRD35 WF30",
+  "Seal Row":                       "MT100 LAT90 LT75 PD70 INF45 BL50 BS45 BRA45 BRD35 WF30",
+  "Machine Row":                    "MT100 LAT90 LT70 PD65 INF40 BL50 BS45 BRA45 BRD35",
+  "Iso-Lateral Row Machine":        "LAT100 MT80 LT60 PD60 INF40 BL55 BS50 BRA50 BRD35",
+  "Resistance Band Row":            "LAT100 MT80 LT60 PD55 INF40 BL50 BS45 BRA45 BRD35",
+  "Inverted Row":                   "MT100 LAT85 PD80 LT70 INF50 BS60 BL55 BRA55 BRD45 LB25 WF35",   // Youdas 2016
+  "Inverted Row (Supinated)":       "BS100 BL95 BRA70 LAT85 MT90 PD65 LT60 INF40 BRD35 WF35",
+  "TRX Curl":                       "BS100 BL85 BRA70 BRD35 LAT30 LB20 WF30",
   "Shrugs":                         "UT100 MT45 WF40",
   "Smith Machine Shrug":            "UT100 MT45 WF35",
   // Vertical pulls (Youdas 2010: lats 117–130 % MVIC, biceps 78 % pull-up /
   // 96 % chin-up, lower trap, pec major 44–57 %, erectors ~40 %).
-  "Pull-ups":                       "LAT100 BL60 BS55 LT60 MT55 PD55 MP35 WF45 LA25",
-  "Wide-Grip Pull-ups":             "LAT100 BL50 BS45 LT60 MT60 PD60 MP30 WF45 LA25",
-  "Chin-ups":                       "LAT100 BS85 BL80 LT55 MT45 PD40 MP45 WF45 LA25",
-  "Neutral-Grip Pull-ups":          "LAT100 BL75 BS60 LT55 MT50 PD45 MP35 WF50 LA25",
-  "Towel Pull-ups":                 "WF100 LAT95 BL60 BS55 LT50 MT45 PD40 WE35",
-  "Muscle-up":                      "LAT100 BL70 BS65 LT60 MT55 MP65 UP45 AD60 TLA75 TM65 TLO55 WF55 LA35 UA30",
-  "Scapular Pull-ups":              "LT100 LAT70 MT50 WF40",
-  "Dead Hang":                      "WF100 LAT40 LT30 BL25",
-  "Lat Pulldown":                   "LAT100 BL55 BS50 LT55 MT50 PD45 WF35",
-  "Wide-Grip Lat Pulldown":         "LAT100 BL45 BS40 LT55 MT55 PD55 WF35",
-  "Reverse-Grip Lat Pulldown":      "LAT100 BS80 BL75 LT50 MT45 PD35 WF35",
-  "Neutral Grip Lat Pulldown":      "LAT100 BL65 BS55 LT55 MT50 PD40 WF40",
-  "Cable Straight-Arm Pulldown":    "LAT100 TLO55 PD40 MP45 LT35 UA20",
-  "Straight Arm Cable Pulldown":    "LAT100 TLO55 PD40 MP45 LT35 UA20",
-  "Face Pulls":                     "PD100 MT85 LT65 UT45 LD35 BL25",
-  "Banded Pull-apart":              "PD100 MT85 LT60 LD30",
+  "Pull-ups":                       "LAT100 BL60 BS55 BRA55 BRD55 LT60 MT55 PD55 INF60 MP35 WF45 LA25",
+  "Wide-Grip Pull-ups":             "LAT100 BL50 BS45 BRA45 BRD50 LT60 MT60 PD60 INF60 MP30 WF45 LA25",
+  "Chin-ups":                       "LAT100 BS85 BL80 BRA65 BRD45 LT55 MT45 PD40 INF55 MP45 WF45 LA25",
+  "Neutral-Grip Pull-ups":          "LAT100 BL75 BS60 BRA70 BRD60 LT55 MT50 PD45 INF55 MP35 WF50 LA25",
+  "Towel Pull-ups":                 "WF100 BRD70 LAT95 BL60 BS55 BRA60 LT50 MT45 PD40 INF45 WE35",
+  "Muscle-up":                      "LAT100 BL70 BS65 BRA60 BRD50 LT60 MT55 INF40 MP65 UP45 AD60 TLA75 TM65 TLO55 SA45 WF55 LA35 UA30",
+  "Scapular Pull-ups":              "LT100 LAT70 MT50 SA30 WF40 BRD30",
+  "Dead Hang":                      "WF100 BRD40 LAT40 LT30 BL25 BRA20 INF20",
+  "Lat Pulldown":                   "LAT100 BL55 BS50 BRA50 BRD40 LT55 MT50 PD45 INF45 WF35",
+  "Wide-Grip Lat Pulldown":         "LAT100 BL45 BS40 BRA40 BRD40 LT55 MT55 PD55 INF45 WF35",
+  "Reverse-Grip Lat Pulldown":      "LAT100 BS80 BL75 BRA65 BRD35 LT50 MT45 PD35 INF40 WF35",
+  "Neutral Grip Lat Pulldown":      "LAT100 BL65 BS55 BRA60 BRD45 LT55 MT50 PD40 INF45 WF40",
+  "Cable Straight-Arm Pulldown":    "LAT100 TLO55 PD40 INF30 MP45 SA40 LT35 UA20",
+  "Straight Arm Cable Pulldown":    "LAT100 TLO55 PD40 INF30 MP45 SA40 LT35 UA20",
+  "Face Pulls":                     "PD100 INF70 MT85 LT65 UT45 LD35 BL25 BRA20",
+  "Banded Pull-apart":              "PD100 INF65 MT85 LT60 LD30",
 
   // ── SHOULDERS ───────────────────────────────────────────────────────────
   // Overhead pressing: front delt leads, side delt ~70, upper trap and
   // triceps ~60; standing barbell adds trunk work (Saeterbakken 2013).
-  "Overhead Press":                 "AD100 LD70 UT65 TM65 TLA55 TLO50 UP35 PD20 LB30 UA25 OB25",
-  "Military Press":                 "AD100 LD70 UT60 TM65 TLA55 TLO50 UP35 LB25 UA25 OB25",
-  "Push Press":                     "AD100 LD65 UT70 TM60 TLA50 TLO45 VL55 RF45 VM45 GM40 GAS35 LB35",
-  "Smith Machine OHP":              "AD100 LD70 UT55 TM60 TLA50 TLO45 UP30",
-  "Machine Shoulder Press":         "AD100 LD65 UT40 TM55 TLA45 TLO40 UP25",
-  "Dumbbell Shoulder Press":        "AD100 LD75 UT55 TM60 TLA50 TLO45 UP30",
-  "Seated Dumbbell Press":          "AD100 LD75 UT55 TM60 TLA50 TLO45 UP30",
-  "Arnold Press":                   "AD100 LD75 PD40 UT50 TM55 TLA45 TLO40 UP30",
-  "Behind-the-Neck Press":          "LD100 AD85 PD45 UT65 TM60 TLA50 TLO45",
-  "Z Press":                        "AD100 LD70 UT55 TM60 TLA50 TLO45 UA55 LA40 OB40 LB45",
-  "Bradford Press":                 "AD100 LD85 PD40 UT60 TM40 TLA35 TLO30",
-  "Scaption":                       "AD100 LD85 UT60 LT20",
+  "Overhead Press":                 "AD100 LD70 UT65 SA45 TM65 TLA55 TLO50 UP35 PD20 INF25 LB30 UA25 OB25",
+  "Military Press":                 "AD100 LD70 UT60 SA45 TM65 TLA55 TLO50 UP35 INF25 LB25 UA25 OB25",
+  "Push Press":                     "AD100 LD65 UT70 SA40 TM60 TLA50 TLO45 VL55 RF45 VM45 GM40 GAS35 LB35",
+  "Smith Machine OHP":              "AD100 LD70 UT55 SA35 TM60 TLA50 TLO45 UP30",
+  "Machine Shoulder Press":         "AD100 LD65 UT40 SA30 TM55 TLA45 TLO40 UP25",
+  "Dumbbell Shoulder Press":        "AD100 LD75 UT55 SA45 TM60 TLA50 TLO45 UP30 INF25",
+  "Seated Dumbbell Press":          "AD100 LD75 UT55 SA45 TM60 TLA50 TLO45 UP30 INF25",
+  "Arnold Press":                   "AD100 LD75 PD40 INF30 UT50 SA45 TM55 TLA45 TLO40 UP30",
+  "Behind-the-Neck Press":          "LD100 AD85 PD45 INF40 UT65 SA40 TM60 TLA50 TLO45",
+  "Z Press":                        "AD100 LD70 UT55 SA45 TM60 TLA50 TLO45 UA55 LA40 OB40 LB45",
+  "Bradford Press":                 "AD100 LD85 PD40 INF30 UT60 SA40 TM40 TLA35 TLO30",
+  "Scaption":                       "AD100 LD85 UT60 SA50 INF40 LT20",
   // Lateral raises: side delt with front delt and upper trap assisting;
   // rear delt joins as the arm goes past the frontal plane.
-  "Lateral Raises":                 "LD100 AD45 PD30 UT55 MT20",
-  "Cable Lateral Raise":            "LD100 AD40 PD30 UT45",
-  "Machine Lateral Raise":          "LD100 AD35 PD25 UT40",
-  "Landmine Lateral Raise":         "LD100 AD50 PD25 UT50 OB20",
-  "Deltoid Fly":                    "LD100 PD60 AD30 UT45 MT25",
-  "Front Raises":                   "AD100 LD45 UP40 UT30 BS15",
-  "Cable Front Raise":              "AD100 LD45 UP40 UT30",
-  "Machine Front Raise":            "AD100 LD45 UP35 UT30",
+  "Lateral Raises":                 "LD100 AD45 PD30 INF35 UT55 SA25 MT20",
+  "Cable Lateral Raise":            "LD100 AD40 PD30 INF35 UT45 SA25",
+  "Machine Lateral Raise":          "LD100 AD35 PD25 INF30 UT40",
+  "Landmine Lateral Raise":         "LD100 AD50 PD25 INF30 UT50 SA30 OB20",
+  "Deltoid Fly":                    "LD100 PD60 INF45 AD30 UT45 MT25",
+  "Front Raises":                   "AD100 LD45 UP40 SA30 UT30 BS15",
+  "Cable Front Raise":              "AD100 LD45 UP40 SA30 UT30",
+  "Machine Front Raise":            "AD100 LD45 UP35 SA25 UT30",
   // Rear delt: horizontal abduction. Mid/lower traps and infraspinatus (not
   // on the figure) share the work (Botton 2013, Schoenfeld 2013).
-  "Bent-Over Rear Delt Raise":      "PD100 MT70 LT45 LD40 LB25",
-  "Rear Delt Flyes":                "PD100 MT70 LT45 LD40 LB25",
-  "Cable Rear Delt Fly":            "PD100 MT70 LT45 LD40",
-  "Machine Rear Delt Fly":          "PD100 MT70 LT45 LD40",
-  "Pec Deck Reverse Fly":           "PD100 MT70 LT45 LD40",
-  "Seated Cable Rear Delt Row":     "PD100 MT85 LT60 BL30 BS25",
-  "Dumbbell W Raise":               "PD100 MT80 LT65 LD30",
-  "Dumbbell Y Raise":               "LT100 PD70 LD55 AD30 UT30",              // Y = lower trap (Ekstrom 2003)
-  "Cable Y Raise":                  "LT100 PD70 LD55 AD30 UT30",
-  "Dumbbell 6-Ways":                "AD100 LD90 PD70 UT50 LT35",
-  "Upright Row":                    "LD100 UT90 AD60 PD40 BS40 BL35 WF30",    // Schoenfeld 2011 (wide grip)
-  "Barbell Upright Row":            "LD100 UT90 AD60 PD40 BS40 BL35 WF30",
-  "Cable Upright Row":              "LD100 UT85 AD55 PD40 BS40 BL35 WF30",
+  "Bent-Over Rear Delt Raise":      "PD100 INF60 MT70 LT45 LD40 LB25",
+  "Rear Delt Flyes":                "PD100 INF60 MT70 LT45 LD40 LB25",
+  "Cable Rear Delt Fly":            "PD100 INF60 MT70 LT45 LD40",
+  "Machine Rear Delt Fly":          "PD100 INF60 MT70 LT45 LD40",
+  "Pec Deck Reverse Fly":           "PD100 INF60 MT70 LT45 LD40",
+  "Seated Cable Rear Delt Row":     "PD100 INF55 MT85 LT60 BL30 BS25 BRA25",
+  "Dumbbell W Raise":               "PD100 INF65 MT80 LT65 LD30",
+  "Dumbbell Y Raise":               "LT100 PD70 INF45 LD55 AD30 UT30 SA45",              // Y = lower trap (Ekstrom 2003)
+  "Cable Y Raise":                  "LT100 PD70 INF45 LD55 AD30 UT30 SA45",
+  "Dumbbell 6-Ways":                "AD100 LD90 PD70 INF40 UT50 SA35 LT35",
+  "Upright Row":                    "LD100 UT90 AD60 PD40 INF25 BS40 BL35 BRA30 BRD30 WF30",    // Schoenfeld 2011 (wide grip)
+  "Barbell Upright Row":            "LD100 UT90 AD60 PD40 INF25 BS40 BL35 BRA30 BRD30 WF30",
+  "Cable Upright Row":              "LD100 UT85 AD55 PD40 INF25 BS40 BL35 BRA30 BRD30 WF30",
   // Inverted pressing: front delt + triceps, upper trap for the shrug at top.
-  "Pike Push-ups":                  "AD100 LD65 TM65 TLA55 TLO45 UT50 UP40 UA25",
-  "Pike Push-up Hold":              "AD100 LD50 TM65 TLA55 TLO45 UT40 UP30 UA20",
-  "Wall Handstand Push-ups":        "AD100 LD75 TM70 TLA60 TLO50 UT65 UP40 UA30 OB25",
-  "Handstand Push-ups":             "AD100 LD75 TM75 TLA65 TLO55 UT70 UP40 UA35 OB30 WF35",
-  "Handstand":                      "AD100 LD70 UT65 TM50 TLA40 TLO35 UA50 OB45 LA40 WF50 LB30",
+  "Pike Push-ups":                  "AD100 LD65 TM65 TLA55 TLO45 UT50 SA55 UP40 UA25",
+  "Pike Push-up Hold":              "AD100 LD50 TM65 TLA55 TLO45 UT40 SA45 UP30 UA20",
+  "Wall Handstand Push-ups":        "AD100 LD75 TM70 TLA60 TLO50 UT65 SA55 UP40 UA30 OB25",
+  "Handstand Push-ups":             "AD100 LD75 TM75 TLA65 TLO55 UT70 SA60 UP40 UA35 OB30 WF35",
+  "Handstand":                      "AD100 LD70 UT65 SA50 TM50 TLA40 TLO35 UA50 OB45 LA40 WF50 LB30",
 
   // ── ARMS: biceps ────────────────────────────────────────────────────────
   // Supinated curls load both heads; the short head leads in preacher /
@@ -246,30 +254,30 @@ const RAW = {
   // drag / Bayesian positions (shoulder extended, long head on stretch).
   // Hammer and reverse grips shift work to brachialis / brachioradialis,
   // credited to long head / wrist extensors on the figure.
-  "Barbell Curl":                   "BS100 BL90 WF35 AD20",
-  "Wide-Grip Barbell Curl":         "BS100 BL80 WF35 AD20",
-  "21s":                            "BS100 BL90 WF35 AD20",
-  "Dumbbell Curl":                  "BS100 BL90 WF35 AD15",
-  "Alternating Dumbbell Curl":      "BS100 BL90 WF35 AD15",
-  "Cable Curl":                     "BS100 BL85 WF30",
-  "Low Cable Curl":                 "BS100 BL85 WF30",
-  "High Cable Curl":                "BS100 BL65 WF25",
-  "Bicep Curl Machine":             "BS100 BL80 WF25",
-  "Resistance Band Curl":           "BS100 BL85 WF30",
-  "Preacher Curl":                  "BS100 BL70 WF30",
-  "Machine Preacher Curl":          "BS100 BL70 WF25",
-  "Spider Curl":                    "BS100 BL75 WF30",
-  "Concentration Curl":             "BS100 BL70 WF30",
-  "Waiter Curl":                    "BS100 BL70 WF40",
-  "Incline Dumbbell Curl":          "BL100 BS75 WF30",
-  "Bayesian Curl":                  "BL100 BS80 WF30",
-  "Drag Curl":                      "BL100 BS85 PD20 WF30",
-  "Hammer Curl":                    "BL100 BS75 WE70 WF35",
-  "Cable Hammer Curl":              "BL100 BS75 WE65 WF35",
-  "Cross Body Hammer Curl":         "BL100 BS60 WE65 WF35",
-  "Zottman Curl":                   "BL100 BS90 WE70 WF45",
-  "Reverse Barbell Curl":           "WE100 BL60 BS45 WF25",
-  "Reverse Curl":                   "WE100 BL60 BS45 WF25",
+  "Barbell Curl":                   "BS100 BL90 BRA70 BRD40 WF35 AD20",
+  "Wide-Grip Barbell Curl":         "BS100 BL80 BRA65 BRD35 WF35 AD20",
+  "21s":                            "BS100 BL90 BRA70 BRD40 WF35 AD20",
+  "Dumbbell Curl":                  "BS100 BL90 BRA70 BRD40 WF35 AD15",
+  "Alternating Dumbbell Curl":      "BS100 BL90 BRA70 BRD40 WF35 AD15",
+  "Cable Curl":                     "BS100 BL85 BRA65 BRD35 WF30",
+  "Low Cable Curl":                 "BS100 BL85 BRA65 BRD35 WF30",
+  "High Cable Curl":                "BS100 BL65 BRA55 BRD25 WF25",
+  "Bicep Curl Machine":             "BS100 BL80 BRA65 BRD30 WF25",
+  "Resistance Band Curl":           "BS100 BL85 BRA65 BRD35 WF30",
+  "Preacher Curl":                  "BS100 BL70 BRA75 BRD35 WF30",
+  "Machine Preacher Curl":          "BS100 BL70 BRA75 BRD35 WF30",
+  "Spider Curl":                    "BS100 BL75 BRA70 BRD35 WF30",
+  "Concentration Curl":             "BS100 BL70 BRA75 BRD30 WF30",
+  "Waiter Curl":                    "BS100 BL70 BRA65 BRD30 WF40",
+  "Incline Dumbbell Curl":          "BL100 BS75 BRA65 BRD45 WF30",
+  "Bayesian Curl":                  "BL100 BS80 BRA65 BRD40 WF30",
+  "Drag Curl":                      "BL100 BS85 BRA70 BRD40 PD20 WF30",
+  "Hammer Curl":                    "BL100 BS75 BRA90 BRD85 WF30 WE25",
+  "Cable Hammer Curl":              "BL100 BS75 BRA90 BRD80 WF30 WE25",
+  "Cross Body Hammer Curl":         "BL100 BS60 BRA95 BRD90 WF30 WE25",
+  "Zottman Curl":                   "BL100 BS90 BRA85 BRD80 WE55 WF45",
+  "Reverse Barbell Curl":           "BRD100 BRA90 WE60 BL55 BS40 WF20",
+  "Reverse Curl":                   "BRD100 BRA90 WE60 BL55 BS40 WF20",
 
   // ── ARMS: triceps ───────────────────────────────────────────────────────
   // All three heads extend the elbow; the long head also crosses the
@@ -295,14 +303,14 @@ const RAW = {
   "Tricep Kickback":                "TLA100 TM90 TLO85 PD25",
 
   // ── FOREARMS / GRIP ─────────────────────────────────────────────────────
-  "Wrist Curls":                    "WF100",
-  "Cable Wrist Curl":               "WF100",
-  "Reverse Wrist Curls":            "WE100",
-  "Cable Reverse Wrist Curl":       "WE100",
-  "Rice Bucket":                    "WF100 WE90",
-  "Plate Pinch":                    "WF100 WE30",
-  "Farmer's Walk":                  "WF100 UT75 MT40 OB50 UA35 LA30 LB45 GMD45 VL35 VM30 RF30 GAS35 SOL35",
-  "Suitcase Carry":                 "OB100 WF90 GMD65 UA50 LA45 LB55 UT55 VL25",
+  "Wrist Curls":                    "WF100 BRD20",
+  "Cable Wrist Curl":               "WF100 BRD20",
+  "Reverse Wrist Curls":            "WE100 BRD35",
+  "Cable Reverse Wrist Curl":       "WE100 BRD35",
+  "Rice Bucket":                    "WF100 WE90 BRD40",
+  "Plate Pinch":                    "WF100 WE30 BRD30",
+  "Farmer's Walk":                  "WF100 BRD45 UT75 MT40 OB50 UA35 LA30 LB45 GMD45 VL35 VM30 RF30 GAS35 SOL35 HF20",
+  "Suitcase Carry":                 "OB100 WF90 BRD40 GMD65 UA50 LA45 LB55 UT55 VL25 HF20",
 
   // ── CORE ────────────────────────────────────────────────────────────────
   // Trunk flexion (crunch family): rectus leads, obliques ~30–40 %.
@@ -313,41 +321,41 @@ const RAW = {
   "Machine Crunch":                 "UA100 LA85 OB30",
   "Cable Crunch":                   "UA100 LA85 OB40 LAT20",
   "Cable Crunch (Kneeling)":        "UA100 LA85 OB40 LAT20",
-  "Weighted Decline Crunch":        "UA100 LA85 OB40 RF35",
-  "Decline Sit-up":                 "UA100 LA90 OB40 RF60 ADD20",
-  "Weighted Sit-up":                "UA100 LA90 OB40 RF60 ADD20",
-  "Bicycle Crunch":                 "OB100 UA90 LA80 RF50",
-  "Reverse Crunch":                 "LA100 UA80 OB35 RF35",
-  "Lying Leg Raise":                "LA100 UA75 OB30 RF80",
-  "Hanging Knee Raise":             "LA100 UA80 OB45 RF60 LAT25 WF40",
-  "Hanging Leg Raises":             "LA100 UA85 OB50 RF75 LAT30 WF45",
-  "Toes to Bar":                    "LA100 UA90 OB50 RF75 LAT60 WF50",
-  "V-ups":                          "UA100 LA90 OB40 RF70",
-  "GHD Sit-up":                     "RF100 LA90 UA85 OB40 ADD30",
-  "L-Sit":                          "LA100 UA90 OB50 RF85 LAT40 TLO45 AD30 LT40",
-  "Hollow Body Hold":               "LA100 UA90 OB50 RF55 LAT20",
-  "Hollow Body Rock":               "LA100 UA90 OB55 RF55 LAT20",
-  "Dragon Flag":                    "UA100 LA100 OB70 LAT50 RF40 LB20",
-  "Ab Wheel Rollout":               "UA100 LA95 OB60 LAT50 TLO40",
-  "Ab Wheel (Kneeling)":            "UA100 LA90 OB55 LAT45 TLO35",
-  "Stir the Pot":                   "UA100 LA90 OB85 AD40 LAT25",
-  "Plank":                          "UA100 LA90 OB65 AD30 RF25 LB20 VL20",
-  "Weighted Plank":                 "UA100 LA90 OB65 AD35 RF25 LB20 VL20",
-  "Long-Lever Plank":               "UA100 LA100 OB75 AD40 LAT25",
-  "Plank Reach":                    "UA100 LA95 OB85 AD45",
-  "Dead Bug":                       "LA100 UA85 OB50 RF35",
+  "Weighted Decline Crunch":        "UA100 LA85 OB40 HF40 RF30",
+  "Decline Sit-up":                 "UA100 LA90 OB40 HF85 RF55 ADD20",
+  "Weighted Sit-up":                "UA100 LA90 OB40 HF85 RF55 ADD20",
+  "Bicycle Crunch":                 "OB100 UA90 LA80 HF55 RF40",
+  "Reverse Crunch":                 "LA100 UA80 OB35 HF45 RF25",
+  "Lying Leg Raise":                "HF100 LA85 UA70 OB30 RF60",
+  "Hanging Knee Raise":             "HF100 LA90 UA75 OB45 RF50 LAT25 WF40 BRD25",
+  "Hanging Leg Raises":             "HF100 LA90 UA80 OB50 RF60 LAT30 WF45 BRD30",
+  "Toes to Bar":                    "HF100 LA95 UA85 OB50 RF60 LAT60 WF50 BRD30",
+  "V-ups":                          "UA100 LA90 OB40 HF90 RF55",
+  "GHD Sit-up":                     "HF100 RF85 LA90 UA85 OB40 ADD30",
+  "L-Sit":                          "HF100 LA100 UA90 OB50 RF75 LAT40 TLO45 SA35 AD30 LT40",
+  "Hollow Body Hold":               "LA100 UA90 OB50 HF60 RF45 LAT20",
+  "Hollow Body Rock":               "LA100 UA90 OB55 HF60 RF45 LAT20",
+  "Dragon Flag":                    "UA100 LA100 OB70 LAT50 HF50 RF35 LB20",
+  "Ab Wheel Rollout":               "UA100 LA95 OB60 LAT50 SA45 TLO40 HF30",
+  "Ab Wheel (Kneeling)":            "UA100 LA90 OB55 LAT45 SA40 TLO35 HF25",
+  "Stir the Pot":                   "UA100 LA90 OB85 AD40 SA45 LAT25 HF25",
+  "Plank":                          "UA100 LA90 OB65 AD30 SA30 HF25 RF20 LB20 VL20",
+  "Weighted Plank":                 "UA100 LA90 OB65 AD35 SA30 HF25 RF20 LB20 VL20",
+  "Long-Lever Plank":               "UA100 LA100 OB75 AD40 SA40 HF30 LAT25",
+  "Plank Reach":                    "UA100 LA95 OB85 AD45 SA45 HF25",
+  "Dead Bug":                       "LA100 UA85 OB50 HF45 RF25",
   "Bird Dog":                       "GM100 LB90 OB55 UA50 LA45 ST30 PD30 LT30",   // Ekstrom 2007 / Youdas 2008
   "Side Plank":                     "OB100 UA40 LA35 GMD60 LB35 LD25",           // side bridge: glute med ~74 % MVIC (Ekstrom 2007)
   "Side Plank with Rotation":       "OB100 UA55 LA45 GMD55 AD30",
-  "Copenhagen Plank":               "ADD100 OB85 UA45 LA40 GMD45",
-  "Russian Twists":                 "OB100 UA60 LA50 RF25",
-  "Weighted Russian Twists":        "OB100 UA65 LA50 RF25",
+  "Copenhagen Plank":               "ADD100 OB85 UA45 LA40 GMD45 HF30",
+  "Russian Twists":                 "OB100 UA60 LA50 HF25",
+  "Weighted Russian Twists":        "OB100 UA65 LA50 HF25",
   "Woodchop":                       "OB100 UA60 LA45 AD35 GMD30 LB25",
   "Cable Woodchop (High)":          "OB100 UA60 LA45 AD35 GMD30 LB25",
   "Cable Woodchop (Low)":           "OB100 UA55 LA50 AD45 GM35 VL25",
   "Landmine Rotation":              "OB100 UA60 LA40 AD45",
   "Pallof Press":                   "OB100 UA60 LA55 AD30 GMD30 LB25",
-  "Burpees":                        "VL100 RF85 VM85 GM85 GAS60 SOL45 BF45 ST40 MP60 UP40 AD55 TLA50 TM45 TLO35 UA45 LA40 OB35 LB35 LD25",
+  "Burpees":                        "VL100 RF85 VM85 GM85 GAS60 SOL45 BF45 ST40 MP60 UP40 AD55 TLA50 TM45 TLO35 SA35 UA45 LA40 OB35 HF45 LB35 LD25",
 
   // ── LEGS: squats ────────────────────────────────────────────────────────
   // Squats: vasti lead, rectus femoris well below (Ema 2016), glute max
@@ -365,15 +373,15 @@ const RAW = {
   "Landmine Squat":                 "VL100 VM95 RF75 GM75 ADD50 ST20 LB35 AD30 UA30",
   "Bodyweight Squat":               "VL100 VM95 RF70 GM65 ADD45 ST20 BF20 LB35 GMD35 GAS25 SOL25",
   "Resistance Band Squat":          "VL100 VM95 RF70 GM75 GMD60 ADD40 ST20 LB35",
-  "Jump Squats":                    "VL100 RF90 VM90 GM90 GAS80 SOL60 BF45 ST40 LB40 ADD40 TIB30",
-  "Pistol Squat":                   "VL100 VM95 RF85 GM85 GMD70 ADD40 ST30 BF25 GAS40 SOL45 TIB40 LB35 UA30 OB30",
-  "Sissy Squat":                    "RF100 VL90 VM90 TIB30 GAS25 UA25",
+  "Jump Squats":                    "VL100 RF90 VM90 GM90 GAS80 SOL60 BF45 ST40 LB40 ADD40 TIB30 HF15",
+  "Pistol Squat":                   "VL100 VM95 RF85 GM85 GMD70 ADD40 ST30 BF25 GAS40 SOL45 TIB40 LB35 UA30 OB30 HF45",
+  "Sissy Squat":                    "RF100 VL90 VM90 HF30 TIB30 GAS25 UA25",
   "Spanish Squat":                  "RF100 VL95 VM95 GM35",
   "Wall Sit":                       "VL100 VM100 RF90 GM40 ADD35 TIB20 GAS15",
   "Sumo Squat":                     "ADD100 VM100 VL80 RF65 GM85 GMD65 ST30 LB40",
-  "Cossack Squat":                  "ADD100 VM95 VL85 RF70 GMD75 GM70 ST35 BF30",
+  "Cossack Squat":                  "ADD100 VM95 VL85 RF70 GMD75 GM70 ST35 BF30 HF20",
   "Lateral Lunge":                  "ADD100 VM90 VL85 RF70 GMD70 GM75 ST35 BF30",
-  "Curtsy Lunge":                   "GMD100 GM90 VL85 VM75 RF65 ADD70 ST35 BF35",
+  "Curtsy Lunge":                   "GMD100 GM90 VL85 VM75 RF65 ADD70 ST35 BF35 HF25",
   // Machines
   "Leg Press":                      "VL100 VM95 RF70 GM65 ADD50 ST25 BF20 GAS20",
   "Horizontal Leg Press":           "VL100 VM95 RF70 GM60 ADD45 ST25 BF20",
@@ -397,15 +405,15 @@ const RAW = {
   // Lunges, split squats, step-ups: glute max + quads, glute med for the
   // single-leg stance, hamstrings 40–50 in the rear-leg stretch (Andersen
   // 2014); step-up is the highest glute-max exercise in Simenz 2012.
-  "Walking Lunges":                 "VL100 RF85 VM85 GM90 GMD60 BF45 ST40 ADD45 GAS30 SOL30 LB30 OB20",
-  "Reverse Lunges":                 "GM100 VL90 VM85 RF70 GMD60 BF50 ST45 ADD45 LB25",
-  "Barbell Lunge":                  "VL100 RF85 VM85 GM90 GMD60 BF45 ST40 ADD45 LB45 UT25",
-  "Smith Machine Lunge":            "VL100 VM90 RF75 GM85 GMD50 BF40 ST35 ADD40",
-  "Bulgarian Split Squat":          "GM100 VL95 VM90 RF75 GMD65 BF50 ST45 ADD55 LB30 GAS25",
-  "Step-ups":                       "GM95 VL100 RF80 VM85 GMD65 BF40 ST35 GAS35 SOL30 ADD35",
-  "Barbell Step-ups":               "GM95 VL100 RF80 VM85 GMD65 BF40 ST35 GAS35 SOL30 ADD35 LB35 UT25",
-  "Box Jumps":                      "VL100 RF90 VM90 GM90 GAS85 SOL60 BF50 ST45 TIB40 LB30 UA25",
-  "Broad Jumps":                    "GM100 VL95 RF85 VM85 GAS80 SOL55 BF60 ST55 LB40 UA30 AD25",
+  "Walking Lunges":                 "VL100 RF85 VM85 GM90 GMD60 BF45 ST40 ADD45 GAS30 SOL30 LB30 OB20 HF30",
+  "Reverse Lunges":                 "GM100 VL90 VM85 RF70 GMD60 BF50 ST45 ADD45 LB25 HF30",
+  "Barbell Lunge":                  "VL100 RF85 VM85 GM90 GMD60 BF45 ST40 ADD45 LB45 UT25 HF30",
+  "Smith Machine Lunge":            "VL100 VM90 RF75 GM85 GMD50 BF40 ST35 ADD40 HF25",
+  "Bulgarian Split Squat":          "GM100 VL95 VM90 RF75 GMD65 BF50 ST45 ADD55 LB30 GAS25 HF30",
+  "Step-ups":                       "GM95 VL100 RF80 VM85 GMD65 BF40 ST35 GAS35 SOL30 ADD35 HF35",
+  "Barbell Step-ups":               "GM95 VL100 RF80 VM85 GMD65 BF40 ST35 GAS35 SOL30 ADD35 LB35 UT25 HF35",
+  "Box Jumps":                      "VL100 RF90 VM90 GM90 GAS85 SOL60 BF50 ST45 TIB40 LB30 UA25 HF25",
+  "Broad Jumps":                    "GM100 VL95 RF85 VM85 GAS80 SOL55 BF60 ST55 LB40 UA30 AD25 HF25",
   // Adductor / abductor machines: one muscle group each. Abduction does not
   // work the adductors; the old data said it did.
   "Adductor Machine":               "ADD100 VM25 GM10",
@@ -445,10 +453,10 @@ const RAW = {
   "Plyometric Calf Jumps":          "GAS100 SOL75 TIB40 VL35 RF30",
 
   // ── CALISTHENICS SKILLS ─────────────────────────────────────────────────
-  "Front Lever":                    "LAT100 LA90 UA85 OB50 LT60 PD55 TLO40 BL35 MP35 WF50 LB20",
-  "Back Lever":                     "MP100 UP60 AD80 TLO55 LAT60 LT40 LB60 GM50 UA45 LA40 WF45",
-  "Planche":                        "AD100 UP80 MP85 TM70 TLA60 TLO55 LT50 UA60 LA55 OB45 WF60 LB35 GM30",
-  "Human Flag":                     "OB100 LAT90 UA70 LA70 LD60 AD55 PD45 BS45 TLA50 TM45 TLO40 WF60 GMD55 GM35 LB40",
+  "Front Lever":                    "LAT100 LA90 UA85 OB50 LT60 PD55 INF40 TLO40 BL35 BRA30 BRD35 SA30 MP35 WF50 LB20",
+  "Back Lever":                     "MP100 UP60 AD80 TLO55 LAT60 SA35 LT40 INF30 LB60 GM50 UA45 LA40 WF45 BRD30",
+  "Planche":                        "AD100 UP80 MP85 SA75 TM70 TLA60 TLO55 LT50 UA60 LA55 OB45 WF60 BRD40 LB35 GM30",
+  "Human Flag":                     "OB100 LAT90 UA70 LA70 LD60 AD55 PD45 INF35 SA40 BS45 BRA40 BRD45 TLA50 TM45 TLO40 WF60 GMD55 GM35 LB40",
 };
 
 function parse(str, name) {
