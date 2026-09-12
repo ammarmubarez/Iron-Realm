@@ -30,7 +30,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.5.0";
+const APP_VERSION = "2.5.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -1161,6 +1161,7 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
     return `drop-shadow(0 0 ${(3 + t * 7).toFixed(1)}px ${getRankColor(lvl)})`;
   };
   const LINE = "#2a4a6a";
+  const SEAM = "#06080c", SEAM_W = 3.2;   // ~1 px at the 170 px the figure renders at
   const muscleGroups = _MUSCLE_PATHS[svgKey] || {};
   const bodyPaths    = _BODY_PATHS[svgKey]   || [];
   return (
@@ -1180,10 +1181,11 @@ function SvgFigure({ svgKey, levels, subLevels, showCardio, highlight }) {
                   strokeLinecap="round" strokeLinejoin="round"/>
               : <path key={i} d={p.d}
                   fill={p.fill === "none" ? "none" : color}
-                  stroke={p.fill === "none" ? LINE : "none"}
-                  strokeWidth={p.fill === "none" ? p.sw : undefined}
-                  strokeLinecap={p.fill === "none" ? "round" : undefined}
-                  strokeLinejoin={p.fill === "none" ? "round" : undefined}/>
+                  // Filled regions get a dark seam so adjacent muscles at the
+                  // same rank read as separate shapes instead of one silhouette.
+                  stroke={p.fill === "none" ? LINE : SEAM}
+                  strokeWidth={p.fill === "none" ? p.sw : SEAM_W}
+                  strokeLinecap="round" strokeLinejoin="round"/>
             )}
           </g>
         );
