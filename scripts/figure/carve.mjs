@@ -38,8 +38,8 @@ const flipSide = (side, x) => side === 'L' ? x : CX * 2 - x;   // mirror predica
 const mir = (side, pts) => pts;   // pieces are real geometry; no mirroring of points needed
 
 const CFG = {
-  maleFront:   { serrY: 396, serrTopX: [222, 286], braY: 404, brdY: [398, 476], hfY: [540, 650], hfTip: 592 },
-  femaleFront: { serrY: 374, serrTopX: [250, 292], braY: 396, brdY: [388, 462], hfY: [522, 618], hfTip: 566 },
+  maleFront:   { serrY: 396, serrTopX: [222, 286], braY: 370, brdY: [398, 476], hfY: [540, 650], hfTip: 592 },
+  femaleFront: { serrY: 374, serrTopX: [250, 292], braY: 360, brdY: [388, 462], hfY: [522, 618], hfTip: 566 },
   maleBack:    { infY: 352, infW: 62, brdY: [372, 470] },
   femaleBack:  { infY: 336, infW: 56, brdY: [352, 446] },
 };
@@ -49,6 +49,8 @@ for (const view of Object.keys(CFG)) {
   const front = /Front/.test(view);
   if (front) {
     const obl = await pieces(view, 'obliques'), ext = await pieces(view, 'wrist-extensors'), labs = await pieces(view, 'lower-abdominals'), band = await pieces(view, 'inner-thigh');
+    const bicAll = await pieces(view, 'long-head-bicep');
+    const bic = [bicAll[0], bicAll[bicAll.length - 1]];   // lateral lozenge of each arm
     out[view]['serratus-anterior'] = []; out[view]['brachialis'] = []; out[view]['brachioradialis'] = []; out[view]['hip-flexors'] = [];
     for (const [i, side] of [[0, 'L'], [1, 'R']]) {
       // serratus: top of the obliques piece above serrY, closed with a scalloped lower edge (bumps hang down)
@@ -56,13 +58,22 @@ for (const view of Object.keys(CFG)) {
       const a = r[r.length - 1], bb = r[0];
       const sc = scallop(a, bb, 3, side === 'L' ? -0.22 : 0.22);
       out[view]['serratus-anterior'].push(path([...r, ...sc]));
-      // brachialis: top cap of the extensor strip above braY
-      const rb = longest(runs(ext[i], p => p[1] < c.braY));
-      out[view]['brachialis'].push(path([...rb, ...bulge(rb[rb.length - 1], rb[0], side === 'L' ? 0.12 : -0.12)]));
-      // brachioradialis: band of the extensor strip between brdY[0] and brdY[1]
-      const rs = runs(ext[i], p => p[1] >= c.brdY[0] && p[1] <= c.brdY[1]);
-      const poly = []; rs.forEach((run, k) => { poly.push(...run); const nxt = rs[(k + 1) % rs.length]; poly.push(...bulge(run[run.length - 1], nxt[0], side === 'L' ? 0.1 : -0.1)); });
-      out[view]['brachioradialis'].push(path(poly));
+      // brachialis: the lateral-distal sliver of the biceps long head — the part of
+      // the brachialis that shows beside the distal biceps, down to the elbow.
+      const lh = bic[i];
+      const distal = lh.filter(p => p[1] >= c.braY);
+      const cxl = distal.reduce((a, p) => a + p[0], 0) / distal.length;
+      const rb = longest(runs(lh, p => p[1] >= c.braY && (side === 'L' ? p[0] < cxl - 1 : p[0] > cxl + 1)));
+      // close with a cut that bows INTO the biceps (toward its centre) so the
+      // wedge is wide enough to read at phone size
+      const pa = rb[rb.length - 1], pb = rb[0];
+      const ctrlX = (k) => (pa[0] + pb[0]) / 2 - (pb[1] - pa[1]) * k;
+      const kk = Math.abs(ctrlX(0.55) - cxl) < Math.abs(ctrlX(-0.55) - cxl) ? 0.55 : -0.55;
+      out[view]['brachialis'].push(path([...rb, ...bulge(pa, pb, kk)]));
+      // brachioradialis: the lateral strip from its origin high on the humerus down
+      // to brdY — it is the long lateral muscle of the elbow, not just a forearm band.
+      const rs = longest(runs(ext[i], p => p[1] <= c.brdY[1]));
+      out[view]['brachioradialis'].push(path([...rs, ...bulge(rs[rs.length - 1], rs[0], side === 'L' ? 0.1 : -0.1)]));
       // hip flexors: triangle between the lower-abs edge (this side), the midline and the sartorius band's medial edge
       const absPts = labs[0].filter(p => p[1] >= c.hfY[0] && p[1] <= c.hfTip && (side === 'L' ? p[0] < CX - 2 : p[0] > CX + 2)).sort((p, q) => p[1] - q[1]);
       const bandMed = band[i].filter(p => p[1] >= c.hfY[0] && p[1] <= c.hfY[1]);
