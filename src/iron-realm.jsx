@@ -30,7 +30,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.5.1";
+const APP_VERSION = "2.5.2";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -7285,14 +7285,14 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
   // 3-layer tree: super-group → muscle group → sub-muscles (SVG IDs)
   const STAT_TREE = [
     { key: "upper", label: "Upper Body", color: "#e85d4a", glyph: "UB", groups: [
-      { key: "chest",     subs: ["upper-pectoralis","mid-lower-pectoralis"] },
+      { key: "chest",     subs: ["upper-pectoralis","mid-lower-pectoralis","serratus-anterior"] },
       { key: "back",      subs: ["lats","lowerback","upper-trapezius","traps-middle","lower-trapezius"] },
-      { key: "shoulders", subs: ["anterior-deltoid","lateral-deltoid","posterior-deltoid"] },
+      { key: "shoulders", subs: ["anterior-deltoid","lateral-deltoid","posterior-deltoid","infraspinatus"] },
     ]},
     { key: "arms", label: "Arms", color: "#4a9eff", glyph: "AR", groups: [
-      { key: "bicep",    subs: ["long-head-bicep","short-head-bicep"] },
+      { key: "bicep",    subs: ["long-head-bicep","short-head-bicep","brachialis"] },
       { key: "tricep",   subs: ["long-head-triceps","lateral-head-triceps","medial-head-triceps"] },
-      { key: "forearms", subs: ["wrist-flexors","wrist-extensors"] },
+      { key: "forearms", subs: ["wrist-flexors","wrist-extensors","brachioradialis"] },
     ]},
     { key: "lower", label: "Lower Body", color: "#a855f7", glyph: "LB", groups: [
       { key: "legs",   subs: ["outer-quadricep","rectus-femoris","inner-quadricep","inner-thigh","lateral-hamstrings","medial-hamstrings"] },
@@ -7300,7 +7300,7 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
       { key: "calves", subs: ["gastrocnemius","soleus","tibialis"] },
     ]},
     { key: "core", label: "Core", color: "#22c55e", glyph: "CR", groups: [
-      { key: "core", subs: ["upper-abdominals","lower-abdominals","obliques"] },
+      { key: "core", subs: ["upper-abdominals","lower-abdominals","obliques","hip-flexors"] },
     ]},
   ];
 
