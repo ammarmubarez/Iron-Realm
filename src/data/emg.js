@@ -93,20 +93,20 @@ const RAW = {
   "Smith Machine Bench Press":      "MP100 UP70 AD55 TLA60 TM55 TLO40 SA25",     // fixed path: less stabiliser, more triceps
   "Chest Press Machine":            "MP100 UP70 AD55 TLA55 TM50 TLO35 SA25",
   "Converging Chest Press Machine": "MP100 UP75 AD55 TLA50 TM45 TLO30 SA30",
-  "Floor Press":                    "MP90 UP55 AD50 TLA100 TM90 TLO60",      // half ROM removes the pec stretch; lockout is triceps
-  "Hex Press":                      "MP100 UP70 AD45 TLA60 TM55 TLO40",
-  "Squeeze Press":                  "MP100 UP75 AD45 TLA55 TM50 TLO35",
-  "Svend Press":                    "MP100 UP80 AD40 TM20",                  // isometric squeeze; almost no elbow extension
+  "Floor Press":                    "MP90 UP55 AD50 TLA100 TM90 TLO60 SA15",      // half ROM removes the pec stretch; lockout is triceps
+  "Hex Press":                      "MP100 UP70 AD45 TLA60 TM55 TLO40 SA25",
+  "Squeeze Press":                  "MP100 UP75 AD45 TLA55 TM50 TLO35 SA25",
+  "Svend Press":                    "MP100 UP80 AD40 SA30 TM20",                  // isometric squeeze; almost no elbow extension
   "Incline Bench Press":            "UP100 MP65 AD85 TLA50 TM45 TLO35 SA40",
   "Incline Dumbbell Press":         "UP100 MP65 AD85 TLA40 TM35 TLO30 SA40",
   "Incline Chest Press Machine":    "UP100 MP65 AD80 TLA45 TM40 TLO30 SA35",
   "Landmine Press":                 "UP100 MP60 AD90 TLA55 TM50 TLO40 SA55 UA20 OB25",
   "Landmine Press (Single)":        "UP95 MP55 AD100 TLA55 TM50 TLO40 SA55 OB40 UA25",
-  "Decline Bench Press":            "MP100 UP50 AD40 TLA55 TM50 TLO40",
-  "Decline Dumbbell Press":         "MP100 UP50 AD40 TLA45 TM40 TLO30",
-  "Decline Chest Press Machine":    "MP100 UP50 AD40 TLA50 TM45 TLO35",
-  "Close-Grip Bench Press":         "TLA100 TM95 TLO75 MP80 UP55 AD60",     // narrow grip: triceps lead, pec still high (Lehman 2005)
-  "Close-Grip Bench":               "TLA100 TM95 TLO75 MP80 UP55 AD60",
+  "Decline Bench Press":            "MP100 UP50 AD40 TLA55 TM50 TLO40 SA20",
+  "Decline Dumbbell Press":         "MP100 UP50 AD40 TLA45 TM40 TLO30 SA20",
+  "Decline Chest Press Machine":    "MP100 UP50 AD40 TLA50 TM45 TLO35 SA20",
+  "Close-Grip Bench Press":         "TLA100 TM95 TLO75 MP80 UP55 AD60 SA20",     // narrow grip: triceps lead, pec still high (Lehman 2005)
+  "Close-Grip Bench":               "TLA100 TM95 TLO75 MP80 UP55 AD60 SA20",
   // Flyes and cable work: shoulder adduction, elbow fixed → pec + front delt,
   // essentially no triceps; the elbow-flexed hold puts a little on the biceps.
   "Dumbbell Flyes":                 "MP100 UP75 AD45 SA25 BS20",
@@ -140,7 +140,7 @@ const RAW = {
   "Ring Dips":                      "MP100 UP50 AD75 TLA80 TM75 TLO60 SA45 UA25 LA20",
   "Assisted Dip Machine":           "TLA100 TM95 TLO70 MP80 UP40 AD65 SA30",      // upright machine dip: triceps lead
   "Tricep Dips":                    "TLA100 TM95 TLO70 MP60 UP35 AD65 SA30",
-  "Bench Dips":                     "TLA100 TM95 TLO65 AD60 MP45 UP30",
+  "Bench Dips":                     "TLA100 TM95 TLO65 AD60 MP45 UP30 SA20",
 
   // ── BACK: hip hinges ─────────────────────────────────────────────────────
   // Deadlift (Escamilla 2002): erectors and glutes lead, hamstrings and quads
@@ -180,8 +180,8 @@ const RAW = {
   "Inverted Row":                   "MT100 LAT85 PD80 LT70 INF50 BS60 BL55 BRA55 BRD45 LB25 WF35",   // Youdas 2016
   "Inverted Row (Supinated)":       "BS100 BL95 BRA70 LAT85 MT90 PD65 LT60 INF40 BRD35 WF35",
   "TRX Curl":                       "BS100 BL85 BRA70 BRD35 LAT30 LB20 WF30",
-  "Shrugs":                         "UT100 MT45 WF40",
-  "Smith Machine Shrug":            "UT100 MT45 WF35",
+  "Shrugs":                         "UT100 MT45 WF40 BRD20",
+  "Smith Machine Shrug":            "UT100 MT45 WF35 BRD20",
   // Vertical pulls (Youdas 2010: lats 117–130 % MVIC, biceps 78 % pull-up /
   // 96 % chin-up, lower trap, pec major 44–57 %, erectors ~40 %).
   "Pull-ups":                       "LAT100 BL60 BS55 BRA55 BRD55 LT60 MT55 PD55 INF60 MP35 WF45 LA25",

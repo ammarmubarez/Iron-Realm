@@ -6,11 +6,12 @@
 // production can run with script-src 'self' only.
 //
 // GitHub Pages cannot send HTTP headers, so the policy ships as a <meta> tag.
-// Netlify additionally sends it as a header (netlify.toml). Capacitor loads the
-// same index.html from its local scheme, where 'self' is the app bundle.
+// Capacitor loads the same index.html from its local scheme, where 'self' is
+// the app bundle.
 //
-// Directives that only work as headers (frame-ancestors, report-uri) are
-// omitted from the meta tag and set in netlify.toml.
+// Directives that only work as headers (frame-ancestors, report-uri) cannot be
+// expressed in a meta tag; if the site ever moves to a host that supports
+// custom headers, add them there.
 const fs = require("fs");
 const path = require("path");
 

@@ -49,29 +49,29 @@ In the dashboard, **Authentication → Providers**:
 
 **Authentication → URL Configuration**:
 
-- **Site URL**: `http://localhost:3000` for dev. Add your Netlify domain
-  later.
+- **Site URL**: `http://localhost:3000` for dev; `https://ammarmubarez.github.io/Iron-Realm`
+  for production. Add `capacitor://localhost` and `https://localhost` to the
+  redirect allow-list for the native apps.
 
 ### 5. Verify
 
 In **Database → Tables** you should see `profiles`, `friend_requests`,
 `friendships`. RLS is on (the lock icon is filled). Done.
 
-### 6. Netlify (production deploys)
+### 6. GitHub Pages (production deploys)
 
-`.env.local` only works on your dev machine. Netlify builds the app on its
-own servers and never sees `.env.local` (it's gitignored). You must add the
-same two env vars in the Netlify dashboard:
+`.env.local` only works on your dev machine — it is gitignored, so the
+GitHub Actions build (`.github/workflows/deploy.yml`) never sees it. The
+workflow reads the two values from repository secrets instead:
 
-1. Netlify → your site → **Site settings → Environment variables**.
+1. GitHub → your repo → **Settings → Secrets and variables → Actions**.
 2. Add `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` with the
    same values you put in `.env.local`.
-3. **Deploys → Trigger deploy → Clear cache and deploy** so the new build
-   picks them up.
+3. Push to `main` (or re-run the last workflow) so the new build picks them up.
 
 Tip: you can use a different Supabase project for production vs. local dev
-to keep test data separate. Just paste the prod project's keys into Netlify
-and the dev project's keys into `.env.local`.
+to keep test data separate. Put the prod project's keys in the repository
+secrets and the dev project's keys in `.env.local`.
 
 ## Schema overview
 

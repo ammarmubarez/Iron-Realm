@@ -16,7 +16,7 @@ for the iOS build.
 | **Data export** (GDPR/CCPA portability) | Settings → Data backup → Export |
 | App is **self-contained**, not a remote web view (Apple 4.2 / 2.5.2) | `capacitor.config.ts` bundles `build/`; `npm run build:native` |
 | **No third-party trackers/SDKs** → simplest App Privacy answers | No analytics, no ads, fonts bundled |
-| **No inline/remote script**, CSP, HSTS, no-referrer | `scripts/security/postbuild-csp.js`, `netlify.toml` |
+| **No inline/remote script**, CSP, no-referrer | `scripts/security/postbuild-csp.js` (meta CSP; GitHub Pages cannot send headers) |
 | Server-side authorisation (RLS + column protection) | `supabase/migrations/011_security_hardening.sql` — **run it** |
 | Password minimum 8 chars, username rules | `AuthPanel`, `validateUsername`, DB CHECK |
 | Version string in Settings | Legal section |
