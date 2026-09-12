@@ -6,7 +6,7 @@ import { SVG_TO_STAT, EXERCISE_DB, MACHINE_NAME_PATTERNS, BAR_NAME_PATTERNS, BEN
 import { MALE_PROGRAMS, FEMALE_PROGRAMS } from "./data/programs";
 import { OVERALL_THRESHOLDS, MUSCLE_THRESHOLDS, OVERALL_MILESTONE_NAMES, OVERALL_MILESTONE_DESC, MUSCLE_MILESTONE_NAMES, MUSCLE_MILESTONE_DESC, MET_VALUES, ATROPHY,
   WORK_KCAL_PER_KG_REP, STIM, effortFactor, loadFactor, repFactor, volumeFactor, ageDetrainingFactor, muscleDetrainingFactor } from "./data/progression";
-import { MUSCLE_META, _ID_TO_MUSCLE, ANGLE_GROUPS, SELECTION_RULES, _ANGLE_GROUP_LABELS, _CUSTOM_SUB_OPTIONS } from "./data/muscles";
+import { MUSCLE_META, _ID_TO_MUSCLE, _CUSTOM_SUB_OPTIONS } from "./data/muscles";
 import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTIVITY_LEVELS, DAILY_RITUALS } from "./data/profile";
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
 import { DAILY_TIPS } from "./data/tips";
@@ -30,7 +30,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.5.4";
+const APP_VERSION = "2.6.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -1591,111 +1591,184 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
 
 
 
-function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, diffFilter = null, travelEquipment = null) {
-  let allDB = [...(EXERCISE_DB[muscle] || []), ...(customExercises||[]).filter(e=>e.primary===muscle)];
+// ─── SESSION RANDOMIZER (v2.6) ───────────────────────────────────────────────
+// Picks exercises by muscle REGION from the activation profiles instead of
+// hard-coded name lists (several of which named exercises that were not in the
+// database, so those slots fell back to random picks), and prescribes a dose:
+//
+//  · Target: 8–10 hard sets for the chosen group in the session (per-session
+//    hypertrophy stops climbing around 8–10 direct sets — Schoenfeld 2017,
+//    Baz-Valle 2022), scaled down if the group already has ≥ 12 credited sets
+//    this week (20/wk is the plateau) or if another group in the same session
+//    already loads it indirectly (bench work before a triceps block).
+//  · Coverage: each slot wants a lift whose prime mover is a different region
+//    of the group (chest: sternal, clavicular; biceps: short head, long head,
+//    brachialis; core: rectus, hip flexors, obliques …) so no head is skipped.
+//  · Effort: 1–2 RIR on every set. Reps: compounds 6–10, isolation 10–15,
+//    bodyweight 8–15, holds 30–45 s. Rest: 2–3 min compounds, 90 s isolation.
+//
+// Returns the picked exercises, each with an `rx` prescription and the
+// group's projected total so the UI can show "chest ≈ 9 hard sets".
+const SESSION_SLOTS = {
+  chest:     ["mid-lower-pectoralis", "upper-pectoralis", "*"],
+  back:      ["lats", "traps-middle", "*"],
+  shoulders: ["anterior-deltoid", "lateral-deltoid", "posterior-deltoid"],
+  bicep:     ["short-head-bicep", "long-head-bicep", "brachialis"],
+  tricep:    ["long-head-triceps", "lateral-head-triceps", "*"],
+  forearms:  ["wrist-flexors", "brachioradialis", "wrist-extensors"],
+  legs:      ["outer-quadricep", "medial-hamstrings", "gluteus-maximus"],
+  glutes:    ["gluteus-maximus", "gluteus-medius", "*"],
+  core:      ["upper-abdominals", "hip-flexors", "obliques"],
+  calves:    ["gastrocnemius", "soleus", "tibialis"],
+};
+const SESSION_TARGET = { base: 10, novice: 8, min: 4, weeklyPlateau: 20 };
+
+// Multi-joint lifts get the heavy rep range and long rests; single-joint work
+// (flyes, raises, curls, extensions, pushdowns, crunches, holds) does not — the
+// activation profile alone cannot tell them apart, since a fly still lights up
+// the front delt.
+const ISOLATION_RE = /fly|flye|raise|curl|extension|ext\b|pushdown|kickback|crunch|plank|hold|sit-up|twist|leg raise|knee raise|pinch|hang|shrug|pull-apart|pullover|pull-through|bridge|clamshell|hydrant|donkey kick|band walk|abduct|adduct|calf|tibialis|wrist|rice|woodchop|pallof|dead bug|bird dog|superman|rollout|ab wheel|l-sit|v-ups|dragon flag|toes to bar|hollow|copenhagen|stir the pot|scaption|6-ways|face pull|reverse hyper|back extension|hyperextension|good morning|jefferson|nordic|glute ham|sissy|spanish|wall sit|frog pump|svend|squeeze|hex press/i;
+function isCompoundLift(ex) {
+  if (ex.type === "cardio" || ex.iso) return false;
+  if (ISOLATION_RE.test(ex.name)) return false;
+  return creditList(ex, ex.primary).filter(([, c]) => c >= 0.35).length >= 2;
+}
+function prescriptionFor(ex, sets) {
+  if (ex.iso) return { sets, reps: "30–45 s", rir: "1–2 RIR", restSec: 90 };
+  if (ex.type === "calisthenics") return { sets, reps: "8–15", rir: "1–2 RIR", restSec: 120 };
+  if (isCompoundLift(ex)) return { sets, reps: "6–10", rir: "1–2 RIR", restSec: 150 };
+  return { sets, reps: "10–15", rir: "1–2 RIR", restSec: 90 };
+}
+// Credited hard sets a group has banked in the trailing 7 days.
+function weeklyCreditedSets(muscle, workouts) {
+  const cutoff = Date.now() - 7 * 86400000;
+  let total = 0;
+  for (const w of workouts || []) {
+    if (!w.date || w.date < cutoff || !w.exercise || w.exercise.type === "cardio") continue;
+    const c = statCredits(w.exercise, w.muscle)[muscle] || 0;
+    total += (w.sets || (w.sets_detail || []).length || 1) * c;
+  }
+  return total;
+}
+
+function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, diffFilter = null, travelEquipment = null, priorPlan = []) {
+  let allDB = [...(EXERCISE_DB[muscle] || []), ...(customExercises || []).filter(e => e.primary === muscle)]
+    .filter(e => e.type !== "cardio");
   if (!allDB.length) return [];
   // Travel mode: hard-filter to exercises doable with the equipment on hand.
-  // A muscle with zero matches returns an empty plan — surfacing exercises
-  // the user can't perform is worse than skipping the muscle.
   if (Array.isArray(travelEquipment)) {
     allDB = allDB.filter(e => isTravelFriendly(e, travelEquipment));
     if (!allDB.length) return [];
   }
-  // Apply difficulty filter — fall back to next difficulty up if slot would be empty
   if (diffFilter && diffFilter !== "all") {
-    // const ORDER unused
     const filtered = allDB.filter(e => e.diff === diffFilter);
-    // Only apply filter if it would leave enough exercises; otherwise keep all
-    allDB = filtered.length >= 2 ? filtered : allDB;
+    allDB = filtered.length >= 3 ? filtered : allDB;
   }
 
-  const now = Date.now();
-  const HR = 3600000; // ms per hour
-
-  // Build a map of: exerciseName -> most recent date performed
-  // Source: NSCA guidelines — 48–72hr recovery window for hypertrophy
-  // Colquhoun et al. (2018): muscle protein synthesis peaks 24–48hr post-training
+  const now = Date.now(), HR = 3600000;
+  // Most recent date each exercise was performed (any group — a bench logged
+  // under chest still counts as "just done" for a triceps session).
   const lastPerformed = {};
-  (workouts||[]).filter(w => w.muscle === muscle || w.exercise?.primary === muscle)
-    .forEach(w => {
-      const name = w.exerciseName || w.exercise?.name;
-      if (!name) return;
-      if (!lastPerformed[name] || w.date > lastPerformed[name])
-        lastPerformed[name] = w.date || 0;
-    });
-
-  // Recovery penalty based on hours since last performed
-  // < 48hr  → -65 (muscle still in active protein synthesis / repair phase)
-  // 48–72hr → -25 (approaching recovered but not fully adapted)
-  // > 72hr  → 0   (fully recovered — no penalty)
-  // This replaces the arbitrary "last 3 sessions" UX heuristic
-  const recoveryPenalty = (exName) => {
-    const last = lastPerformed[exName];
-    if (!last) return 0;
-    const hrsSince = (now - last) / HR;
-    if (hrsSince < 48)  return -65;
-    if (hrsSince < 72)  return -25;
-    return 0;
+  (workouts || []).forEach(w => {
+    const name = w.exerciseName || w.exercise?.name;
+    if (name && (!lastPerformed[name] || w.date > lastPerformed[name])) lastPerformed[name] = w.date || 0;
+  });
+  // Recovery penalty: MPS is still elevated 24–48 h after a session (NSCA;
+  // Colquhoun 2018) — repeat the movement pattern, not the same lift.
+  const recoveryPenalty = (name) => {
+    const last = lastPerformed[name]; if (!last) return 0;
+    const h = (now - last) / HR;
+    return h < 48 ? -65 : h < 72 ? -25 : 0;
+  };
+  const goalCfg = GOAL_CONFIG[goal] || { compoundBias: 1.0, isoBias: 1.0, calistBias: 1.0 };
+  const diffMap = { beginner: 1, intermediate: 2, advanced: 3, elite: 4 };
+  const userTier = Math.min(4, Math.ceil((overallLevel || 1) / 10));
+  const score = (ex, region) => {
+    let s = 100 + recoveryPenalty(ex.name);
+    s -= Math.abs(userTier - (diffMap[ex.diff] || 2)) * 10;
+    if (ex.type === "calisthenics") s *= goalCfg.calistBias;
+    else if (isCompoundLift(ex))    s *= goalCfg.compoundBias;
+    else                            s *= goalCfg.isoBias;
+    // prefer the lift that loads THIS group hardest, and the slot's region hardest
+    s += 30 * (statCredits(ex, ex.primary)[muscle] || 0);
+    if (region && region !== "*") s += 0.2 * ((emgFor(ex) || {})[region] || 0);
+    return s + Math.random() * 20;
   };
 
-  const goalCfg = GOAL_CONFIG[goal] || { compoundBias:1.0, isoBias:1.0, calistBias:1.0, cardioBias:1.0 };
-
-  const score = (ex) => {
-    let s = 100;
-
-    // Recovery-based penalty (science: NSCA, Schoenfeld 2010)
-    s += recoveryPenalty(ex.name);
-
-    // Difficulty matching — penalise mismatch between user level and exercise tier
-    const diffMap = { beginner:1, intermediate:2, advanced:3, elite:4 };
-    const userTier = Math.min(4, Math.ceil((overallLevel||1) / 10));
-    const exTier = diffMap[ex.diff] || 2;
-    s -= Math.abs(userTier - exTier) * 10;
-
-    // Goal-based bias (compound vs isolation weighting)
-    // Source: Kraemer & Ratamess (2004) — exercise selection should match training goal
-    const svgCount = ex.svgTargets ? ex.svgTargets.length : 1;
-    const isCompound = svgCount >= 3;
-    const isCali  = ex.type === "calisthenics";
-    const isCardio = ex.type === "cardio";
-    if (isCali)          s *= goalCfg.calistBias;
-    else if (isCardio)   s *= goalCfg.cardioBias;
-    else if (isCompound) s *= goalCfg.compoundBias;
-    else                 s *= goalCfg.isoBias;
-
-    // Small random variance to prevent identical results on regenerate
-    s += Math.random() * 20;
-    return s;
+  // ── pick one lift per region slot ──
+  const slots = SESSION_SLOTS[muscle] || ["*", "*", "*"];
+  const selected = [], used = new Set();
+  const pickFrom = (cands, region) => {
+    const best = cands.filter(e => !used.has(e.name)).sort((x, y) => score(y, region) - score(x, region))[0];
+    if (best) { selected.push(best); used.add(best.name); }
+    return !!best;
   };
-
-  const rules = SELECTION_RULES[muscle];
-  const angleGroups = ANGLE_GROUPS[muscle] || {};
-  const selected = [];
-  const usedNames = new Set();
-
-  if (rules) {
-    for (const [angle, count] of rules.slots) {
-      const builtInNames = angleGroups[angle] || [];
-      const builtIn = builtInNames.map(name => allDB.find(e => e.name === name)).filter(e => e && !usedNames.has(e.name));
-      const customs = allDB.filter(e => e.custom && e.angleGroup === angle && !usedNames.has(e.name));
-      const candidates = [...builtIn, ...customs].sort((a,b) => score(b) - score(a));
-      candidates.slice(0, count).forEach(e => { selected.push(e); usedNames.add(e.name); });
+  for (const region of slots) {
+    if (region === "*" || !pickFrom(allDB.filter(e => ((emgFor(e) || {})[region] || 0) >= 85), region)) {
+      pickFrom(allDB, "*");   // no lift leads that region under the current filters — take the best remaining
     }
-    const remaining = rules.total - selected.length;
-    if (remaining > 0) {
-      allDB.filter(e => !usedNames.has(e.name)).sort((a,b) => score(b)-score(a)).slice(0, remaining)
-        .forEach(e => { selected.push(e); usedNames.add(e.name); });
-    }
-  } else {
-    allDB.sort((a,b) => score(b)-score(a)).slice(0,4).forEach(e => selected.push(e));
   }
+  // compounds first: heavy multi-joint work before isolation
+  selected.sort((x, y) => (isCompoundLift(y) ? 1 : 0) - (isCompoundLift(x) ? 1 : 0));
 
-  selected.sort((a,b) => (b.svgTargets?.length||1) - (a.svgTargets?.length||1));
-  return selected;
+  // ── dose ──
+  const weekly = weeklyCreditedSets(muscle, workouts);
+  const indirect = priorPlan.reduce((sum, e) => sum + (e.rx?.sets || 0) * (statCredits(e, e.primary)[muscle] || 0), 0);
+  let target = userTier <= 1 ? SESSION_TARGET.novice : SESSION_TARGET.base;
+  target = Math.min(target, Math.max(SESSION_TARGET.min, SESSION_TARGET.weeklyPlateau - weekly));
+  // Trained this group hard within 48 h? Protein synthesis from that session
+  // is still running; a full dose on top is mostly junk volume. Halve it.
+  const lastHard = (workouts || []).reduce((t, w) => (w.exercise && (statCredits(w.exercise, w.muscle)[muscle] || 0) >= 0.65 && w.date > t) ? w.date : t, 0);
+  const hoursSince = lastHard ? (now - lastHard) / HR : Infinity;
+  if (hoursSince < 48) target = Math.max(SESSION_TARGET.min, Math.round(target / 2));
+  const direct = Math.max(SESSION_TARGET.min, target - indirect);
+  const credits = selected.map(e => statCredits(e, e.primary)[muscle] || 0);
+  const sets = selected.map(() => 3);
+  const projected = () => sets.reduce((sum, n, i) => sum + n * credits[i], 0);
+  // add sets to the hardest-loading lifts until the target is met (cap 4 each),
+  // trim the weakest if we overshoot by more than a set
+  let guard = 0;
+  while (projected() < direct - 0.5 && guard++ < 6) {
+    const i = credits.map((c, k) => [c, k]).filter(([, k]) => sets[k] < 4).sort((x, y) => y[0] - x[0])[0];
+    if (!i) break; sets[i[1]] += 1;
+  }
+  while (projected() > direct + 1.5 && sets.some(n => n > 2)) {
+    const i = credits.map((c, k) => [c, k]).filter(([, k]) => sets[k] > 2).sort((x, y) => x[0] - y[0])[0];
+    sets[i[1]] -= 1;
+  }
+  const total = projected() + indirect;
+  return selected.map((ex, i) => ({ ...ex, rx: { ...prescriptionFor(ex, sets[i]), credit: credits[i], group: muscle,
+    projected: Math.round(total * 10) / 10, indirect: Math.round(indirect * 10) / 10, weeklyBefore: Math.round(weekly * 10) / 10,
+    recentHours: Number.isFinite(hoursSince) ? Math.round(hoursSince) : null } }));
 }
 
-
-
+// Shared by both randomizer screens: build the groups in order so later groups
+// see the indirect work earlier ones already provide (bench → triceps).
+function buildRandomPlan(muscles, st, settings, diff) {
+  const acc = [];
+  for (const m of muscles) {
+    const plan = generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, diff,
+      settings?.travelMode ? (settings?.travelEquipment || []) : null, acc);
+    acc.push(...plan);
+  }
+  return acc;
+}
+// "3 × 8–12 · 1–2 RIR · rest 2:30"
+function rxLine(rx) {
+  if (!rx) return null;
+  const m = Math.floor(rx.restSec / 60), sec = rx.restSec % 60;
+  return `${rx.sets} × ${rx.reps} · ${rx.rir} · rest ${m}:${String(sec).padStart(2, "0")}`;
+}
+// Plan header: "CHEST ≈ 9 hard sets · TRICEP ≈ 9 (4 indirect)"
+function planSummary(plan) {
+  const groups = [...new Set(plan.map(e => e.rx?.group).filter(Boolean))];
+  return groups.map(g => {
+    const rx = plan.find(e => e.rx?.group === g).rx;
+    const name = (MUSCLE_META[g]?.name || g).toUpperCase();
+    const recent = rx.recentHours != null && rx.recentHours < 48 ? ` · trained ${rx.recentHours < 24 ? "today" : "yesterday"}, dose halved` : "";
+    return `${name} ≈ ${Math.round(rx.projected)} hard sets${rx.indirect >= 1 ? ` (${Math.round(rx.indirect)} indirect)` : ""}${rx.weeklyBefore >= 8 ? ` · ${Math.round(rx.weeklyBefore)} already this week` : ""}${recent}`;
+  }).join(" · ");
+}
 
 // ─── QUICK ADD BAR ────────────────────────────────────────────────────────────
 function QuickAddBar({ onAdd, isIso = false, repUnit = "reps", bodyweight = false }) {
@@ -2758,10 +2831,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   const runRandomizer = () => {
     if (randoMuscles.length === 0) return;
-    const plans = randoMuscles.map(m => generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, randoDiff, settings?.travelMode ? (settings?.travelEquipment || []) : null));
-    const combined = [];
-    const maxLen = Math.max(...plans.map(p => p.length));
-    for (let i = 0; i < maxLen; i++) { plans.forEach(p => { if (p[i]) combined.push(p[i]); }); }
+    const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff);
     setRandoPlan(combined); setViewMode("plan"); setRandoMode(false);
     toast(`${combined.length} exercises generated`, GOLD);
   };
@@ -2903,7 +2973,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
                       fontWeight: 700, color: TEXT }}>{ex.name}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
-                      color: mm.color }}>{mm.name}</div>
+                      color: mm.color }}>{mm.name}{ex.rx ? ` · ${rxLine(ex.rx)}` : ""}</div>
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button onClick={() => setLogModal({ exercise: ex, muscle: ex.primary || selMuscle })}
@@ -3225,12 +3295,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
 
   const runRandomizer = () => {
     if (!randoMuscles.length) return;
-    const plans = randoMuscles.map(m =>
-      generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, randoDiff, settings?.travelMode ? (settings?.travelEquipment || []) : null));
-    const combined = [];
-    const maxLen = Math.max(...plans.map(p => p.length));
-    for (let i = 0; i < maxLen; i++)
-      plans.forEach(p => { if (p[i]) combined.push(p[i]); });
+    const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff);
     setRandoPlan(combined);
     setRandoMode(false);
     toast(`${combined.length} exercises generated — tap to log`, GOLD);
@@ -3321,6 +3386,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK }}>
               TODAY'S PLAN — {randoMuscles.map(m => MUSCLE_META[m]?.name?.toUpperCase()).join(" + ")}
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: 0, marginTop: 2, textTransform: "none" }}>{planSummary(randoPlan)}</div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={runRandomizer} style={{ background: "none", border: `1px solid ${GOLD}22`,
@@ -3345,8 +3411,8 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                       fontWeight: 700, color: alreadyLogged ? mm.color : TEXT }}>{ex.name}</div>
                     {subs && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                       color: mm.color, opacity: 0.8 }}>{subs}</div>}
-                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
-                      ~{estimateSessionXP(ex, st.weightLbs || 170)} XP est.
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ex.rx ? GOLD : MUTED }}>
+                      {ex.rx ? rxLine(ex.rx) : `~${estimateSessionXP(ex, st.weightLbs || 170)} XP est.`}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

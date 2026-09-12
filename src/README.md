@@ -27,6 +27,19 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state
 ```
 
+## v2.6 session randomizer — region slots and a real dose
+
+`generateWorkout()` no longer uses hand-written name lists. Each muscle group has
+`SESSION_SLOTS` (regions whose prime mover the session must cover: chest = sternal,
+clavicular, +1; biceps = short head, long head, brachialis; core = rectus, hip flexors,
+obliques …) and candidates are found from `data/emg.js` (region activation ≥ 85). Every
+pick carries an `rx` prescription: sets, rep range by lift type (compound 6–10, isolation
+10–15, bodyweight 8–15, holds 30–45 s), 1–2 RIR and rest. Sets are tuned so the group's
+credited total lands at the per-session plateau (8 novice / 10 otherwise), minus what the
+group already has this week (20/wk plateau) and minus indirect credit from groups
+generated earlier in the same session (`buildRandomPlan` runs them in order). The plan
+banner shows "CHEST ≈ 9 hard sets · TRICEP ≈ 9 (4 indirect)".
+
 ## v2.5 body diagram — five new regions
 
 `data/bodyPaths.js` now has 38 regions: serratus anterior, brachialis, brachioradialis and
