@@ -30,7 +30,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.7.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -1609,6 +1609,49 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
 //
 // Returns the picked exercises, each with an `rx` prescription and the
 // group's projected total so the UI can show "chest ≈ 9 hard sets".
+// ── Fuel: how the last few days of eating change today's recoverable dose ──
+// In an energy deficit the muscle-protein-synthesis response to a session is
+// blunted (~19 % at a 20 % deficit — Pasiakos 2010; Hector 2018) and fatigue
+// recovers slower, so the productive volume band sits lower; a surplus lets
+// you sit at the top of it (Helms 2014). Protein below ~1.6 g/kg limits the
+// response regardless of volume (Morton 2018). Uses the 3-day average of the
+// food log when there is one, else the goal's planned offset.
+function fuelContext(profile) {
+  const maintenance = _calcMaintenance(profile);
+  const proteinTarget = calcProteinTarget(profile);
+  const cutoff = Date.now() - 3 * 86400000;
+  const recent = (profile?.foodLog || []).filter(f => f.date >= cutoff && f.calories > 0);
+  if (!recent.length) {
+    const planned = (GOAL_CONFIG[profile?.goal] || { tdeeOffset: 0 }).tdeeOffset;
+    return { logged: false, balance: planned, maintenance, proteinTarget, proteinAvg: null, proteinRatio: null };
+  }
+  const avgCals = recent.reduce((a, f) => a + f.calories, 0) / recent.length;
+  const withProt = recent.filter(f => f.protein > 0);
+  const proteinAvg = withProt.length ? withProt.reduce((a, f) => a + f.protein, 0) / withProt.length : null;
+  return { logged: true, balance: Math.round(avgCals - maintenance), maintenance, proteinTarget, proteinAvg,
+    proteinRatio: proteinAvg != null && proteinTarget > 0 ? proteinAvg / proteinTarget : null };
+}
+// Volume multiplier + human-readable reason from the fuel context.
+function fuelDoseModifier(fuel) {
+  let mult = 1, notes = [];
+  const pct = fuel.maintenance > 0 ? fuel.balance / fuel.maintenance : 0;
+  if (pct <= -0.25)      { mult *= 0.75; notes.push(`${fuel.logged ? "" : "planned "}deficit ${fuel.balance} kcal`); }
+  else if (pct <= -0.12) { mult *= 0.85; notes.push(`${fuel.logged ? "" : "planned "}deficit ${fuel.balance} kcal`); }
+  else if (pct >= 0.05)  { mult *= 1.15; notes.push(`surplus +${fuel.balance} kcal`); }
+  if (fuel.proteinRatio != null && fuel.proteinRatio < 0.75) { mult *= 0.85; notes.push(`protein ${Math.round(fuel.proteinAvg)}/${fuel.proteinTarget} g`); }
+  return { mult, note: notes.join(" · ") };
+}
+// Working load from the stored e1RM for the middle of the rep range at 2 RIR
+// (inverted Epley: reps-to-failure = 30 × (1RM/w − 1)). Rounded to 5 lb.
+function loadFor(ex, reps, prs) {
+  if (ex.type !== "strength" || ex.iso) return null;
+  const e1rm = prs?.[ex.name];
+  if (!(e1rm > 0)) return null;
+  const m = String(reps).match(/(\d+)\D+(\d+)/);
+  const mid = m ? (Number(m[1]) + Number(m[2])) / 2 : 10;
+  return Math.max(5, Math.round(e1rm / (1 + (mid + 2) / 30) / 5) * 5);
+}
+
 const SESSION_SLOTS = {
   chest:     ["mid-lower-pectoralis", "upper-pectoralis", "*"],
   back:      ["lats", "traps-middle", "*"],
@@ -1621,7 +1664,7 @@ const SESSION_SLOTS = {
   core:      ["upper-abdominals", "hip-flexors", "obliques"],
   calves:    ["gastrocnemius", "soleus", "tibialis"],
 };
-const SESSION_TARGET = { base: 10, novice: 8, min: 4, weeklyPlateau: 20 };
+const SESSION_TARGET = { novice: 8, base: 10, advanced: 12, ceiling: 12, min: 4, weeklyPlateau: 20 };
 
 // Multi-joint lifts get the heavy rep range and long rests; single-joint work
 // (flyes, raises, curls, extensions, pushdowns, crunches, holds) does not — the
@@ -1651,7 +1694,8 @@ function weeklyCreditedSets(muscle, workouts) {
   return total;
 }
 
-function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, diffFilter = null, travelEquipment = null, priorPlan = []) {
+function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = null, priorPlan = []) {
+  const workouts = profile?.workouts || [], customExercises = profile?.customExercises || [], overallLevel = profile?.overallLevel || 1, goal = profile?.goal;
   let allDB = [...(EXERCISE_DB[muscle] || []), ...(customExercises || []).filter(e => e.primary === muscle)]
     .filter(e => e.type !== "cardio");
   if (!allDB.length) return [];
@@ -1691,12 +1735,35 @@ function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, 
     else                            s *= goalCfg.isoBias;
     // prefer the lift that loads THIS group hardest, and the slot's region hardest
     s += 30 * (statCredits(ex, ex.primary)[muscle] || 0);
+    // prefer lifts with a stored 1RM: the load can be prescribed and overload tracked
+    if (profile?.prs?.[ex.name] > 0) s += 15;
     if (region && region !== "*") s += 0.2 * ((emgFor(ex) || {})[region] || 0);
     return s + Math.random() * 20;
   };
 
-  // ── pick one lift per region slot ──
-  const slots = SESSION_SLOTS[muscle] || ["*", "*", "*"];
+  // ── dose target first (it decides how many lifts to pick) ──
+  // Per-session productive band: 8 sets for an untrained muscle (level < 4),
+  // 10 for most, 12 once the muscle is advanced (level ≥ 12) — the maximum
+  // adaptive volume rises with training age (Israetel 2017).
+  const mLevel = profile?.levels?.[muscle] || 1;
+  let target = mLevel < 4 ? SESSION_TARGET.novice : mLevel >= 12 ? SESSION_TARGET.advanced : SESSION_TARGET.base;
+  const fuel = fuelContext(profile);
+  const fuelMod = fuelDoseModifier(fuel);
+  target = Math.round(target * fuelMod.mult);
+  const weekly = weeklyCreditedSets(muscle, workouts);
+  target = Math.min(target, Math.max(SESSION_TARGET.min, SESSION_TARGET.weeklyPlateau - weekly));
+  // Trained this group hard within 48 h? Protein synthesis from that session
+  // is still running; a full dose on top is mostly junk volume. Halve it.
+  const lastHard = (workouts || []).reduce((t, w) => (w.exercise && (statCredits(w.exercise, w.muscle)[muscle] || 0) >= 0.65 && w.date > t) ? w.date : t, 0);
+  const hoursSince = lastHard ? (now - lastHard) / HR : Infinity;
+  if (hoursSince < 48) target = Math.max(SESSION_TARGET.min, Math.round(target / 2));
+  target = Math.min(target, SESSION_TARGET.ceiling);
+  const indirect = priorPlan.reduce((sum, e) => sum + (e.rx?.sets || 0) * (statCredits(e, e.primary)[muscle] || 0), 0);
+  const direct = Math.max(SESSION_TARGET.min, target - indirect);
+
+  // ── pick one lift per region slot; 2 lifts for a small dose, 4 for a big one ──
+  const baseSlots = SESSION_SLOTS[muscle] || ["*", "*", "*"];
+  const slots = direct <= 6 ? baseSlots.slice(0, 2) : direct >= 12 ? [...baseSlots, "*"] : baseSlots;
   const selected = [], used = new Set();
   const pickFrom = (cands, region) => {
     const best = cands.filter(e => !used.has(e.name)).sort((x, y) => score(y, region) - score(x, region))[0];
@@ -1711,17 +1778,7 @@ function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, 
   // compounds first: heavy multi-joint work before isolation
   selected.sort((x, y) => (isCompoundLift(y) ? 1 : 0) - (isCompoundLift(x) ? 1 : 0));
 
-  // ── dose ──
-  const weekly = weeklyCreditedSets(muscle, workouts);
-  const indirect = priorPlan.reduce((sum, e) => sum + (e.rx?.sets || 0) * (statCredits(e, e.primary)[muscle] || 0), 0);
-  let target = userTier <= 1 ? SESSION_TARGET.novice : SESSION_TARGET.base;
-  target = Math.min(target, Math.max(SESSION_TARGET.min, SESSION_TARGET.weeklyPlateau - weekly));
-  // Trained this group hard within 48 h? Protein synthesis from that session
-  // is still running; a full dose on top is mostly junk volume. Halve it.
-  const lastHard = (workouts || []).reduce((t, w) => (w.exercise && (statCredits(w.exercise, w.muscle)[muscle] || 0) >= 0.65 && w.date > t) ? w.date : t, 0);
-  const hoursSince = lastHard ? (now - lastHard) / HR : Infinity;
-  if (hoursSince < 48) target = Math.max(SESSION_TARGET.min, Math.round(target / 2));
-  const direct = Math.max(SESSION_TARGET.min, target - indirect);
+  // ── sets per lift ──
   const credits = selected.map(e => statCredits(e, e.primary)[muscle] || 0);
   const sets = selected.map(() => 3);
   const projected = () => sets.reduce((sum, n, i) => sum + n * credits[i], 0);
@@ -1737,9 +1794,13 @@ function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, 
     sets[i[1]] -= 1;
   }
   const total = projected() + indirect;
-  return selected.map((ex, i) => ({ ...ex, rx: { ...prescriptionFor(ex, sets[i]), credit: credits[i], group: muscle,
-    projected: Math.round(total * 10) / 10, indirect: Math.round(indirect * 10) / 10, weeklyBefore: Math.round(weekly * 10) / 10,
-    recentHours: Number.isFinite(hoursSince) ? Math.round(hoursSince) : null } }));
+  return selected.map((ex, i) => {
+    const rx = prescriptionFor(ex, sets[i]);
+    return { ...ex, rx: { ...rx, load: loadFor(ex, rx.reps, profile?.prs), credit: credits[i], group: muscle,
+      projected: Math.round(total * 10) / 10, indirect: Math.round(indirect * 10) / 10, weeklyBefore: Math.round(weekly * 10) / 10,
+      recentHours: Number.isFinite(hoursSince) ? Math.round(hoursSince) : null,
+      fuel: fuelMod.note ? `${fuelMod.note} → volume ×${fuelMod.mult.toFixed(2)}` : null } };
+  });
 }
 
 // Shared by both randomizer screens: build the groups in order so later groups
@@ -1747,8 +1808,7 @@ function generateWorkout(muscle, workouts, customExercises, overallLevel, goal, 
 function buildRandomPlan(muscles, st, settings, diff) {
   const acc = [];
   for (const m of muscles) {
-    const plan = generateWorkout(m, st.workouts, st.customExercises, st.overallLevel, st.goal, diff,
-      settings?.travelMode ? (settings?.travelEquipment || []) : null, acc);
+    const plan = generateWorkout(m, st, diff, settings?.travelMode ? (settings?.travelEquipment || []) : null, acc);
     acc.push(...plan);
   }
   return acc;
@@ -1757,7 +1817,8 @@ function buildRandomPlan(muscles, st, settings, diff) {
 function rxLine(rx) {
   if (!rx) return null;
   const m = Math.floor(rx.restSec / 60), sec = rx.restSec % 60;
-  return `${rx.sets} × ${rx.reps} · ${rx.rir} · rest ${m}:${String(sec).padStart(2, "0")}`;
+  const load = rx.load ? ` @ ${wtVal(rx.load)} ${wtLabel()}` : "";
+  return `${rx.sets} × ${rx.reps}${load} · ${rx.rir} · rest ${m}:${String(sec).padStart(2, "0")}`;
 }
 // Plan header: "CHEST ≈ 9 hard sets · TRICEP ≈ 9 (4 indirect)"
 function planSummary(plan) {
@@ -1767,7 +1828,7 @@ function planSummary(plan) {
     const name = (MUSCLE_META[g]?.name || g).toUpperCase();
     const recent = rx.recentHours != null && rx.recentHours < 48 ? ` · trained ${rx.recentHours < 24 ? "today" : "yesterday"}, dose halved` : "";
     return `${name} ≈ ${Math.round(rx.projected)} hard sets${rx.indirect >= 1 ? ` (${Math.round(rx.indirect)} indirect)` : ""}${rx.weeklyBefore >= 8 ? ` · ${Math.round(rx.weeklyBefore)} already this week` : ""}${recent}`;
-  }).join(" · ");
+  }).join(" · ") + (plan[0]?.rx?.fuel ? ` · fuel: ${plan[0].rx.fuel}` : "");
 }
 
 // ─── QUICK ADD BAR ────────────────────────────────────────────────────────────

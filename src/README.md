@@ -27,6 +27,18 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state
 ```
 
+## v2.7 randomizer — fuel-aware dose and 1RM loads
+
+The dose now starts from the muscle's own level (8 sets below level 4, 10 up to level 11,
+12 from level 12; ceiling 12) and is scaled by `fuelDoseModifier(fuelContext(profile))`:
+the 3-day food-log average against Mifflin-St Jeor maintenance (deficit ≥ 12 % → ×0.85,
+≥ 25 % → ×0.75, surplus ≥ 5 % → ×1.15) and protein against the g/kg target (< 75 % →
+×0.85). With no food logged, the goal's planned offset stands in. Strength lifts with a
+stored e1RM get a working load for the middle of the rep range at 2 RIR (inverted Epley,
+rounded to 5 lb) and lifts with a known max are preferred so overload can be tracked.
+The number of lifts follows the dose: 2 for ≤ 6 sets, 4 for ≥ 12. The banner ends with
+the fuel reason, e.g. "fuel: deficit −1151 kcal · protein 100/160 g → volume ×0.64".
+
 ## v2.6 session randomizer — region slots and a real dose
 
 `generateWorkout()` no longer uses hand-written name lists. Each muscle group has

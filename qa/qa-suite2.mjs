@@ -201,9 +201,11 @@ await modalChecks('randomizer', async () => {
 }, /RANDOM WORKOUT/, async () => { await page.getByText('CANCEL', { exact: true }).click(); await page.waitForTimeout(400); });
 
 await modalChecks('exercise-log', async () => {
+  // a rest day shows no plan rows and no log button — open Monday's plan instead
+  if (!(await page.getByText('LOG', { exact: true }).count())) { await page.getByText('MON', { exact: true }).first().click(); await page.waitForTimeout(400); }
   const b = page.getByText('LOG', { exact: true }).first();
   if (await b.count()) await b.click();
-  else await page.getByText(/LOG AN EXERCISE|LOG ANOTHER/).first().click();
+  else await page.getByText(/LOG AN EXERCISE|LOG ANOTHER|\+ LOG EXERCISE/).first().click();   // rest days show no plan rows
   await page.waitForTimeout(700);
 }, /QUICK ADD SETS/);
 
