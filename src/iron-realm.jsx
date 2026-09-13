@@ -11,6 +11,7 @@ import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTI
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
 import { DAILY_TIPS } from "./data/tips";
 import { MIND_ACTIVITIES } from "./data/mind";
+import { standard1RM, familyPR1RM, tierFromLevel } from "./data/strength";
 import Button, { buttonCSS } from "./ui/Button";
 import ListGroup, { ListRow } from "./ui/ListGroup";
 import StatTile from "./ui/StatTile";
@@ -30,7 +31,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.8.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -1641,15 +1642,26 @@ function fuelDoseModifier(fuel) {
   if (fuel.proteinRatio != null && fuel.proteinRatio < 0.75) { mult *= 0.85; notes.push(`protein ${Math.round(fuel.proteinAvg)}/${fuel.proteinTarget} g`); }
   return { mult, note: notes.join(" · ") };
 }
-// Working load from the stored e1RM for the middle of the rep range at 2 RIR
-// (inverted Epley: reps-to-failure = 30 × (1RM/w − 1)). Rounded to 5 lb.
-function loadFor(ex, reps, prs) {
-  if (ex.type !== "strength" || ex.iso) return null;
-  const e1rm = prs?.[ex.name];
-  if (!(e1rm > 0)) return null;
+// Working load for the middle of the rep range at 2 RIR (inverted Epley:
+// reps-to-failure = 30 × (1RM/w − 1)), rounded to 5 lb. The 1RM comes from,
+// in order: a stored PR on this lift, a PR on a lift in the same family
+// (bench PR → incline, machine press), or the strength standard for the
+// hunter's body weight, sex, age and the muscle's current level (which is
+// already reduced by detraining, so an atrophied muscle gets a lighter load).
+function loadFor(ex, reps, profile) {
+  if (ex.type !== "strength" || ex.iso) return { load: null, source: null };
+  const prs = profile?.prs || {};
+  let e1rm = prs[ex.name] > 0 ? prs[ex.name] : null, source = "pr";
+  if (!e1rm) { e1rm = familyPR1RM(ex.name, prs); source = "family"; }
+  if (!e1rm) {
+    const tier = tierFromLevel(profile?.levels?.[ex.primary]);
+    e1rm = standard1RM(ex.name, { weightLbs: profile?.weightLbs, gender: profile?.gender, age: profile?.age, tier });
+    source = "estimate";
+  }
+  if (!(e1rm > 0)) return { load: null, source: null };
   const m = String(reps).match(/(\d+)\D+(\d+)/);
   const mid = m ? (Number(m[1]) + Number(m[2])) / 2 : 10;
-  return Math.max(5, Math.round(e1rm / (1 + (mid + 2) / 30) / 5) * 5);
+  return { load: Math.max(5, Math.round(e1rm / (1 + (mid + 2) / 30) / 5) * 5), source };
 }
 
 const SESSION_SLOTS = {
@@ -1796,7 +1808,8 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
   const total = projected() + indirect;
   return selected.map((ex, i) => {
     const rx = prescriptionFor(ex, sets[i]);
-    return { ...ex, rx: { ...rx, load: loadFor(ex, rx.reps, profile?.prs), credit: credits[i], group: muscle,
+    const { load, source } = loadFor(ex, rx.reps, profile);
+    return { ...ex, rx: { ...rx, load, loadSource: source, credit: credits[i], group: muscle,
       projected: Math.round(total * 10) / 10, indirect: Math.round(indirect * 10) / 10, weeklyBefore: Math.round(weekly * 10) / 10,
       recentHours: Number.isFinite(hoursSince) ? Math.round(hoursSince) : null,
       fuel: fuelMod.note ? `${fuelMod.note} → volume ×${fuelMod.mult.toFixed(2)}` : null } };
@@ -1813,12 +1826,21 @@ function buildRandomPlan(muscles, st, settings, diff) {
   }
   return acc;
 }
-// "3 × 8–12 · 1–2 RIR · rest 2:30"
-function rxLine(rx) {
+// "Suggested: 3 sets · 6–10 reps at 180 lb"
+function rxLine(rx, ex) {
+  if (!rx) return null;
+  const isHold = /\bs$/.test(rx.reps);
+  if (isHold) return `Suggested: ${rx.sets} holds · ${rx.reps}`;
+  const at = rx.load ? ` at ${wtVal(rx.load)} ${wtLabel()}` : (ex?.type === "calisthenics" ? " · bodyweight" : "");
+  return `Suggested: ${rx.sets} sets · ${rx.reps} reps${at}`;
+}
+// "1–2 reps in reserve · rest 2:30 · from your bench PR"
+function rxNote(rx) {
   if (!rx) return null;
   const m = Math.floor(rx.restSec / 60), sec = rx.restSec % 60;
-  const load = rx.load ? ` @ ${wtVal(rx.load)} ${wtLabel()}` : "";
-  return `${rx.sets} × ${rx.reps}${load} · ${rx.rir} · rest ${m}:${String(sec).padStart(2, "0")}`;
+  const src = rx.loadSource === "pr" ? "from your PR" : rx.loadSource === "family" ? "from a related PR"
+    : rx.loadSource === "estimate" ? "estimated for your level & weight" : rx.load == null && rx.reps && !/\bs$/.test(rx.reps) ? "pick a weight that leaves 1–2 reps" : null;
+  return [`${rx.rir.replace("RIR", "reps in reserve")}`, `rest ${m}:${String(sec).padStart(2, "0")}`, src].filter(Boolean).join(" · ");
 }
 // Plan header: "CHEST ≈ 9 hard sets · TRICEP ≈ 9 (4 indirect)"
 function planSummary(plan) {
@@ -3034,7 +3056,9 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
                       fontWeight: 700, color: TEXT }}>{ex.name}</div>
                     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
-                      color: mm.color }}>{mm.name}{ex.rx ? ` · ${rxLine(ex.rx)}` : ""}</div>
+                      color: mm.color }}>{mm.name}</div>
+                    {ex.rx && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, fontWeight: 700, color: GOLD, marginTop: 2 }}>{rxLine(ex.rx, ex)}</div>}
+                    {ex.rx && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{rxNote(ex.rx)}</div>}
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button onClick={() => setLogModal({ exercise: ex, muscle: ex.primary || selMuscle })}
@@ -3472,9 +3496,12 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                       fontWeight: 700, color: alreadyLogged ? mm.color : TEXT }}>{ex.name}</div>
                     {subs && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
                       color: mm.color, opacity: 0.8 }}>{subs}</div>}
-                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: ex.rx ? GOLD : MUTED }}>
-                      {ex.rx ? rxLine(ex.rx) : `~${estimateSessionXP(ex, st.weightLbs || 170)} XP est.`}
-                    </div>
+                    {ex.rx ? (<>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, fontWeight: 700, color: GOLD, marginTop: 2 }}>{rxLine(ex.rx, ex)}</div>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{rxNote(ex.rx)}</div>
+                    </>) : (
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>~{estimateSessionXP(ex, st.weightLbs || 170)} XP est.</div>
+                    )}
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     {alreadyLogged

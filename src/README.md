@@ -27,6 +27,17 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state
 ```
 
+## v2.8 randomizer — a weight for every lift
+
+Plan rows now read "Suggested: 3 sets · 6–10 reps at 180 lb" with a note on where the
+number came from. `loadFor()` takes the 1RM from, in order: a stored PR on the lift, a PR
+on a lift in the same family (`data/strength.js` `LIFT_FAMILIES`: a bench PR sets incline
+and machine-press loads), or the strength standard for the hunter's body weight, sex, age
+and the muscle's current level (`STRENGTH_ANCHORS`, allometric body-weight scaling, female
+factors, −1 %/yr past 40). The level already includes detraining, so an atrophied muscle
+is prescribed a lighter load. Bodyweight lifts say "bodyweight"; unknown lifts say to pick
+a weight that leaves 1–2 reps.
+
 ## v2.7 randomizer — fuel-aware dose and 1RM loads
 
 The dose now starts from the muscle's own level (8 sets below level 4, 10 up to level 11,
