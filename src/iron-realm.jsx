@@ -34,7 +34,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.9.0";
+const APP_VERSION = "2.10.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -784,13 +784,25 @@ function getTodayFood(profile) {
 
 // Net XP = workout XP - calories eaten above TDEE (surplus cancels XP)
 // If eating at deficit or maintenance: full XP. Surplus: XP reduced by excess.
-function calcNetXP(workoutXP, calsEaten, tdee, proteinEaten = 0, proteinTarget = 0) {
-  // Step 1: calorie surplus penalty (existing)
-  const surplus     = Math.max(0, calsEaten - tdee);
-  const afterSurplus = Math.max(0, workoutXP - surplus);
-  // Step 2: protein multiplier (new) — only applies to strength/hypertrophy XP
-  const protMult    = proteinTarget > 0 ? calcProteinMultiplier(proteinEaten, proteinTarget) : 1.0;
-  return Math.round(afterSurplus * protMult);
+// Hunter XP is KILOCALORIES BURNED, so only the calorie side can net it: eating
+// over your budget cancels part of the burn. Protein does NOT belong here — how
+// much protein you ate cannot change how many calories a set cost. Protein gates
+// MUSCLE XP instead, via calcProteinMultiplier applied as `stimMult` when a set
+// is logged. Before v2.10 this function charged a protein shortfall against both
+// currencies and the UI then blamed it on a calorie surplus that never happened.
+function calcNetXP(workoutXP, calsEaten, tdee) {
+  const overBudget = Math.max(0, calsEaten - tdee);
+  return Math.max(0, workoutXP - overBudget);
+}
+
+// calcTDEE returns maintenance PLUS the goal's offset, so it is a budget, not
+// maintenance — on a cut you can be 300 kcal under maintenance and still over
+// budget. Name the budget so the UI never calls that a "surplus".
+function calorieBudgetLabel(profile) {
+  const cfg = GOAL_CONFIG[profile?.goal];
+  if (!cfg || !cfg.tdeeOffset) return "your maintenance";
+  const goal = FITNESS_GOALS.find(g => g.id === profile?.goal);
+  return `your ${(goal?.label || "daily").toLowerCase()} target`;
 }
 
 function getRank(level) {
@@ -2005,7 +2017,8 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   const _tdee      = profile ? calcTDEE(profile) : 2000;
   const _proteinEaten  = _todayFood ? (_todayFood.protein || 0) : 0;
   const _proteinTarget = profile ? calcProteinTarget(profile) : 160;
-  const netXP      = calcNetXP(totalXP, _calsEaten, _tdee, _proteinEaten, _proteinTarget);
+  const netXP      = calcNetXP(totalXP, _calsEaten, _tdee);
+  const _overBudget = Math.max(0, _calsEaten - _tdee);
   // Protein gates muscle protein synthesis (Morton 2018); a calorie surplus does
   // not shrink hypertrophy, so it only nets the calorie-based Hunter XP.
   const stimMult   = calcProteinMultiplier(_proteinEaten, _proteinTarget);
@@ -2314,7 +2327,7 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
             </div>
             {netXP < totalXP && (
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: RED, marginTop: 6, letterSpacing: TRACK }}>
-                -{totalXP - netXP} Hunter XP absorbed by today's calorie surplus
+                -{totalXP - netXP} Hunter XP — {_overBudget.toLocaleString()} kcal over {calorieBudgetLabel(profile)}
               </div>
             )}
             {stimMult < 1 && (
@@ -3651,9 +3664,15 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
                   color: ACCENT, letterSpacing: TRACK }}>{"NUTRITION · " + dayLabel.toUpperCase()}</div>
                 {cals > 0 && (
-                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 900,
-                    color: surplus === 0 && protMult >= 1.0 ? GREEN : GOLD }}>
-                    {Math.round(calcNetXP(100, cals, tdee, prot, protTarget))}% XP
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 900,
+                      color: surplus === 0 ? GREEN : GOLD }}>
+                      {Math.round(calcNetXP(100, cals, tdee))}% HUNTER XP
+                    </div>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+                      color: prot === 0 ? MUTED : protMult >= 1.0 ? GREEN : GOLD, marginTop: 2 }}>
+                      {prot === 0 ? "MUSCLE XP · LOG PROTEIN" : `${Math.round(protMult * 100)}% MUSCLE XP`}
+                    </div>
                   </div>
                 )}
               </div>
@@ -9552,7 +9571,7 @@ export default function IronRealm() {
       const entry       = { date: targetDate || Date.now(), calories, protein };
       if (existingIdx >= 0) newLog[existingIdx] = entry;
       else newLog.push(entry);
-      if (surplus > 0) toast(`${surplus.toLocaleString()} CAL SURPLUS — XP REDUCED`, RED);
+      if (surplus > 0) toast(`${surplus.toLocaleString()} kcal over ${calorieBudgetLabel(p)} — Hunter XP reduced`, RED);
       if (protein > 0 && protein < protTarget * 0.75)
         toast(`Low protein — muscle XP at ${Math.round(calcProteinMultiplier(protein, protTarget)*100)}%`, GOLD);
       else toast(`Nutrition logged for ${dateStr}`, GREEN);

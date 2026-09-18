@@ -30,6 +30,24 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.10 — protein no longer charges the calorie currency
+
+Two currencies, two gates, and the UI now says which one fired:
+
+- `calcNetXP(workoutXP, calsEaten, tdee)` takes **calories only**. It used to also
+  apply the protein multiplier, so one protein shortfall was charged twice: against
+  Muscle XP (correct) and against Hunter XP, which is kilocalories burned and cannot
+  be changed by what you ate. The log path never applied protein, so the modal was
+  also previewing a lower number than it stored.
+- The red line names the real cause: "-10 Hunter XP — 449 kcal over your cut target"
+  instead of always blaming a calorie surplus. It only renders when calories actually
+  reduced the number; the protein shortfall keeps its own gold line on Muscle XP.
+- `calorieBudgetLabel(profile)` — `calcTDEE` returns maintenance **plus the goal
+  offset**, so it is a budget, not maintenance: on a cut you can be 300 kcal under
+  maintenance and still over budget. The UI now says "over your cut target" rather
+  than "surplus". The nutrition card's single blended "% XP" badge is likewise split
+  into "% HUNTER XP" (calories) and "% MUSCLE XP" (protein).
+
 ## v2.9 custom programs — build, export, import, share
 
 - **One resolver.** `allProgramsFor(profile)` / `resolveProgram(profile)` return Free Workout,
