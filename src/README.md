@@ -30,6 +30,35 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.12 — editing no longer deletes, and every XP change is on the record
+
+**The bug.** Editing an exercise logged from the Schedule deleted it. The Schedule
+saved the replacement first and then removed "the original" by matching
+`(date, exerciseName)` — but `getDayDate()` gives every entry on a weekday the
+same midnight timestamp, so that match hit the replacement too and both went.
+Reproduced, then fixed three ways:
+
+- Every workout entry carries a stable `id` (backfilled on load for old entries).
+- An edit is one atomic write: `entry.replaces` removes the original in the same
+  commit that adds the new one, so neither can clobber the other. Both edit call
+  sites now use it; the Schedule one had them in the wrong order as well.
+- `commitWorkoutChange()` is the only thing allowed to touch `p.workouts`. It
+  removes at most ONE entry, rebuilds the derived stats and appends an audit
+  event.
+
+**The ledger** (`data/xpAudit.js`, `profile.xpLog`). Every log / edit / delete /
+revert records the XP before and after plus enough to reverse it exactly: the id
+of the entry added, and the whole entry removed. Progress → XP log lists them
+with a one-tap undo and flags anything worth a look (a single gain over 1,500
+kcal, a delete that raised XP, a log that lowered it). Capped at 250 events.
+
+**Founder review** (`services/xpAudit.js`, migration 013). Events mirror to
+`xp_audit`: time, type, exercise name, delta, running total, anomaly flag — no
+sets, loads, body metrics or nutrition. Append-only by policy (INSERT only, no
+UPDATE or DELETE), owner-or-admin read via `is_admin()`. The admin profile modal
+gains an "XP LOG" section; it is read-only, because reverting belongs to the
+device that owns the data. `public/privacy.html` documents exactly this.
+
 ## v2.11 — the calorie target is a plan, not a hidden constant
 
 The goal's fixed `tdeeOffset` (cut −400, bulk +300 …) is now only a fallback.

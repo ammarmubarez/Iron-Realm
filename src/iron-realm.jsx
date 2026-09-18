@@ -16,6 +16,9 @@ import { standard1RM, familyPR1RM, tierFromLevel } from "./data/strength";
 import { blankProgram, normalizeProgram, toShareCode, fromShareCode, toShareFile, decodeProgram,
   encodeProgram, programSummary, weeklyVolumeByGroup, PROGRAM_COLORS, PROGRAM_LIMITS, DAY_NAMES } from "./data/programShare";
 import * as programsService from "./services/programs";
+import { XP_LOG_MAX, newWorkoutId, buildEvent, appendEvent, anomalyFor, describeEvent } from "./data/xpAudit";
+import { toAuditRow } from "./data/xpAudit";
+import * as xpAuditService from "./services/xpAudit";
 import Button, { buttonCSS } from "./ui/Button";
 import ListGroup, { ListRow } from "./ui/ListGroup";
 import StatTile from "./ui/StatTile";
@@ -35,7 +38,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.11.0";
+const APP_VERSION = "2.12.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -174,6 +177,7 @@ const newProfile = (id, name = "Hunter") => ({
   mindLog: [],  // [{ id, date, stat:'intelligence'|'faith', activity, label, qty, xp }] — mind/spirit growth ledger
   mindTasks: [],     // pinned daily tasks: [{ id, stat, activity, label, qty, xp }]
   mindTasksLog: {},  // { 'YYYY-MM-DD': [taskId, ...] } — which daily tasks were completed each day
+  xpLog:        [],   // append-only audit of every change to the workout ledger
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
   patronLift:   null,   // exercise name pinned as signature lift
   createdAt: Date.now(),
@@ -625,6 +629,33 @@ function rebuildProfileStats(p) {
   return { newStats, newSubStats, newLevels, newPrs, newOverallXP, newOverallLevel: getLevelFromXP(newOverallXP).level,
     newCondition, newLastTrained, newEarned, stimOf };
 }
+// EVERY change to the workout ledger goes through here. It rebuilds the derived
+// stats from the ledger and appends an audit event saying what moved and by how
+// much, so a bad write leaves a trace instead of vanishing into a recomputed
+// total. Entries are matched by their own `id` — before v2.12 an edit removed by
+// (date, exerciseName), and because a Schedule entry's date is the midnight of
+// its weekday, the "remove the original" step also removed the replacement that
+// had just been written, deleting the exercise the hunter was trying to edit.
+function commitWorkoutChange(p, { add = null, remove = null, type, source = null, extra = null }) {
+  const before = p.overallXP || 0;
+  let workouts = p.workouts || [];
+  if (remove) {
+    let dropped = false;
+    workouts = workouts.filter(w => {
+      if (dropped) return true;                             // remove exactly one
+      const hit = remove.id ? w.id === remove.id
+        : (w.date === remove.date && w.exerciseName === remove.exerciseName);
+      if (hit) { dropped = true; return false; }
+      return true;
+    });
+  }
+  if (add) workouts = [...workouts, add];
+  const next = withRebuiltStats({ ...p, workouts });
+  const event = buildEvent({ type, add, remove, source, extra,
+    overallBefore: before, overallAfter: next.overallXP || 0 });
+  return { ...next, xpLog: appendEvent(next.xpLog, event) };
+}
+
 function withRebuiltStats(p) {
   const r = rebuildProfileStats(p);
   return { ...p, stats: r.newStats, subStats: r.newSubStats, levels: r.newLevels, prs: r.newPrs,
@@ -2901,8 +2932,10 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
               exercise: modal.exercise, sets: data.sets, reps: data.reps,
               weight: data.weight, sets_detail: data.sets_detail,
               newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, stim: data.stim, cardioData: data.cardioData,
-              supersetGroup, date: Date.now() };
-            if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
+              supersetGroup, date: Date.now(),
+              // One atomic replace: the old entry is removed in the same write
+              // that adds the new one, so neither can clobber the other.
+              replaces: modal.originalEntry || null };
             onLogExercise(entry);
             const prevE1RM = (st.prs || {})[modal.exercise.name] || null;
             setSessionLog(s => [...s, {
@@ -4025,9 +4058,11 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                 exercise: modal.exercise, sets: data.sets, reps: data.reps,
                 weight: data.weight, sets_detail: data.sets_detail,
                 newE1RM: data.newE1RM, isPR: data.isPR, xp: data.xp, cals: data.cals, stim: data.stim, cardioData: data.cardioData,
-                date: entryDate });
-              // If editing, unlog the original entry first
-              if (modal.originalEntry) onUnlogExercise(modal.originalEntry);
+                date: entryDate,
+                // One atomic replace — see SITE A. Doing this as log-then-unlog
+                // deleted the entry, because every Schedule entry on a weekday
+                // shares that day's midnight timestamp.
+                replaces: modal.originalEntry || null });
               if (!modal.originalEntry && selDay === todayIdx) {
                 const prevE1RM = (st.prs || {})[modal.exercise.name] || null;
                 setSessionLog(s => [...s, {
@@ -4039,7 +4074,9 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
               }
               setLogModal(null); setEditEntry(null);
               const dayLabel2 = selDay === todayIdx ? "today" : DAYS[selDay];
-              toast(`${modal.exercise.name} logged for ${dayLabel2}! +${data.xp} XP`, GOLD);
+              toast(modal.originalEntry
+                ? `${modal.exercise.name} updated for ${dayLabel2}`
+                : `${modal.exercise.name} logged for ${dayLabel2}! +${data.xp} XP`, GOLD);
             }}
             onClose={() => { setLogModal(null); setEditEntry(null); }}
           />
@@ -8210,12 +8247,77 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
   );
 }
 
+// Your own XP audit trail: every log, edit and delete, what it moved, and a
+// one-tap undo. Anything the ledger flags is called out in gold — a flag means
+// "worth a look", not "you cheated".
+function XpLogModal({ profile, onRevert, onClose }) {
+  const log = [...(profile?.xpLog || [])].reverse();
+  const flagged = log.filter(e => anomalyFor(e)).length;
+  const toneFor = (e) => anomalyFor(e) ? GOLD : e.delta > 0 ? GREEN : e.delta < 0 ? RED : MUTED;
+
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain",
+      zIndex: 1150, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`, border: `1px solid ${ACCENT}22`,
+        borderTop: `2px solid ${ACCENT}`, width: "100%", maxWidth: 480,
+        maxHeight: "86dvh", overflowY: "auto", padding: "18px 16px 40px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700, color: ACCENT, letterSpacing: TRACK }}>XP LOG</div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none",
+            color: MUTED, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginBottom: 14, lineHeight: 1.5 }}>
+          Every change to your workout log and what it did to your XP. Keeps the last {XP_LOG_MAX} changes.
+          {flagged > 0 && <span style={{ color: GOLD }}> · {flagged} worth a look</span>}
+        </div>
+
+        {log.length === 0 && (
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, textAlign: "center", padding: "24px 0" }}>
+            Nothing yet. Log a workout and it will show up here.
+          </div>
+        )}
+
+        {log.map(e => {
+          const flag = anomalyFor(e);
+          const tone = toneFor(e);
+          const canRevert = !!(e.addedId || e.removed) && e.type !== "revert";
+          return (
+            <div key={e.id} style={{ background: BG3, border: `1px solid ${flag ? GOLD + "44" : ACCENT2 + "22"}`,
+              borderLeft: `2px solid ${tone}aa`, borderRadius: 8, padding: "10px 12px", marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
+                    {describeEvent(e)}
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2 }}>
+                    {new Date(e.ts).toLocaleString()} · total {e.overallBefore.toLocaleString()} → {e.overallAfter.toLocaleString()}
+                  </div>
+                  {flag && (
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, marginTop: 3 }}>⚑ {flag}</div>
+                  )}
+                </div>
+                {canRevert && (
+                  <button onClick={() => onRevert(e.id)} style={{ flexShrink: 0, padding: "6px 10px", cursor: "pointer",
+                    background: "transparent", border: `1px solid ${GOLD}44`, borderRadius: 6,
+                    fontFamily: FONT_DISPLAY, fontSize: 8, fontWeight: 700, letterSpacing: TRACK, color: GOLD }}>UNDO</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>, document.body);
+}
+
 // Progress screen — its own nav tab. The volume trend and shadow race sit
 // inline; records and condition open as sheets.
-function ProgressScreen({ st }) {
+function ProgressScreen({ st, onRevertXpEvent }) {
   const [prHistoryOpen, setPrHistoryOpen] = useState(false);
   const [heatmapOpen, setHeatmapOpen]     = useState(false);
   const [conditionOpen, setConditionOpen] = useState(false);
+  const [xpLogOpen, setXpLogOpen]         = useState(false);
   const condEntries = Object.entries(st.condition || {});
   const decaying = condEntries.filter(([, v]) => v < 0.995).length;
   const prCount = Object.keys(st.prs || {}).length;
@@ -8228,11 +8330,17 @@ function ProgressScreen({ st }) {
         <ListGroup title="Records & condition">
           <ListRow icon="★" label="PR history" value={`${prCount} tracked`} onClick={() => setPrHistoryOpen(true)} />
           <ListRow icon="▦" label="Training heatmap" value="13 weeks" onClick={() => setHeatmapOpen(true)} />
+          <ListRow icon="⟲" label="XP log" sub="Every change to your workouts, with undo"
+            value={(() => { const n = (st.xpLog || []).filter(e => anomalyFor(e)).length;
+              return n ? `${n} flagged` : `${(st.xpLog || []).length} changes`; })()}
+            tone={(st.xpLog || []).some(e => anomalyFor(e)) ? GOLD : undefined}
+            onClick={() => setXpLogOpen(true)} />
           <ListRow icon="◑" label="Condition report" sub="Detraining, recovery and what to train"
             value={decaying ? `${decaying} decaying` : "All fresh"} tone={decaying ? RED : GREEN}
             onClick={() => setConditionOpen(true)} last />
         </ListGroup>
       </div>
+      {xpLogOpen && <XpLogModal profile={st} onRevert={onRevertXpEvent} onClose={() => setXpLogOpen(false)} />}
       {conditionOpen && <ConditionReportModal profile={st} onClose={() => setConditionOpen(false)} />}
       {prHistoryOpen && <PRHistoryModal workouts={st.workouts} prs={st.prs} onClose={() => setPrHistoryOpen(false)} />}
       {heatmapOpen && <HeatmapModal workouts={st.workouts} onClose={() => setHeatmapOpen(false)} />}
@@ -8581,6 +8689,24 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
     }
   }, [isAdmin, profile?.user_id, toast]);
 
+  // Founder review of this hunter's XP history (migration 013). Read-only:
+  // reverting happens on the device that owns the data, so an admin can see a
+  // glitch and tell them, but cannot silently rewrite someone's history.
+  const [xpOpen, setXpOpen] = useState(false);
+  const [xpRows, setXpRows] = useState([]);
+  const [xpLoading, setXpLoading] = useState(false);
+  const toggleXpOpen = () => {
+    const next = !xpOpen;
+    setXpOpen(next);
+    if (next && isAdmin && profile?.user_id) {
+      setXpLoading(true);
+      xpAuditService.fetchAuditFor(profile.user_id, 100)
+        .then(setXpRows)
+        .catch(e => toast?.(`XP log unavailable: ${e.message || e}`, RED))
+        .finally(() => setXpLoading(false));
+    }
+  };
+
   const toggleAuditOpen = () => {
     const next = !auditOpen;
     setAuditOpen(next);
@@ -8811,6 +8937,53 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
             }}>
               {viewHidden ? `REVEAL TO @${profile.username}` : `HIDE FROM @${profile.username}`}
             </button>
+
+            {/* XP log — collapsible, founder review */}
+            <button onClick={toggleXpOpen} style={{
+              width: "100%", marginTop: 10, padding: "8px 10px", cursor: "pointer",
+              background: "none", border: `1px solid ${MUTED}22`,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              fontFamily: FONT_DISPLAY, fontSize: 8, color: MUTED, letterSpacing: TRACK,
+            }}>
+              <span>{xpOpen ? "▾ XP LOG" : "▸ XP LOG"}</span>
+              <span style={{ opacity: 0.6, color: xpRows.some(r => r.anomaly) ? GOLD : MUTED }}>
+                {xpRows.length ? `${xpRows.length}${xpRows.some(r => r.anomaly) ? ` · ${xpRows.filter(r => r.anomaly).length} flagged` : ""}` : ""}
+              </span>
+            </button>
+
+            {xpOpen && (
+              <div style={{ marginTop: 8, background: BG, border: `1px solid ${MUTED}22`, borderRadius: 6,
+                padding: "8px 10px", maxHeight: 240, overflowY: "auto" }}>
+                {xpLoading ? (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", padding: "10px 0" }}>Loading…</div>
+                ) : xpRows.length === 0 ? (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, textAlign: "center", padding: "10px 0", lineHeight: 1.5 }}>
+                    No XP events synced. They appear once this hunter opens the app on a build with the audit trail.
+                  </div>
+                ) : xpRows.map(r => (
+                  <div key={r.event_id} style={{ padding: "6px 0", borderBottom: `1px solid ${MUTED}11` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, fontWeight: 600 }}>
+                        {r.type} · {r.exercise || "—"}
+                      </span>
+                      <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700,
+                        color: r.delta > 0 ? GREEN : r.delta < 0 ? RED : MUTED, whiteSpace: "nowrap" }}>
+                        {r.delta > 0 ? "+" : ""}{r.delta}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2 }}>
+                      {_timeAgo(r.ts)} · total {Number(r.overall_after).toLocaleString()}
+                    </div>
+                    {r.anomaly && (
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, marginTop: 2 }}>⚑ {r.anomaly}</div>
+                    )}
+                  </div>
+                ))}
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9, color: MUTED, marginTop: 8, lineHeight: 1.5 }}>
+                  Read-only. To undo a change, the hunter uses Progress → XP log on their own device; "Reset stats" above is the only server-side correction.
+                </div>
+              </div>
+            )}
 
             {/* Audit log — collapsible */}
             <button onClick={toggleAuditOpen} style={{
@@ -9372,7 +9545,12 @@ export default function IronRealm() {
           const mindLogM = (p.mindLog || []).map(e =>
             e.activity === "quran_read" && e.xp > 54 * (e.qty || 1) * 1.5
               ? { ...e, xp: 54 * (e.qty || 1) } : e);
-          return [id, withRebuiltStats({ ...p, mindLog: mindLogM })];
+          // Backfill a stable id on every historical entry. Without one, edits
+          // and deletes fall back to matching (date, exerciseName), which is not
+          // unique for anything logged through the Schedule.
+          const withIds = (p.workouts || []).map(w => w.id ? w : { ...w, id: newWorkoutId() });
+          return [id, { ...withRebuiltStats({ ...p, workouts: withIds, mindLog: mindLogM }),
+            xpLog: p.xpLog || [] }];
         })
       );
       return { ...loaded, profiles: repairedProfiles };
@@ -9645,6 +9823,20 @@ export default function IronRealm() {
     return () => { cancelled = true; document.removeEventListener("visibilitychange", onVisible); };
   }, [session, screen]);
 
+  // Mirror audit events for founder review. Append-only server-side, and the
+  // rows carry no set detail or body metrics — see services/xpAudit.js.
+  const auditPushRef = useRef(null);
+  useEffect(() => {
+    if (!supabaseConfigured || !session?.user) return;
+    const rows = (st.xpLog || []).map(toAuditRow);
+    if (!rows.length) return;
+    if (auditPushRef.current) clearTimeout(auditPushRef.current);
+    auditPushRef.current = setTimeout(() => {
+      xpAuditService.pushAuditEvents(session.user.id, rows).catch(() => {});
+    }, 8000);
+    return () => { if (auditPushRef.current) clearTimeout(auditPushRef.current); };
+  }, [st.xpLog, session]);
+
   const handleToggleSharePrs = useCallback(async () => {
     if (!session?.user || !remoteProfile) return;
     const next = remoteProfile.share_prs === false ? true : false;
@@ -9735,10 +9927,11 @@ export default function IronRealm() {
       const netXP    = Math.max(0, (entry.xp || 0) - surplus);
       const absorbed = (entry.xp || 0) - netXP;
       const exName = entry.exerciseName || entry.exercise?.name;
-      const logged = { ...entry, xp: netXP, rawXP: entry.xp, absorbed,
+      const logged = { ...entry, id: entry.id || newWorkoutId(), xp: netXP, rawXP: entry.xp, absorbed,
         stimMult: entry.stimMult == null ? 1 : entry.stimMult,
         date: entry.targetDate || entry.date || Date.now() };
-      const next = withRebuiltStats({ ...p, workouts: [...p.workouts, logged] });
+      const next = commitWorkoutChange(p, { add: logged, remove: entry.replaces || null,
+        type: entry.replaces ? "edit" : "log", source: entry.source || null });
       // Which stat did this session load most? Drives the level-up toast.
       const statKey = entry.exercise?.type === "cardio" ? "cardio"
         : creditList(entry.exercise || {}, entry.muscle)[0]?.[0] || entry.muscle;
@@ -9763,14 +9956,28 @@ export default function IronRealm() {
   };
 
   const handleUnlogExercise = (entry) => {
-    updateActive(p => {
-      // Remove the entry first, then recompute ALL stats from scratch
-      // This guarantees stats always match the workout log — no drift possible
-      const newWorkouts = (p.workouts || []).filter(w =>
-        !(w.date === entry.date && w.exerciseName === entry.exerciseName));
-      return withRebuiltStats({ ...p, workouts: newWorkouts });
-    });
+    updateActive(p => commitWorkoutChange(p, { remove: entry, type: "delete" }));
     toast(`${entry.exerciseName} removed`, MUTED);
+  };
+
+  // Undo one audit event: drop what it added, restore what it removed. Because
+  // every stat is derived from the ledger, putting the ledger back is enough.
+  const handleRevertXpEvent = (eventId) => {
+    updateActive(p => {
+      const event = (p.xpLog || []).find(e => e.id === eventId);
+      if (!event) return p;
+      const before = p.overallXP || 0;
+      let workouts = p.workouts || [];
+      if (event.addedId) workouts = workouts.filter(w => w.id !== event.addedId);
+      if (event.removed) workouts = [...workouts, event.removed];
+      const next = withRebuiltStats({ ...p, workouts });
+      const undo = buildEvent({ type: "revert", overallBefore: before, overallAfter: next.overallXP || 0,
+        add: event.removed || null, remove: null, source: "founder-tools",
+        extra: { revertedId: event.id, revertedType: event.type } });
+      undo.exerciseName = event.exerciseName;
+      return { ...next, xpLog: appendEvent(next.xpLog, undo) };
+    });
+    toast("Change reverted", GOLD);
   };
 
   const handleLogFood = (calories, protein = 0, targetDate = null) => {
@@ -10031,7 +10238,7 @@ export default function IronRealm() {
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
       {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onSetPatronLift={handleSetPatronLift} toast={toast}
         settings={settings} onUpdateSettings={handleUpdateSettings} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} />}
-      {screen === "progress"  && <ProgressScreen st={st} />}
+      {screen === "progress"  && <ProgressScreen st={st} onRevertXpEvent={handleRevertXpEvent} />}
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} account={account} onInboxCount={setProgramInbox} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
       {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}

@@ -59,6 +59,13 @@ Run `migrations/012_program_sharing.sql` to let hunters send custom programs to
 their friends. Without it the app still exports and imports programs as files
 and share codes; only the "send to a friend" path is disabled.
 
+### 4c. XP audit trail (optional)
+
+Run `migrations/013_xp_audit.sql` to mirror each hunter's XP changes for founder
+review. It grants admins visibility they did not previously have, so ship the
+matching privacy-policy copy with it (already in `public/privacy.html`). Without
+it the app still keeps the full audit trail and undo on-device.
+
 ### 5. Verify
 
 In **Database → Tables** you should see `profiles`, `friend_requests`,

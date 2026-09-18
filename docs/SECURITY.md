@@ -41,6 +41,30 @@ friend. Both paths treat the program as untrusted input:
 - Nothing is imported automatically — a shared program sits in an inbox until the
   recipient chooses to take it.
 
+## v2.12 — XP audit trail
+
+`profile.xpLog` records every change to the workout ledger (log / edit / delete /
+revert) with the XP before and after, plus enough to reverse it exactly: the id
+of the entry added and the whole entry removed. Undo is available to the hunter
+in Progress → XP log.
+
+Mirrored to `xp_audit` (migration 013) for founder review:
+
+- **Deliberately thin**: time, change type, exercise name, XP delta, running
+  total, and a conservative anomaly flag. No sets, reps, loads, body metrics or
+  nutrition.
+- **Append-only by policy**: there is an INSERT policy and no UPDATE or DELETE
+  policy, so a client cannot rewrite or erase its own history after the fact.
+  Rows cascade away with the account.
+- **Read**: owner, or admin via the `is_admin()` definer helper from migration
+  011 (a policy on a table must not sub-select that table).
+- **Admins cannot write**: reverting happens on the device that owns the data.
+  An admin can see that something went wrong and say so; the only server-side
+  correction remains `resetUserStats`.
+- **Privacy note**: this is new admin visibility, so `public/privacy.html` gained
+  a paragraph describing exactly what is recorded and what is not. Do not run
+  migration 013 without shipping that copy.
+
 ## Accepted / by design
 
 - **Self-reported leaderboard numbers.** Levels and XP are computed on the
