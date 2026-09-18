@@ -30,6 +30,34 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.14 — maintenance measured from your own weigh-ins
+
+`data/metabolism.js`. Mifflin-St Jeor is a population average that scatters
+±10–15 % per person and drifts down during a diet; the 3,500 kcal-per-pound rule
+compounds that over weeks. So the formula is now only the starting guess.
+
+    maintenance = mean daily intake − (pounds gained per day × 3,500)
+
+- **Least-squares slope**, not first-minus-last: scale weight swings pounds on
+  water and glycogen, so two endpoints can be a full pound/week off the trend.
+- **Gates before it is used at all**: 4+ weigh-ins, a 14-day span, and ≥ 60 % of
+  the 42-day window with food logged. Unlogged days are the real hazard —
+  averaging logged days assumes the rest matched. Each gate returns a plain-
+  language `reason` that the card shows.
+- **Confidence-weighted blend** toward the measured value (full trust at 35 days
+  and 90 % coverage), so it never swings on thin data. `FULL_TRUST_DAYS` must sit
+  inside `TDEE_WINDOW_DAYS` or confidence silently caps below 1.
+- **Sanity band**: a result below 55 % or above 160 % of the formula is treated
+  as mis-logged food or a changed scale, not a remarkable metabolism.
+- `maintenanceFor()` (memoised on a cheap signature, since `calcTDEE` runs most
+  renders) feeds `calcTDEE`, `planSummaryFor` and `fuelContext`. The calorie card
+  shows the source, the drift from the formula, the confidence and the observed
+  scale trend.
+
+Validated against synthetic data with known ground truth: a true 2,500
+maintenance reads 2,468 and a true 3,100 reads 3,068 through ±1 lb scale noise;
+thin or sparsely logged data correctly stays on the formula.
+
 ## v2.13 — the calorie floor can be lifted, with informed consent
 
 Two floors instead of one, because "don't plan a crash diet by accident" and

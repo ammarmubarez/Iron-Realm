@@ -10,6 +10,7 @@ import { MUSCLE_META, _ID_TO_MUSCLE, _CUSTOM_SUB_OPTIONS } from "./data/muscles"
 import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTIVITY_LEVELS, DAILY_RITUALS,
   KCAL_PER_LB, offsetFromRate, rateFromOffset, GOAL_DIRECTION, RATE_PRESETS, rateSafety, intakeFloor,
   HARD_INTAKE_FLOOR, effectiveIntakeFloor, BELOW_FLOOR_RISKS } from "./data/profile";
+import { estimateMaintenance, describeMaintenance, TDEE_WINDOW_DAYS } from "./data/metabolism";
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
 import { DAILY_TIPS } from "./data/tips";
 import { MIND_ACTIVITIES } from "./data/mind";
@@ -39,7 +40,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.13.0";
+const APP_VERSION = "2.14.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -767,8 +768,9 @@ function calcTDEE(profile) {
   const bmr = isFemale
     ? 10 * weightKg + 6.25 * heightCm - 5 * age - 161
     : 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
-  const lvl = ACTIVITY_LEVELS.find(a => a.id === profile.activityLevel) || ACTIVITY_LEVELS[2];
-  const base = Math.round(bmr * lvl.multiplier);
+  // Maintenance is measured from the hunter's own data once there is enough of
+  // it (see data/metabolism.js); until then it is the formula.
+  const base = maintenanceFor(profile);
   // The hunter's own plan wins; profiles created before v2.11 fall back to the
   // goal's historical fixed offset. The advisory floor stops an accidental crash
   // diet; a hunter who has acknowledged the risks gets the number they actually
@@ -778,6 +780,22 @@ function calcTDEE(profile) {
 }
 
 // Signed kcal/day this profile is aiming for, relative to maintenance.
+// Maintenance the app plans against: the Mifflin-St Jeor estimate until there
+// are enough weigh-ins and logged days to measure it, then blended toward the
+// measured value by confidence. Memoised on a cheap signature because calcTDEE
+// runs on most renders and the regression should not.
+let _maintCache = { key: null, value: null };
+function maintenanceEstimate(profile) {
+  const formula = _calcMaintenance(profile);
+  const wl = profile?.weightLog || [], fl = profile?.foodLog || [];
+  const key = `${formula}|${wl.length}|${fl.length}|${wl[wl.length - 1]?.date || 0}|${fl[fl.length - 1]?.date || 0}|${fl[fl.length - 1]?.calories || 0}`;
+  if (_maintCache.key === key) return _maintCache.value;
+  const value = estimateMaintenance({ weightLog: wl, foodLog: fl, formulaMaintenance: formula });
+  _maintCache = { key, value };
+  return value;
+}
+const maintenanceFor = (profile) => maintenanceEstimate(profile).maintenance;
+
 function calorieOffsetFor(profile) {
   if (Number.isFinite(profile?.calorieOffset)) return profile.calorieOffset;
   return (GOAL_CONFIG[profile?.goal] || { tdeeOffset: 0 }).tdeeOffset;
@@ -785,7 +803,7 @@ function calorieOffsetFor(profile) {
 // What the plan actually delivers after the intake floor clamps it, so the UI
 // can say "we capped this" instead of quietly disagreeing with the target.
 function planSummaryFor(profile) {
-  const maintenance = _calcMaintenance(profile);
+  const maintenance = maintenanceFor(profile);
   const target = calcTDEE(profile);
   const effective = target - maintenance;
   const requested = calorieOffsetFor(profile);
@@ -1686,7 +1704,7 @@ function StatTree({ tree, getGroupXP, getSuperXP, subStats, subLevels, selectedM
 // response regardless of volume (Morton 2018). Uses the 3-day average of the
 // food log when there is one, else the goal's planned offset.
 function fuelContext(profile) {
-  const maintenance = _calcMaintenance(profile);
+  const maintenance = maintenanceFor(profile);
   const proteinTarget = calcProteinTarget(profile);
   const cutoff = Date.now() - 3 * 86400000;
   const recent = (profile?.foodLog || []).filter(f => f.date >= cutoff && f.calories > 0);
@@ -5516,7 +5534,7 @@ function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest 
 // the offset directly and the rate follows. One stored field, `calorieOffset`,
 // so the two can never disagree. Shown in onboarding and in Settings → Account.
 function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onChange,
-                            belowFloorAckAt = null, onAcknowledgeFloor }) {
+                            belowFloorAckAt = null, onAcknowledgeFloor, profile = null }) {
   const [manual, setManual] = useState(false);
   const [draft, setDraft]   = useState("");
   const [consentOpen, setConsentOpen] = useState(false);
@@ -5529,7 +5547,13 @@ function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onC
   const kg = (weightLbs || 170) * 0.453592, cm = (heightIn || 70) * 2.54;
   const bmr = isFemale ? 10 * kg + 6.25 * cm - 5 * (age || 25) - 161
                        : 10 * kg + 6.25 * cm - 5 * (age || 25) + 5;
-  const maintenance = Math.round(bmr * (ACTIVITY_LEVELS.find(a => a.id === "moderate")?.multiplier || 1.5));
+  const formulaMaint = Math.round(bmr * (ACTIVITY_LEVELS.find(a => a.id === "moderate")?.multiplier || 1.5));
+  // Once the hunter has enough weigh-ins and logged days, plan against what
+  // their body actually burns rather than what the formula predicts. During
+  // onboarding there is no history, so this is just the formula.
+  const est = estimateMaintenance({ weightLog: profile?.weightLog, foodLog: profile?.foodLog,
+    formulaMaintenance: formulaMaint });
+  const maintenance = est.maintenance;
   const acked       = !!belowFloorAckAt;
   const advisory    = intakeFloor(bmr, isFemale);
   const floor       = effectiveIntakeFloor(bmr, isFemale, acked);
@@ -5594,6 +5618,22 @@ function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onC
           {direction !== 0 && effective !== 0 &&
             ` · about ${asWeight(Math.abs(Number(rate.toFixed(2))))} a week`}
         </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
+          color: est.method === "formula" ? MUTED : GREEN, marginTop: 3, lineHeight: 1.4 }}>
+          {est.method === "formula" ? "Estimated from your body stats" : describeMaintenance(est)}
+        </div>
+        {est.method === "formula" && est.reason && (
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2, lineHeight: 1.4, opacity: .8 }}>
+            {est.reason}
+          </div>
+        )}
+        {est.method !== "formula" && est.trendLbsPerWeek != null && (
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 2, lineHeight: 1.4 }}>
+            Scale trend over that window: {est.trendLbsPerWeek === 0 ? "holding steady"
+              : `${est.trendLbsPerWeek < 0 ? "−" : "+"}${asWeight(Math.abs(est.trendLbsPerWeek))} a week`}
+            {" "}on {est.meanIntake.toLocaleString()} kcal a day.
+          </div>
+        )}
         {direction !== 0 && effective !== 0 && (
           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: tone, marginTop: 4 }}>{safety.note}</div>
         )}
@@ -8305,7 +8345,8 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
               heightIn={(parseInt(editHeightFt) || 5) * 12 + (parseInt(editHeightIn) || 10)}
               age={parseInt(editAge) || 25} gender={editGender}
               offset={editOffset} onChange={setEditOffset}
-              belowFloorAckAt={editFloorAck} onAcknowledgeFloor={setEditFloorAck} />
+              belowFloorAckAt={editFloorAck} onAcknowledgeFloor={setEditFloorAck}
+              profile={st} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: profiles.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
             <Button variant="primary" size="md" block onClick={handleSaveEdit}>Save changes</Button>
