@@ -44,6 +44,64 @@ export const GOAL_CONFIG = {
                   tip:"'Toning' = muscle + fat loss together. Both require consistent resistance training.", focus:"Higher reps (12-20), moderate weight, cardio mix" },
 };
 
+// ─── CALORIE PLAN ─────────────────────────────────────────────────────────────
+// A goal's calorie offset is no longer a fixed number baked into GOAL_CONFIG —
+// it is derived from how fast the hunter wants to change weight. One pound of
+// body fat stores ~3,500 kcal, so ±1 lb/week ≈ ±500 kcal/day (Wishnofsky 1958;
+// the rule overstates long-run loss because the body adapts, but it is the
+// standard planning figure and the app re-checks against real weigh-ins).
+//
+// The profile stores ONE field, `calorieOffset` (signed kcal/day). A rate
+// preset writes it, a manual entry writes it, and the displayed rate is always
+// derived back from it — so the two controls can never disagree. When it is
+// null the goal's historical default (GOAL_CONFIG.tdeeOffset) is used, which
+// keeps every profile created before v2.11 working unchanged.
+export const KCAL_PER_LB = 3500;
+export const offsetFromRate = (lbsPerWeek) => Math.round((lbsPerWeek * KCAL_PER_LB) / 7);
+export const rateFromOffset = (kcalPerDay) => (kcalPerDay * 7) / KCAL_PER_LB;
+
+// Which way a goal moves the scale. Used to pick the right presets and wording.
+export const GOAL_DIRECTION = {
+  cut: -1, cardio: -1, toning: -1,
+  maintain: 0,
+  bulk: +1, bodybuild: +1, powerlifting: +1, calisthenics: +1,
+};
+
+// Weekly rates offered per direction, in lb/week.
+export const RATE_PRESETS = {
+  "-1": [0.5, 1, 1.5, 2],
+  "1":  [0.25, 0.5, 0.75, 1],
+  "0":  [0],
+};
+
+// How aggressive a rate is for this body weight, and why it matters.
+//   Loss: 0.5–1 %/week is the band where fat comes off with little lean loss;
+//         past ~1 %/week lean mass and strength drop measurably (Garthe 2011).
+//   Gain: ~0.25–0.5 %/week is the lean-gain band; faster mostly adds fat
+//         (Garthe 2013, Slater 2019).
+export function rateSafety(lbsPerWeek, weightLbs, direction) {
+  const pct = weightLbs > 0 ? (Math.abs(lbsPerWeek) / weightLbs) * 100 : 0;
+  const pctLabel = `${pct.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}% of body weight`;
+  if (direction < 0) {
+    if (pct <= 0.55) return { level: "easy", pct, pctLabel, note: "Gentle — easiest to sustain, keeps the most muscle" };
+    if (pct <= 1.05) return { level: "ok",   pct, pctLabel, note: "Standard fat-loss rate with little muscle loss" };
+    return { level: "hard", pct, pctLabel, note: "Past 1%/week — expect strength and muscle to go too" };
+  }
+  if (direction > 0) {
+    if (pct <= 0.3)  return { level: "easy", pct, pctLabel, note: "Lean gain — most of this should be muscle" };
+    if (pct <= 0.55) return { level: "ok",   pct, pctLabel, note: "Solid bulk rate; some fat comes with it" };
+    return { level: "hard", pct, pctLabel, note: "Fast bulk — a large share of this will be fat" };
+  }
+  return { level: "ok", pct: 0, pctLabel: "holding steady", note: "Eating at maintenance" };
+}
+
+// The lowest daily intake the app will plan for: never under BMR, and never
+// under the conventional clinical floors. Below this the target is clamped and
+// the UI says so rather than silently prescribing a starvation diet.
+export function intakeFloor(bmr, isFemale) {
+  return Math.max(Math.round(bmr || 0), isFemale ? 1200 : 1500);
+}
+
 export const EQUIPMENT_CATEGORIES = [
   { id: "BODYWEIGHT", name: "Bodyweight (floor & wall only)" },
   { id: "BENCH",      name: "Bench / chair / step" },

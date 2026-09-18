@@ -30,6 +30,28 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.11 — the calorie target is a plan, not a hidden constant
+
+The goal's fixed `tdeeOffset` (cut −400, bulk +300 …) is now only a fallback.
+Onboarding gains a fifth step, "Calorie plan", and Settings → Account → Edit
+profile gains the same control plus a goal picker.
+
+- **Pick a weekly rate** in lb/kg and the daily offset follows (1 lb of fat ≈
+  3,500 kcal, so 1 lb/week ≈ 500 kcal/day). Presets are 0.5/1/1.5/2 lb for loss
+  and 0.25/0.5/0.75/1 lb for gain, each annotated with its share of body weight
+  and colour-coded: loss is gentle ≤ 0.55 %/wk, standard ≤ 1 %/wk, and past 1 %
+  costs strength and muscle (Garthe 2011); gain is lean ≤ 0.3 %/wk, solid
+  ≤ 0.55 %/wk, mostly fat beyond (Garthe 2013).
+- **Or type the offset directly.** Both controls write one stored field,
+  `profile.calorieOffset` (signed kcal/day), and the displayed rate is always
+  derived back from it, so they cannot disagree. `null` means "use the goal's
+  old default", which keeps pre-v2.11 profiles working unchanged.
+- **Intake floor**: `calcTDEE` never plans below `intakeFloor(bmr, isFemale)` —
+  BMR, or the 1,500/1,200 kcal clinical floors, whichever is higher. A 2 lb/week
+  target on a small frame is clamped and the UI says so instead of quietly
+  prescribing a crash diet. `planSummaryFor(profile)` exposes requested vs
+  effective offset for anything that needs to show the difference.
+
 ## v2.10 — protein no longer charges the calorie currency
 
 Two currencies, two gates, and the UI now says which one fired:

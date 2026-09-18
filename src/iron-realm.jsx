@@ -7,7 +7,8 @@ import { MALE_PROGRAMS, FEMALE_PROGRAMS } from "./data/programs";
 import { OVERALL_THRESHOLDS, MUSCLE_THRESHOLDS, OVERALL_MILESTONE_NAMES, OVERALL_MILESTONE_DESC, MUSCLE_MILESTONE_NAMES, MUSCLE_MILESTONE_DESC, MET_VALUES, ATROPHY,
   WORK_KCAL_PER_KG_REP, STIM, effortFactor, loadFactor, repFactor, volumeFactor, ageDetrainingFactor, muscleDetrainingFactor } from "./data/progression";
 import { MUSCLE_META, _ID_TO_MUSCLE, _CUSTOM_SUB_OPTIONS } from "./data/muscles";
-import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTIVITY_LEVELS, DAILY_RITUALS } from "./data/profile";
+import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTIVITY_LEVELS, DAILY_RITUALS,
+  KCAL_PER_LB, offsetFromRate, rateFromOffset, GOAL_DIRECTION, RATE_PRESETS, rateSafety, intakeFloor } from "./data/profile";
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
 import { DAILY_TIPS } from "./data/tips";
 import { MIND_ACTIVITIES } from "./data/mind";
@@ -34,7 +35,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.10.0";
+const APP_VERSION = "2.11.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -735,8 +736,26 @@ function calcTDEE(profile) {
     : 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
   const lvl = ACTIVITY_LEVELS.find(a => a.id === profile.activityLevel) || ACTIVITY_LEVELS[2];
   const base = Math.round(bmr * lvl.multiplier);
-  const goalCfg = GOAL_CONFIG[profile.goal] || { tdeeOffset: 0 };
-  return base + goalCfg.tdeeOffset;
+  // The hunter's own plan wins; profiles created before v2.11 fall back to the
+  // goal's historical fixed offset. Never plan below the intake floor — a
+  // 2 lb/week target on a small frame would otherwise prescribe a crash diet.
+  return Math.max(intakeFloor(bmr, isFemale), base + calorieOffsetFor(profile));
+}
+
+// Signed kcal/day this profile is aiming for, relative to maintenance.
+function calorieOffsetFor(profile) {
+  if (Number.isFinite(profile?.calorieOffset)) return profile.calorieOffset;
+  return (GOAL_CONFIG[profile?.goal] || { tdeeOffset: 0 }).tdeeOffset;
+}
+// What the plan actually delivers after the intake floor clamps it, so the UI
+// can say "we capped this" instead of quietly disagreeing with the target.
+function planSummaryFor(profile) {
+  const maintenance = _calcMaintenance(profile);
+  const target = calcTDEE(profile);
+  const effective = target - maintenance;
+  const requested = calorieOffsetFor(profile);
+  return { maintenance, target, effective, requested, clamped: effective !== requested,
+    ratePerWeek: rateFromOffset(effective) };
 }
 
 // Returns maintenance (no offset) for displaying separately
@@ -799,8 +818,7 @@ function calcNetXP(workoutXP, calsEaten, tdee) {
 // maintenance — on a cut you can be 300 kcal under maintenance and still over
 // budget. Name the budget so the UI never calls that a "surplus".
 function calorieBudgetLabel(profile) {
-  const cfg = GOAL_CONFIG[profile?.goal];
-  if (!cfg || !cfg.tdeeOffset) return "your maintenance";
+  if (!calorieOffsetFor(profile)) return "your maintenance";
   const goal = FITNESS_GOALS.find(g => g.id === profile?.goal);
   return `your ${(goal?.label || "daily").toLowerCase()} target`;
 }
@@ -1638,7 +1656,7 @@ function fuelContext(profile) {
   const cutoff = Date.now() - 3 * 86400000;
   const recent = (profile?.foodLog || []).filter(f => f.date >= cutoff && f.calories > 0);
   if (!recent.length) {
-    const planned = (GOAL_CONFIG[profile?.goal] || { tdeeOffset: 0 }).tdeeOffset;
+    const planned = calorieOffsetFor(profile);
     return { logged: false, balance: planned, maintenance, proteinTarget, proteinAvg: null, proteinRatio: null };
   }
   const avgCals = recent.reduce((a, f) => a + f.calories, 0) / recent.length;
@@ -5451,6 +5469,120 @@ function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest 
 
 // ─── SCREEN: ONBOARD ──────────────────────────────────────────────────────────
 
+// ─── CALORIE PLAN PICKER ──────────────────────────────────────────────────────
+// "How fast do you want to change?" rather than a hidden fixed number. Pick a
+// weekly rate and the daily calorie offset follows (1 lb ≈ 3,500 kcal), or type
+// the offset directly and the rate follows. One stored field, `calorieOffset`,
+// so the two can never disagree. Shown in onboarding and in Settings → Account.
+function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onChange }) {
+  const [manual, setManual] = useState(false);
+  const [draft, setDraft]   = useState("");
+  const direction = GOAL_DIRECTION[goal] ?? 0;
+  const presets   = RATE_PRESETS[String(direction)] || [0];
+  const isFemale  = gender === "female";
+
+  // Same maths as calcTDEE, on the values being entered right now.
+  const kg = (weightLbs || 170) * 0.453592, cm = (heightIn || 70) * 2.54;
+  const bmr = isFemale ? 10 * kg + 6.25 * cm - 5 * (age || 25) - 161
+                       : 10 * kg + 6.25 * cm - 5 * (age || 25) + 5;
+  const maintenance = Math.round(bmr * (ACTIVITY_LEVELS.find(a => a.id === "moderate")?.multiplier || 1.5));
+  const floor       = intakeFloor(bmr, isFemale);
+  const target      = Math.max(floor, maintenance + offset);
+  const effective   = target - maintenance;
+  const clamped     = effective !== offset;
+  const rate        = rateFromOffset(effective);
+  const safety      = rateSafety(rate, weightLbs || 170, direction);
+  const tone        = safety.level === "hard" ? RED : safety.level === "ok" ? GREEN : GOLD;
+
+  const verb = direction < 0 ? "lose" : direction > 0 ? "gain" : "hold";
+  const asWeight = (lbs) => getWtUnit() === "kg" ? `${(lbs * 0.453592).toFixed(2).replace(/0$/, "")} kg` : `${lbs} lb`;
+
+  return (
+    <div>
+      {direction !== 0 && (
+        <>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
+            letterSpacing: TRACK, marginBottom: 8 }}>
+            HOW MUCH DO YOU WANT TO {verb.toUpperCase()} PER WEEK?
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+            {presets.map(r => {
+              const o = offsetFromRate(r * direction);
+              const active = !manual && Math.abs(o - offset) < 1;
+              const s = rateSafety(r, weightLbs || 170, direction);
+              return (
+                <button key={r} onClick={() => { setManual(false); onChange(o); }} style={{
+                  background: active ? `${ACCENT}22` : BG3,
+                  border: `1px solid ${active ? ACCENT : ACCENT2 + "33"}`,
+                  borderRadius: 8, padding: "10px 10px", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700,
+                    color: active ? ACCENT : TEXT }}>{asWeight(r)}</div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                    {o > 0 ? "+" : ""}{o} kcal/day
+                  </div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 9,
+                    color: s.level === "hard" ? RED : s.level === "ok" ? GREEN : GOLD, marginTop: 2 }}>
+                    {s.pctLabel}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div style={{ background: BG3, border: `1px solid ${tone}33`, borderRadius: 10, padding: "12px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK }}>DAILY TARGET</span>
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 900, color: tone }}>
+            {target.toLocaleString()} <span style={{ fontSize: 11, color: MUTED }}>kcal</span>
+          </span>
+        </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
+          Maintenance {maintenance.toLocaleString()} kcal · {effective === 0 ? "no change"
+            : `${effective > 0 ? "+" : ""}${effective} kcal/day`}
+          {direction !== 0 && effective !== 0 &&
+            ` · about ${asWeight(Math.abs(Number(rate.toFixed(2))))} a week`}
+        </div>
+        {direction !== 0 && effective !== 0 && (
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: tone, marginTop: 4 }}>{safety.note}</div>
+        )}
+        {clamped && (
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: RED, marginTop: 4, lineHeight: 1.4 }}>
+            Capped at {floor.toLocaleString()} kcal — going lower than this is below what your body burns at rest.
+          </div>
+        )}
+
+        {!manual ? (
+          <button onClick={() => { setManual(true); setDraft(String(offset)); }} style={{
+            marginTop: 10, background: "none", border: `1px solid ${MUTED}33`, borderRadius: 6,
+            padding: "7px 11px", cursor: "pointer", fontFamily: FONT_DISPLAY, fontSize: 9,
+            fontWeight: 700, letterSpacing: TRACK, color: MUTED }}>
+            SET CALORIES MANUALLY
+          </button>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginBottom: 4 }}>
+              Daily offset from maintenance (negative to lose)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+              <input className="input-field" type="number" value={draft} placeholder="-500"
+                onChange={e => setDraft(e.target.value)}
+                style={{ textAlign: "center", color: ACCENT, fontWeight: 700 }} />
+              <button onClick={() => {
+                const v = Math.max(-2000, Math.min(2000, Math.round(parseFloat(draft) || 0)));
+                onChange(v); setManual(false);
+              }} style={{ padding: "0 16px", cursor: "pointer", background: `${ACCENT}22`,
+                border: `1px solid ${ACCENT}55`, borderRadius: 6, fontFamily: FONT_DISPLAY,
+                fontSize: 10, fontWeight: 700, letterSpacing: TRACK, color: ACCENT }}>APPLY</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OnboardScreen({ onComplete }) {
   const [step, setStep] = useState(0); // 0=welcome, 1=name, 2=gender, 3=goal, 4=body, 4=body
   const [name, setName] = useState("");
@@ -5459,6 +5591,9 @@ function OnboardScreen({ onComplete }) {
   const [weightLbs, setWeightLbs] = useState("170");
   const [heightFt, setHeightFt] = useState("5");
   const [heightIn, setHeightIn] = useState("10");
+  const [age, setAge] = useState("25");
+  // Calorie plan, seeded from the goal's default when the goal is picked.
+  const [calorieOffset, setCalorieOffset] = useState(null);
 
   const Rune = ({ char, top, left, size, delay }) => (
     <div style={{ position: "absolute", top, left, fontSize: size, color: ACCENT,
@@ -5516,7 +5651,7 @@ function OnboardScreen({ onComplete }) {
         {step === 1 && (
           <div className="slide-up" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-              letterSpacing: TRACK, marginBottom: 8 }}>STEP 1 / 3</div>
+              letterSpacing: TRACK, marginBottom: 8 }}>STEP 1 / 5</div>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
               color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>HUNTER NAME</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
@@ -5539,7 +5674,7 @@ function OnboardScreen({ onComplete }) {
         {step === 2 && (
           <div className="slide-up" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-              letterSpacing: TRACK, marginBottom: 8 }}>STEP 2 / 3</div>
+              letterSpacing: TRACK, marginBottom: 8 }}>STEP 2 / 5</div>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
               color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>SELECT CLASS</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
@@ -5575,7 +5710,7 @@ function OnboardScreen({ onComplete }) {
           <div className="slide-up">
             <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                letterSpacing: TRACK, marginBottom: 8 }}>STEP 3 / 4</div>
+                letterSpacing: TRACK, marginBottom: 8 }}>STEP 3 / 5</div>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
                 color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>MISSION TYPE</div>
               <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
@@ -5585,7 +5720,10 @@ function OnboardScreen({ onComplete }) {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 24 }}>
               {FITNESS_GOALS.map(g => (
-                <button key={g.id} onClick={() => setGoal(g.id)} style={{
+                <button key={g.id} onClick={() => {
+                  setGoal(g.id);
+                  setCalorieOffset((GOAL_CONFIG[g.id] || { tdeeOffset: 0 }).tdeeOffset);
+                }} style={{
                   background: goal === g.id ? `${ACCENT}22` : BG2,
                   border: `1px solid ${goal === g.id ? ACCENT : ACCENT2 + "44"}`,
                   borderRadius: 10, padding: "12px 10px", cursor: "pointer", textAlign: "left",
@@ -5610,16 +5748,23 @@ function OnboardScreen({ onComplete }) {
         {step === 4 && (
           <div className="slide-up" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-              letterSpacing: TRACK, marginBottom: 8 }}>STEP 4 / 4</div>
+              letterSpacing: TRACK, marginBottom: 8 }}>STEP 4 / 5</div>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
               color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>BODY STATS</div>
             <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED,
               marginBottom: 32 }}>Used to calculate calories burned accurately.</div>
 
-            <div style={{ textAlign: "left", marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>WEIGHT (LBS)</div>
-              <input className="input-field" type="number" value={weightLbs} onChange={e => setWeightLbs(e.target.value)}
-                placeholder={getWtUnit()==="kg"?"77":"170"} style={{ fontSize: 18, fontWeight: 700, color: ACCENT, textAlign: "center" }} />
+            <div style={{ textAlign: "left", marginBottom: 20, display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>WEIGHT ({wtLabel().toUpperCase()})</div>
+                <input className="input-field" type="number" value={weightLbs} onChange={e => setWeightLbs(e.target.value)}
+                  placeholder={getWtUnit()==="kg"?"77":"170"} style={{ fontSize: 18, fontWeight: 700, color: ACCENT, textAlign: "center" }} />
+              </div>
+              <div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>AGE</div>
+                <input className="input-field" type="number" value={age} onChange={e => setAge(e.target.value)}
+                  placeholder="25" min="13" max="99" style={{ fontSize: 18, fontWeight: 700, color: ACCENT, textAlign: "center" }} />
+              </div>
             </div>
 
             <div style={{ textAlign: "left", marginBottom: 32 }}>
@@ -5638,14 +5783,51 @@ function OnboardScreen({ onComplete }) {
               </div>
             </div>
 
-            <button className="btn-gold" onClick={() => {
-              const totalIn = (parseInt(heightFt) || 5) * 12 + (parseInt(heightIn) || 10);
-              onComplete({ name: name.trim() || "Hunter", gender, goal, weightLbs: parseFloat(weightLbs) || 170, heightIn: totalIn });
-            }} style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK }}>
-              ARISE
+            <button className="btn-gold" onClick={() => setStep(5)}
+              style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK }}>
+              NEXT
             </button>
           </div>
         )}
+
+        {/* Step 5: Calorie plan — how fast, in pounds per week */}
+        {step === 5 && (() => {
+          const lbs = getWtUnit() === "kg" ? (parseFloat(weightLbs) || 77) / 0.453592 : (parseFloat(weightLbs) || 170);
+          const totalIn = (parseInt(heightFt) || 5) * 12 + (parseInt(heightIn) || 10);
+          const dir = GOAL_DIRECTION[goal] ?? 0;
+          return (
+            <div className="slide-up">
+              <div style={{ textAlign: "center", marginBottom: 20 }}>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
+                  letterSpacing: TRACK, marginBottom: 8 }}>STEP 5 / 5</div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700,
+                  color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>CALORIE PLAN</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: MUTED }}>
+                  {dir < 0 ? "How fast do you want to lose?"
+                    : dir > 0 ? "How fast do you want to gain?"
+                    : "Holding steady — adjust if you want to drift."}
+                </div>
+              </div>
+
+              <CaloriePlanPicker goal={goal} weightLbs={lbs} heightIn={totalIn}
+                age={parseInt(age) || 25} gender={gender}
+                offset={calorieOffset ?? 0} onChange={setCalorieOffset} />
+
+              <button className="btn-gold" onClick={() => onComplete({
+                name: name.trim() || "Hunter", gender, goal,
+                weightLbs: lbs, heightIn: totalIn,
+                age: parseInt(age) || null,
+                calorieOffset: calorieOffset ?? 0,
+              })} style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK, marginTop: 20 }}>
+                ARISE
+              </button>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
+                textAlign: "center", marginTop: 10, lineHeight: 1.5 }}>
+                You can change this any time in Settings → Account.
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -7906,11 +8088,16 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
   const [editHeightFt, setEditHeightFt] = useState(String(Math.floor((st.heightIn || 70) / 12)));
   const [editHeightIn, setEditHeightIn] = useState(String((st.heightIn || 70) % 12));
   const [editGender, setEditGender] = useState(st.gender || "male");
+  const [editGoal, setEditGoal] = useState(st.goal || "maintain");
+  const [editOffset, setEditOffset] = useState(
+    Number.isFinite(st.calorieOffset) ? st.calorieOffset : (GOAL_CONFIG[st.goal] || { tdeeOffset: 0 }).tdeeOffset);
 
   const openEdit = () => {
     setEditName(st.name); setEditAge(String(st.age || "")); setEditWeight(String(st.weightLbs || 170));
     setEditHeightFt(String(Math.floor((st.heightIn || 70) / 12))); setEditHeightIn(String((st.heightIn || 70) % 12));
-    setEditGender(st.gender || "male"); setEditMode(v => !v);
+    setEditGender(st.gender || "male"); setEditGoal(st.goal || "maintain");
+    setEditOffset(Number.isFinite(st.calorieOffset) ? st.calorieOffset : (GOAL_CONFIG[st.goal] || { tdeeOffset: 0 }).tdeeOffset);
+    setEditMode(v => !v);
   };
   const handleSaveEdit = () => {
     const totalIn = (parseInt(editHeightFt) || 5) * 12 + (parseInt(editHeightIn) || 10);
@@ -7920,6 +8107,8 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
       weightLbs: getWtUnit() === "kg" ? (parseFloat(editWeight) || st.weightLbs) / 0.453592 : (parseFloat(editWeight) || st.weightLbs),
       heightIn: totalIn,
       gender: editGender,
+      goal: editGoal,
+      calorieOffset: editOffset,
     });
     setEditMode(false);
     toast("Profile updated", GREEN);
@@ -7971,6 +8160,29 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
                 <Button key={g.id} variant="outline" size="sm" selected={editGender === g.id} onClick={() => setEditGender(g.id)}>{g.label}</Button>
               ))}
             </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 6 }}>Goal</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {FITNESS_GOALS.map(g => (
+                <Button key={g.id} variant="outline" size="sm" selected={editGoal === g.id}
+                  onClick={() => {
+                    setEditGoal(g.id);
+                    // A new goal usually means a new direction, so reset the plan
+                    // to that goal's default rather than keeping a stale deficit.
+                    setEditOffset((GOAL_CONFIG[g.id] || { tdeeOffset: 0 }).tdeeOffset);
+                  }}>{g.label}</Button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: MUTED, marginBottom: 6 }}>Calorie plan</div>
+            <CaloriePlanPicker
+              goal={editGoal}
+              weightLbs={getWtUnit() === "kg" ? (parseFloat(editWeight) || 170) / 0.453592 : (parseFloat(editWeight) || 170)}
+              heightIn={(parseInt(editHeightFt) || 5) * 12 + (parseInt(editHeightIn) || 10)}
+              age={parseInt(editAge) || 25} gender={editGender}
+              offset={editOffset} onChange={setEditOffset} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: profiles.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
             <Button variant="primary" size="md" block onClick={handleSaveEdit}>Save changes</Button>
@@ -9480,8 +9692,9 @@ export default function IronRealm() {
 
   const updateActive = (fn) => setStore(s => ({ ...s, profiles: { ...s.profiles, [s.activeId]: fn(s.profiles[s.activeId]) } }));
 
-  const handleOnboard = ({ name, gender, goal, weightLbs, heightIn, age }) => {
-    updateActive(p => ({ ...p, onboarded: true, name, gender, goal, weightLbs, heightIn, age: age || null }));
+  const handleOnboard = ({ name, gender, goal, weightLbs, heightIn, age, calorieOffset }) => {
+    updateActive(p => ({ ...p, onboarded: true, name, gender, goal, weightLbs, heightIn,
+      age: age || null, calorieOffset: Number.isFinite(calorieOffset) ? calorieOffset : null }));
   };
 
   const handleSwitchProfile = (id) => {
