@@ -20,6 +20,27 @@ migrations (`supabase/`), the deploy shell (`public/index.html`, GitHub Pages) a
 | 11 | Info | **Source maps shipped** to the public site. | `GENERATE_SOURCEMAP=false`. |
 | 12 | Info | **Unused `three` dependency** (≈ 600 KB of code in `node_modules`, not in the bundle). | Removed. `@capacitor/cli` moved to devDependencies. |
 
+## v2.9 — program sharing
+
+Custom programs can be exported to a file, pasted as an `IR1:` code, or sent to a
+friend. Both paths treat the program as untrusted input:
+
+- **Client**: `normalizeProgram()` (`src/data/programShare.js`) is the only way a
+  program reaches the store. It rebuilds the object field by field, strips control
+  characters, clamps every length and count (name 40, desc 140, 7 days, 16
+  exercises/day, 20 sets), forces the accent colour to a fixed palette so a share
+  cannot inject a style value, drops exercises that are not in the importing
+  hunter's own database, and re-derives `diff`/`type` from local data so a payload
+  cannot inflate its own difficulty in the XP engine.
+- **Server** (`supabase/migrations/012_program_sharing.sql`): a row can only be
+  inserted by its sender and only to an account they are already friends with;
+  only the two parties can read it; only the recipient can dismiss it; the payload
+  is capped at 32 KB and the row is immutable after insert (trigger). Rate limited
+  to 30 shares/hour per sender and 200 pending per recipient, so the inbox cannot
+  be used to flood another account.
+- Nothing is imported automatically — a shared program sits in an inbox until the
+  recipient chooses to take it.
+
 ## Accepted / by design
 
 - **Self-reported leaderboard numbers.** Levels and XP are computed on the

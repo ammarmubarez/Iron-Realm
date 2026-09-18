@@ -5,8 +5,11 @@ src/
 ├── index.js            React entry — mounts <IronRealm />
 ├── iron-realm.jsx      App: screens, modals, game logic, XP engine, theming
 ├── data/               Pure data. No imports, no runtime code — safe to edit freely.
-│   ├── exercises.js    EXERCISE_DB, EMG profiles + aliases (emgFor), bodyweight load fractions, equipment
+│   ├── exercises.js    EXERCISE_DB, emgFor(), bodyweight load fractions, equipment classification
+│   ├── emg.js          Per-exercise muscle activation profiles (v2.4 anatomy pass)
+│   ├── strength.js     Strength standards + lift families — suggests a load for an unlogged lift
 │   ├── programs.js     Built-in training programs (MALE_PROGRAMS / FEMALE_PROGRAMS)
+│   ├── programShare.js Custom-program shape, validation, export/import + share envelope
 │   ├── progression.js  XP curves, milestones, MET tables, muscle-stimulus factors, atrophy constants
 │   ├── muscles.js      MUSCLE_META, SVG-region ↔ muscle mapping, angle groups
 │   ├── bodyPaths.js    SVG path data for the body-matrix figure (large, cold data)
@@ -24,8 +27,32 @@ src/
 │   ├── SystemParticles.jsx   Ambient particle field (retired v2.0)
 │   ├── SoulCore.jsx          Animated rank emblem (retired v2.0)
 │   └── CompanionOrb.jsx      Companion orb (retired v2.0)
-└── services/           Supabase: auth, sync, friends, admin, cloud state
+└── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
+
+## v2.9 custom programs — build, export, import, share
+
+- **One resolver.** `allProgramsFor(profile)` / `resolveProgram(profile)` return Free Workout,
+  the hunter's `customPrograms` and the built-ins for their gender. The Programs screen,
+  the Schedule and the Home "today" card all go through it, so a custom program drives the
+  app exactly like a built-in one. Before v2.9 each screen resolved programs itself and
+  `customPrograms` was written but never read.
+- **Builder** (`ProgramBuilderModal`): name, icon, accent, description, then seven days each
+  with a label, a rest toggle and an ordered exercise list (sets + rep target, reorder,
+  remove). A live weekly-volume panel shows credited sets per muscle group against the
+  10–20 sets/week band, using the same `statCredits` the XP engine uses — so a program can
+  be checked before it is ever run.
+- **Export / import**: `data/programShare.js`. A `.json` file (readable, versioned envelope)
+  or an `IR1:` share code (base64url of a compact payload — a 5-day program is ~1 KB, small
+  enough to paste into a chat). `normalizeProgram()` is the ONLY way a program enters the
+  store: it rebuilds every field, clamps strings and counts, forces the accent to the
+  palette, drops exercises not in the local database, and re-derives `diff`/`type` locally
+  so a share cannot smuggle values into the XP engine. Dropped exercises are reported.
+- **Friend sharing**: `services/programs.js` + `supabase/migrations/012_program_sharing.sql`.
+  RLS lets a hunter insert only as themselves and only to an existing friend; both parties
+  can read, only the recipient can dismiss. Rate limited (30/hour, 200 pending), payload
+  capped at 32 KB, and the row is immutable after insert. The Program tab carries an inbox
+  badge, and the recipient chooses whether to import — nothing is written automatically.
 
 ## v2.8 randomizer — a weight for every lift
 

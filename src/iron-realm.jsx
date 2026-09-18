@@ -12,6 +12,9 @@ import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, C
 import { DAILY_TIPS } from "./data/tips";
 import { MIND_ACTIVITIES } from "./data/mind";
 import { standard1RM, familyPR1RM, tierFromLevel } from "./data/strength";
+import { blankProgram, normalizeProgram, toShareCode, fromShareCode, toShareFile, decodeProgram,
+  encodeProgram, programSummary, weeklyVolumeByGroup, PROGRAM_COLORS, PROGRAM_LIMITS, DAY_NAMES } from "./data/programShare";
+import * as programsService from "./services/programs";
 import Button, { buttonCSS } from "./ui/Button";
 import ListGroup, { ListRow } from "./ui/ListGroup";
 import StatTile from "./ui/StatTile";
@@ -31,7 +34,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.9.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -3386,11 +3389,8 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
     toast(`${combined.length} exercises generated — tap to log`, GOLD);
   };
 
-  const programs = st.gender === "female" ? FEMALE_PROGRAMS : MALE_PROGRAMS;
-  const FREE_PROGRAM = { id: "free", name: "Free Workout", free: true };
-  const allPrograms  = [FREE_PROGRAM, ...programs];
-  const program      = allPrograms.find(p => p.id === st.program);
-  const isFree       = !program || program.free;
+  const program = resolveProgram(st);
+  const isFree  = !program || program.free;
 
   // Week boundaries (Mon–Sun)
   const startOfWeek = (() => {
@@ -4137,20 +4137,466 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
 
 
 
-function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
-  const programs = st.gender === "female" ? FEMALE_PROGRAMS : MALE_PROGRAMS;
-  const [expanded, setExpanded] = useState(null);
+// ─── PROGRAM RESOLUTION ───────────────────────────────────────────────────────
+// One place that knows what programs a hunter has: Free Workout, the built-ins
+// for their gender, and their own custom programs. Every screen resolves the
+// active program through here, so a custom program drives the Schedule and the
+// Home "today" card exactly like a built-in one.
+const FREE_PROGRAM = {
+  id: "free", name: "Free Workout", icon: "⬡", color: "#00d4ff",
+  athlete: "No structure", era: "Any time", free: true,
+  desc: "Log whatever you want, whenever you want. Full XP still applies.",
+  days: DAY_NAMES.map(d => ({ label: d, rest: false, free: true, exercises: [] })),
+};
+function allProgramsFor(profile) {
+  const builtIn = profile?.gender === "female" ? FEMALE_PROGRAMS : MALE_PROGRAMS;
+  return [FREE_PROGRAM, ...(profile?.customPrograms || []), ...builtIn];
+}
+function resolveProgram(profile) {
+  return allProgramsFor(profile).find(p => p.id === profile?.program) || null;
+}
+// Every exercise name this hunter can actually log — the gate an imported
+// program is filtered through.
+function knownExerciseNames(profile) {
+  const names = new Set();
+  Object.values(EXERCISE_DB).forEach(list => list.forEach(e => names.add(e.name)));
+  (profile?.customExercises || []).forEach(e => names.add(e.name));
+  return names;
+}
+// Import any untrusted program shape (file, share code, friend inbox row).
+function importProgram(raw, profile) {
+  return normalizeProgram(decodeProgram(raw) || raw, {
+    db: EXERCISE_DB, knownNames: knownExerciseNames(profile),
+  });
+}
 
-  const FREE_PROGRAM = {
-    id: "free", name: "Free Workout", icon: "⬡", color: ACCENT,
-    athlete: "No structure", era: "Any time",
-    desc: "Log whatever you want, whenever you want. Full XP still applies.",
-    days: Array.from({ length: 7 }, (_, i) => ({
-      label: ["MON","TUE","WED","THU","FRI","SAT","SUN"][i],
-      rest: false, free: true, exercises: []
-    }))
+// ─── PROGRAM BUILDER ──────────────────────────────────────────────────────────
+// Create or edit a custom program: seven days, each a label + rest flag + an
+// ordered exercise list with sets and a rep target. Shows the weekly credited
+// sets per muscle group as you build, against the 10–20 set/week band, so the
+// program can be checked before it is ever run.
+function ProgramBuilderModal({ initial, profile, onSave, onDelete, onClose, toast }) {
+  const [prog, setProg] = useState(() => initial || blankProgram());
+  const [dayIdx, setDayIdx] = useState(0);
+  const [picker, setPicker] = useState(null);       // null | { muscle } | "muscles"
+  const [search, setSearch] = useState("");
+  const [showVolume, setShowVolume] = useState(false);
+  const day = prog.days[dayIdx];
+
+  const setDay = (patch) => setProg(p => ({ ...p, days: p.days.map((d, i) => i === dayIdx ? { ...d, ...patch } : d) }));
+  const setExercises = (fn) => setDay({ exercises: fn(day.exercises) });
+
+  const volume = weeklyVolumeByGroup(prog, ex => statCredits(ex, ex.muscle));
+  const volumeRows = Object.entries(volume)
+    .filter(([, v]) => v >= 1)
+    .sort((a, b) => b[1] - a[1])
+    .map(([group, sets]) => ({ group, sets: Math.round(sets * 10) / 10,
+      state: sets < 10 ? "low" : sets > 20 ? "high" : "ok" }));
+
+  const save = () => {
+    const clean = normalizeProgram(prog, { db: EXERCISE_DB, knownNames: knownExerciseNames(profile), keepId: true });
+    if (!clean) { toast("Give your program a name first", RED); return; }
+    if (!clean.days.some(d => !d.rest && d.exercises.length)) { toast("Add at least one exercise", RED); return; }
+    onSave(clean);
   };
-  const allPrograms = [FREE_PROGRAM, ...programs];
+
+  const field = { width: "100%", padding: "9px 11px", background: BG3, border: `1px solid ${ACCENT}22`,
+    borderRadius: 6, color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 14, outline: "none", boxSizing: "border-box" };
+  const label = { fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, fontWeight: 700, marginBottom: 4 };
+
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain",
+      zIndex: 1200, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`, border: `1px solid ${GOLD}22`,
+        borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480,
+        height: "92dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "14px 16px 10px", borderBottom: `1px solid ${GOLD}22` }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: TRACK }}>
+            {initial ? "EDIT PROGRAM" : "NEW PROGRAM"}
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none",
+            color: MUTED, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 20px" }}>
+          {/* identity */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={label}>PROGRAM NAME</div>
+            <input style={field} value={prog.name} maxLength={PROGRAM_LIMITS.name}
+              onChange={e => setProg(p => ({ ...p, name: e.target.value }))} placeholder="My Program" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, marginBottom: 14 }}>
+            <div>
+              <div style={label}>ICON</div>
+              <input style={{ ...field, textAlign: "center" }} value={prog.icon} maxLength={PROGRAM_LIMITS.icon}
+                onChange={e => setProg(p => ({ ...p, icon: e.target.value }))} />
+            </div>
+            <div>
+              <div style={label}>DESCRIPTION</div>
+              <input style={field} value={prog.desc} maxLength={PROGRAM_LIMITS.desc}
+                onChange={e => setProg(p => ({ ...p, desc: e.target.value }))} placeholder="What is this program for?" />
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={label}>ACCENT</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {PROGRAM_COLORS.map(c => (
+                <button key={c} onClick={() => setProg(p => ({ ...p, color: c }))} title={c} style={{
+                  width: 30, height: 30, borderRadius: 8, background: c, cursor: "pointer", padding: 0,
+                  border: `2px solid ${prog.color === c ? "#fff" : "transparent"}` }} />
+              ))}
+            </div>
+          </div>
+
+          {/* weekly volume check */}
+          <button onClick={() => setShowVolume(v => !v)} style={{ width: "100%", textAlign: "left",
+            background: BG3, border: `1px solid ${ACCENT2}22`, borderRadius: 8, padding: "10px 12px",
+            cursor: "pointer", marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK }}>WEEKLY VOLUME CHECK</span>
+              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+                {volumeRows.filter(r => r.state === "low").length} under · {volumeRows.filter(r => r.state === "high").length} over · {showVolume ? "▲" : "▼"}
+              </span>
+            </div>
+            {showVolume && (
+              <div style={{ marginTop: 10 }}>
+                {volumeRows.length === 0 && (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>Add exercises to see credited sets per muscle.</div>
+                )}
+                {volumeRows.map(r => {
+                  const mm = MUSCLE_META[r.group];
+                  const tone = r.state === "ok" ? GREEN : r.state === "low" ? GOLD : RED;
+                  return (
+                    <div key={r.group} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: mm?.color || TEXT, flex: 1 }}>{mm?.name || r.group}</span>
+                      <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11, color: tone, fontWeight: 700 }}>{r.sets}</span>
+                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, minWidth: 74, textAlign: "right" }}>
+                        {r.state === "ok" ? "in range" : r.state === "low" ? "under 10/wk" : "over 20/wk"}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.4 }}>
+                  Credited sets count indirect work — a bench press feeds chest, triceps and front delts. 10–20 hard sets per muscle per week is the productive band.
+                </div>
+              </div>
+            )}
+          </button>
+
+          {/* day tabs */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+            {DAY_NAMES.map((d, i) => {
+              const dd = prog.days[i];
+              const active = i === dayIdx;
+              return (
+                <button key={d} onClick={() => setDayIdx(i)} style={{ flex: 1, padding: "7px 0", cursor: "pointer",
+                  background: active ? `${prog.color}22` : BG3, borderRadius: 6,
+                  border: `1px solid ${active ? prog.color : MUTED + "33"}`,
+                  fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK,
+                  color: active ? prog.color : dd.rest ? MUTED : TEXT }}>
+                  {d}
+                  <div style={{ fontSize: 8, marginTop: 2, color: MUTED, letterSpacing: 0 }}>
+                    {dd.rest ? "rest" : dd.exercises.length || "—"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* day editor */}
+          <div style={{ background: BG3, border: `1px solid ${prog.color}22`, borderRadius: 10, padding: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center", marginBottom: 12 }}>
+              <input style={field} value={day.label} maxLength={PROGRAM_LIMITS.label} disabled={day.rest}
+                onChange={e => setDay({ label: e.target.value })} placeholder="Day name (e.g. Push)" />
+              <button onClick={() => setDay(day.rest ? { rest: false, label: `Day ${dayIdx + 1}` } : { rest: true, label: "Rest", exercises: [] })}
+                style={{ padding: "9px 12px", cursor: "pointer", borderRadius: 6, whiteSpace: "nowrap",
+                  background: day.rest ? `${MUTED}22` : "transparent", border: `1px solid ${day.rest ? MUTED : ACCENT + "44"}`,
+                  fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK, color: day.rest ? MUTED : ACCENT }}>
+                {day.rest ? "REST DAY" : "MAKE REST"}
+              </button>
+            </div>
+
+            {!day.rest && (
+              <>
+                {day.exercises.length === 0 && (
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, textAlign: "center", padding: "14px 0" }}>
+                    No exercises yet.
+                  </div>
+                )}
+                {day.exercises.map((ex, i) => {
+                  const mm = MUSCLE_META[ex.muscle] || MUSCLE_META.chest;
+                  return (
+                    <div key={`${ex.name}-${i}`} style={{ background: BG2, border: `1px solid ${mm.color}22`,
+                      borderLeft: `2px solid ${mm.color}aa`, borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.name}</div>
+                          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: mm.color }}>{mm.name}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button onClick={() => setExercises(list => i === 0 ? list : list.map((x, j) => j === i - 1 ? list[i] : j === i ? list[i - 1] : x))}
+                            disabled={i === 0} style={{ background: "none", border: `1px solid ${MUTED}22`, borderRadius: 5,
+                              width: 24, height: 24, cursor: i === 0 ? "default" : "pointer", color: MUTED, opacity: i === 0 ? .3 : 1 }}>↑</button>
+                          <button onClick={() => setExercises(list => i === list.length - 1 ? list : list.map((x, j) => j === i + 1 ? list[i] : j === i ? list[i + 1] : x))}
+                            disabled={i === day.exercises.length - 1} style={{ background: "none", border: `1px solid ${MUTED}22`, borderRadius: 5,
+                              width: 24, height: 24, cursor: "pointer", color: MUTED, opacity: i === day.exercises.length - 1 ? .3 : 1 }}>↓</button>
+                          <button onClick={() => setExercises(list => list.filter((_, j) => j !== i))}
+                            style={{ background: "none", border: `1px solid ${RED}33`, borderRadius: 5,
+                              width: 24, height: 24, cursor: "pointer", color: RED }}>×</button>
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "64px 1fr", gap: 6, marginTop: 8 }}>
+                        <div style={{ position: "relative" }}>
+                          <input type="number" min="1" max={PROGRAM_LIMITS.setsMax} value={ex.sets}
+                            onChange={e => setExercises(list => list.map((x, j) => j === i ? { ...x, sets: Math.max(1, Math.min(PROGRAM_LIMITS.setsMax, parseInt(e.target.value) || 1)) } : x))}
+                            style={{ ...field, textAlign: "center", padding: "7px 4px", fontSize: 13 }} />
+                          <div style={{ position: "absolute", bottom: -11, left: 0, right: 0, textAlign: "center",
+                            fontFamily: "'Rajdhani',sans-serif", fontSize: 8, color: MUTED }}>sets</div>
+                        </div>
+                        <input value={ex.repsLabel} maxLength={PROGRAM_LIMITS.repsLabel}
+                          onChange={e => setExercises(list => list.map((x, j) => j === i ? { ...x, repsLabel: e.target.value } : x))}
+                          placeholder="8-12 reps" style={{ ...field, padding: "7px 9px", fontSize: 13 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                <button onClick={() => { setPicker("muscles"); setSearch(""); }} style={{ width: "100%", marginTop: 8,
+                  padding: "10px", cursor: "pointer", background: `${prog.color}0d`,
+                  border: `1px dashed ${prog.color}55`, borderRadius: 8,
+                  fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK, color: prog.color }}>
+                  + ADD EXERCISE
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, padding: "10px 16px calc(14px + env(safe-area-inset-bottom, 0px))",
+          borderTop: `1px solid ${GOLD}22` }}>
+          {initial && onDelete && (
+            <button onClick={() => onDelete(prog.id)} style={{ padding: "12px 14px", cursor: "pointer",
+              background: "transparent", border: `1px solid ${RED}55`, borderRadius: 8,
+              fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: TRACK, color: RED }}>DELETE</button>
+          )}
+          <button className="btn-gold" onClick={save} style={{ flex: 1, padding: "12px", fontSize: 12, letterSpacing: TRACK }}>
+            SAVE PROGRAM
+          </button>
+        </div>
+
+        {/* exercise picker */}
+        {picker && (
+          <div onClick={() => setPicker(null)} style={{ position: "absolute", inset: 0, zIndex: 5,
+            background: "rgba(3,6,15,0.96)", display: "flex", alignItems: "flex-end" }}>
+            <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxHeight: "80%", display: "flex",
+              flexDirection: "column", background: BG2, borderTop: `2px solid ${ACCENT}`, padding: "14px 16px 20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: ACCENT, letterSpacing: TRACK }}>
+                  {picker === "muscles" ? "PICK A MUSCLE" : (MUSCLE_META[picker.muscle]?.name || "").toUpperCase()}
+                </div>
+                <button onClick={() => picker === "muscles" ? setPicker(null) : setPicker("muscles")}
+                  style={{ background: "none", border: "none", color: MUTED, cursor: "pointer",
+                    fontFamily: "'Rajdhani',sans-serif", fontSize: 11 }}>
+                  {picker === "muscles" ? "CLOSE" : "← BACK"}
+                </button>
+              </div>
+              {picker === "muscles" ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, overflowY: "auto" }}>
+                  {Object.keys(EXERCISE_DB).map(m => {
+                    const mm = MUSCLE_META[m]; if (!mm) return null;
+                    return (
+                      <button key={m} onClick={() => { setPicker({ muscle: m }); setSearch(""); }} style={{
+                        background: `${mm.color}18`, border: `1px solid ${mm.color}33`, borderRadius: 20,
+                        padding: "7px 13px", cursor: "pointer", fontFamily: "'Rajdhani',sans-serif",
+                        fontSize: 12, fontWeight: 700, color: mm.color }}>{mm.name}</button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <>
+                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search exercises..."
+                    style={{ ...field, marginBottom: 10 }} />
+                  <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                    {[...(EXERCISE_DB[picker.muscle] || []), ...(profile?.customExercises || []).filter(e => e.primary === picker.muscle)]
+                      .filter(e => !search.trim() || e.name.toLowerCase().includes(search.toLowerCase()))
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map(e => (
+                        <button key={e.name} onClick={() => {
+                          setExercises(list => [...list, { muscle: picker.muscle, name: e.name, diff: e.diff,
+                            type: e.type, ...(e.iso ? { iso: true } : {}), sets: 3,
+                            repsLabel: e.iso ? "30-45 s" : e.type === "cardio" ? "20 min" : "8-12 reps" }]);
+                          setPicker(null);
+                        }} style={{ textAlign: "left", padding: "9px 11px", cursor: "pointer", background: BG3,
+                          border: `1px solid ${ACCENT2}22`, borderRadius: 7, fontFamily: "'Rajdhani',sans-serif",
+                          fontSize: 13, color: TEXT }}>
+                          {e.name}
+                          <span style={{ fontSize: 10, color: MUTED, marginLeft: 6 }}>{e.diff}</span>
+                        </button>
+                      ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>, document.body);
+}
+
+function ProgramScreen({ st, onSelectProgram, onSaveCustomProgram, setScreen, toast, account, onInboxCount }) {
+  const [expanded, setExpanded] = useState(null);
+  const [builder, setBuilder]   = useState(null);   // null | { initial }
+  const [importOpen, setImportOpen] = useState(false);
+  const [importCode, setImportCode] = useState("");
+  const [importErr, setImportErr]   = useState(null);
+  const [shareFor, setShareFor]     = useState(null);   // program being shared
+  const [shareCode, setShareCode]   = useState("");
+  const [friends, setFriends]       = useState([]);
+  const [inbox, setInbox]           = useState([]);
+  const [busy, setBusy]             = useState(false);
+
+  const signedIn = !!account?.session?.user;
+  const allPrograms = allProgramsFor(st);
+  const customPrograms = st.customPrograms || [];
+
+  // Programs friends have sent, and the friend list to send to.
+  const loadInbox = useCallback(() => {
+    if (!signedIn) return;
+    programsService.fetchProgramInbox().then(rows => { setInbox(rows); onInboxCount?.(rows.length); }).catch(() => {});
+  }, [signedIn, onInboxCount]);
+  useEffect(() => { loadInbox(); }, [loadInbox]);
+
+  const openShare = async (program) => {
+    setShareFor(program);
+    setShareCode(toShareCode(program, account?.remoteProfile?.username || null));
+    if (signedIn) {
+      try { setFriends(await friendsService.fetchLeaderboard("overall_xp")); } catch { setFriends([]); }
+    }
+  };
+
+  const exportFile = (program) => {
+    try {
+      const blob = new Blob([toShareFile(program, account?.remoteProfile?.username || null)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${program.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-program.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("Program exported", GREEN);
+    } catch { toast("Export failed", RED); }
+  };
+
+  const doImport = (raw, sourceLabel) => {
+    const clean = importProgram(raw, st);
+    if (!clean) { setImportErr("That doesn't look like an Iron Realm program."); return null; }
+    const dropped = countDroppedExercises(raw, clean);
+    onSaveCustomProgram(clean);
+    setImportOpen(false); setImportCode(""); setImportErr(null);
+    toast(`${clean.name} imported${sourceLabel ? ` ${sourceLabel}` : ""}`, GREEN);
+    if (dropped > 0) setTimeout(() => toast(`${dropped} exercise${dropped === 1 ? "" : "s"} skipped — not in your database`, GOLD), 900);
+    return clean;
+  };
+
+  const sendToFriend = async (friend) => {
+    if (!shareFor) return;
+    setBusy(true);
+    try {
+      await programsService.shareProgram({
+        toUserId: friend.friend_id,
+        name: shareFor.name,
+        payload: JSON.parse(encodeProgram(shareFor, account?.remoteProfile?.username || null)),
+      });
+      toast(`Sent to @${friend.username}`, GREEN);
+      setShareFor(null);
+    } catch (e) {
+      toast(e.message || "Could not share", RED);
+    } finally { setBusy(false); }
+  };
+
+  const card = (p, isCustom) => (
+    <div key={p.id} className="card" style={{ marginBottom: 12, overflow: "hidden",
+      border: `1px solid ${st.program === p.id ? p.color + "66" : ACCENT2 + "33"}` }}>
+      <button onClick={() => setExpanded(expanded === p.id ? null : p.id)} style={{
+        background: "none", border: "none", width: "100%", cursor: "pointer",
+        padding: "14px 14px", display: "flex", gap: 12, alignItems: "center", textAlign: "left" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 900,
+          color: p.color, letterSpacing: TRACK, minWidth: 36, textAlign: "center" }}>{p.icon}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
+            color: p.color, letterSpacing: TRACK, marginBottom: 2 }}>
+            {p.name}
+            {isCustom && <span style={{ fontSize: 8, color: MUTED, marginLeft: 6, letterSpacing: TRACK }}>
+              {p.author ? `FROM @${p.author}` : "YOURS"}
+            </span>}
+          </div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
+            {isCustom ? programSummary(p) : `${p.athlete} · ${p.era}`}
+          </div>
+          {p.desc && <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>{p.desc}</div>}
+        </div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 16, color: MUTED }}>{expanded === p.id ? "▲" : "▼"}</div>
+      </button>
+
+      {expanded === p.id && (
+        <div style={{ padding: "0 14px 14px", borderTop: `1px solid ${ACCENT2}22`, paddingTop: 12 }}>
+          {!p.free && (
+            <>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
+                letterSpacing: TRACK, marginBottom: 8 }}>WEEKLY OVERVIEW</div>
+              {p.days.map((dayItem, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 5 }}>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, minWidth: 28 }}>{DAY_NAMES[i]}</span>
+                  <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
+                    color: dayItem.rest ? MUTED : TEXT }}>{dayItem.label}</span>
+                  {!dayItem.rest && (
+                    <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                      · {dayItem.exercises.length} exercises
+                    </span>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+          {p.free && (
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>
+              No fixed schedule. Head to the Workout tab to log any exercise any day.
+              All XP, PRs, and muscle levels apply normally.
+            </div>
+          )}
+          <button className="btn-primary" onClick={() => {
+            onSelectProgram(p.id);
+            toast(`${p.name} activated!`, GREEN);
+            setTimeout(() => setScreen("schedule"), 600);
+          }} style={{ width: "100%", padding: "12px", fontSize: 13, letterSpacing: TRACK, marginTop: p.free ? 0 : 14 }}>
+            {st.program === p.id ? "ACTIVE — VIEW SCHEDULE" : "SELECT PROGRAM"}
+          </button>
+          {!p.free && (
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              {isCustom && (
+                <button onClick={() => setBuilder({ initial: p })} style={{ flex: 1, padding: "9px", cursor: "pointer",
+                  background: "transparent", border: `1px solid ${ACCENT}44`, borderRadius: 6,
+                  fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK, color: ACCENT }}>EDIT</button>
+              )}
+              <button onClick={() => exportFile(p)} style={{ flex: 1, padding: "9px", cursor: "pointer",
+                background: "transparent", border: `1px solid ${MUTED}44`, borderRadius: 6,
+                fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK, color: MUTED }}>EXPORT</button>
+              <button onClick={() => openShare(p)} style={{ flex: 1, padding: "9px", cursor: "pointer",
+                background: `${GOLD}18`, border: `1px solid ${GOLD}44`, borderRadius: 6,
+                fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK, color: GOLD }}>SHARE</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const fieldStyle = { width: "100%", padding: "9px 11px", background: BG3, border: `1px solid ${ACCENT}22`,
+    borderRadius: 6, color: TEXT, fontFamily: "'Rajdhani',sans-serif", fontSize: 13, outline: "none", boxSizing: "border-box" };
 
   return (
     <div style={{ height: "100dvh", overflowY: "auto", background: "transparent", padding: "20px 20px calc(120px + env(safe-area-inset-bottom, 0px))", paddingTop: "20px" }}>
@@ -4163,79 +4609,218 @@ function ProgramScreen({ st, onSelectProgram, setScreen, toast }) {
         <button onClick={() => setScreen("schedule")} style={{
           width: "100%", background: `${GREEN}11`, border: `1px solid ${GREEN}22`, borderRadius: 10,
           padding: "12px 14px", marginBottom: 16, fontFamily: "'Rajdhani',sans-serif", fontSize: 13,
-          color: GREEN, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center"
-        }}>
+          color: GREEN, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span>ACTIVE: {allPrograms.find(p => p.id === st.program)?.name}</span>
           <span style={{ fontSize: 11, color: ACCENT, letterSpacing: TRACK }}>VIEW SCHEDULE</span>
         </button>
       )}
 
-      {allPrograms.map(p => (
-        <div key={p.id} className="card" style={{ marginBottom: 12, overflow: "hidden",
-          border: `1px solid ${st.program === p.id ? p.color + "66" : ACCENT2 + "33"}` }}>
-          <button onClick={() => setExpanded(expanded === p.id ? null : p.id)} style={{
-            background: "none", border: "none", width: "100%", cursor: "pointer",
-            padding: "14px 14px", display: "flex", gap: 12, alignItems: "center", textAlign: "left"
-          }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 900,
-              color: p.color, letterSpacing: TRACK, minWidth: 36, textAlign: "center"}}>{p.icon}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700,
-                color: p.color, letterSpacing: TRACK, marginBottom: 2 }}>{p.name}</div>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED }}>
-                {p.athlete} · {p.era}
-              </div>
-              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
-                {p.desc}
-              </div>
-            </div>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 16, color: MUTED }}>
-              {expanded === p.id ? "▲" : "▼"}
-            </div>
-          </button>
+      {/* create / import */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button onClick={() => setBuilder({ initial: null })} style={{ flex: 1, padding: "12px", cursor: "pointer",
+          background: `${GOLD}18`, border: `1px solid ${GOLD}55`, borderRadius: 8,
+          fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: TRACK, color: GOLD }}>
+          + CREATE PROGRAM
+        </button>
+        <button onClick={() => { setImportOpen(true); setImportErr(null); }} style={{ flex: 1, padding: "12px", cursor: "pointer",
+          background: "transparent", border: `1px solid ${ACCENT}44`, borderRadius: 8,
+          fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: TRACK, color: ACCENT }}>
+          ⬆ IMPORT
+        </button>
+      </div>
 
-          {expanded === p.id && (
-            <div style={{ padding: "0 14px 14px", borderTop: `1px solid ${ACCENT2}22`, paddingTop: 12 }}>
-              {!p.free && (
-                <>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED,
-                    letterSpacing: TRACK, marginBottom: 8 }}>WEEKLY OVERVIEW</div>
-                  {p.days.map((day, i) => (
-                    <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 5 }}>
-                      <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9,
-                        color: ACCENT, minWidth: 28 }}>{["MON","TUE","WED","THU","FRI","SAT","SUN"][i]}</span>
-                      <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12,
-                        color: day.rest ? MUTED : TEXT }}>{day.label}</span>
-                      {!day.rest && (
-                        <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
-                          · {day.exercises.length} exercises
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </>
-              )}
-              {p.free && (
-                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 12 }}>
-                  No fixed schedule. Head to the Workout tab to log any exercise any day.
-                  All XP, PRs, and muscle levels apply normally.
+      {/* shared with you */}
+      {inbox.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK, marginBottom: 8 }}>
+            SHARED WITH YOU ({inbox.length})
+          </div>
+          {inbox.map(row => (
+            <div key={row.id} style={{ background: `${GOLD}0d`, border: `1px solid ${GOLD}33`, borderRadius: 8,
+              padding: "10px 12px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
+                  from @{row.from_username}
                 </div>
-              )}
-              <button className="btn-primary" onClick={() => {
-                onSelectProgram(p.id);
-                toast(`${p.name} activated!`, GREEN);
-                setTimeout(() => setScreen("schedule"), 600);
-              }} style={{ width: "100%", padding: "12px", fontSize: 13, letterSpacing: TRACK, marginTop: p.free ? 0 : 14 }}>
-                {st.program === p.id ? "ACTIVE — VIEW SCHEDULE" : "SELECT PROGRAM"}
-              </button>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={() => {
+                  if (doImport(row.payload, `from @${row.from_username}`)) {
+                    programsService.dismissSharedProgram(row.id).catch(() => {});
+                    setInbox(list => { const next = list.filter(r => r.id !== row.id); onInboxCount?.(next.length); return next; });
+                  }
+                }} style={{ padding: "7px 12px", cursor: "pointer", background: `${GREEN}22`,
+                  border: `1px solid ${GREEN}55`, borderRadius: 6, fontFamily: FONT_DISPLAY,
+                  fontSize: 9, fontWeight: 700, letterSpacing: TRACK, color: GREEN }}>IMPORT</button>
+                <button onClick={() => {
+                  programsService.dismissSharedProgram(row.id).catch(() => {});
+                  setInbox(list => { const next = list.filter(r => r.id !== row.id); onInboxCount?.(next.length); return next; });
+                }} style={{ padding: "7px 10px", cursor: "pointer", background: "none",
+                  border: `1px solid ${MUTED}33`, borderRadius: 6, color: MUTED, fontSize: 13 }}>×</button>
+              </div>
             </div>
-          )}
+          ))}
         </div>
-      ))}
+      )}
+
+      {customPrograms.length > 0 && (
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK, marginBottom: 8 }}>
+          YOUR PROGRAMS
+        </div>
+      )}
+      {customPrograms.map(p => card(p, true))}
+
+      {customPrograms.length > 0 && (
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK, margin: "16px 0 8px" }}>
+          BUILT-IN
+        </div>
+      )}
+      {allPrograms.filter(p => !p.custom).map(p => card(p, false))}
+
+      {builder && (
+        <ProgramBuilderModal
+          initial={builder.initial}
+          profile={st}
+          toast={toast}
+          onClose={() => setBuilder(null)}
+          onSave={(prog) => {
+            onSaveCustomProgram(prog, builder.initial ? builder.initial.id : null);
+            setBuilder(null);
+            toast(`${prog.name} saved`, GREEN);
+          }}
+          onDelete={(id) => {
+            onSaveCustomProgram({ id }, id);
+            if (st.program === id) onSelectProgram(null);
+            setBuilder(null);
+            toast("Program deleted", MUTED);
+          }}
+        />
+      )}
+
+      {/* import sheet */}
+      {importOpen && createPortal(
+        <div onClick={() => setImportOpen(false)} style={{ position: "fixed", inset: 0, overflowY: "auto",
+          overscrollBehavior: "contain", zIndex: 1200, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)",
+          display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+            background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`, border: `1px solid ${ACCENT}22`,
+            borderTop: `2px solid ${ACCENT}`, width: "100%", maxWidth: 480, padding: "18px 18px 36px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: ACCENT, letterSpacing: TRACK }}>IMPORT PROGRAM</div>
+              <button onClick={() => setImportOpen(false)} aria-label="Close" style={{ background: "none", border: "none",
+                color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+            </div>
+
+            <label style={{ display: "block", width: "100%", padding: "12px", marginBottom: 14, textAlign: "center",
+              background: `${GOLD}15`, border: `1px solid ${GOLD}44`, borderRadius: 8, cursor: "pointer",
+              fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: TRACK, color: GOLD, boxSizing: "border-box" }}>
+              ⬆ CHOOSE A PROGRAM FILE
+              <input type="file" accept=".json,application/json" style={{ display: "none" }} onChange={e => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                if (file.size > PROGRAM_LIMITS.bytes * 4) { setImportErr("That file is too large to be a program."); return; }
+                const reader = new FileReader();
+                reader.onload = ev => {
+                  try { doImport(JSON.parse(ev.target.result), "from file"); }
+                  catch { setImportErr("That file isn't valid JSON."); }
+                };
+                reader.readAsText(file);
+              }} />
+            </label>
+
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK, marginBottom: 6 }}>OR PASTE A SHARE CODE</div>
+            <textarea value={importCode} onChange={e => { setImportCode(e.target.value); setImportErr(null); }}
+              placeholder="IR1:..." rows={3}
+              style={{ ...fieldStyle, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} />
+            <button onClick={() => {
+              const decoded = fromShareCode(importCode);
+              if (!decoded) { setImportErr("That share code isn't valid."); return; }
+              doImport(decoded, "from code");
+            }} disabled={!importCode.trim()} style={{ width: "100%", marginTop: 10, padding: "12px", cursor: importCode.trim() ? "pointer" : "not-allowed",
+              background: importCode.trim() ? `${ACCENT}22` : BG3, border: `1px solid ${importCode.trim() ? ACCENT : MUTED + "33"}`,
+              borderRadius: 8, fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: TRACK,
+              color: importCode.trim() ? ACCENT : MUTED, opacity: importCode.trim() ? 1 : .5 }}>
+              IMPORT FROM CODE
+            </button>
+
+            {importErr && (
+              <div style={{ marginTop: 12, background: `${RED}11`, border: `1px solid ${RED}33`, borderRadius: 6,
+                padding: "10px 12px", fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: RED }}>{importErr}</div>
+            )}
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED, marginTop: 12, lineHeight: 1.5 }}>
+              Imported programs are checked against your exercise database. Anything it doesn't recognise is skipped,
+              and difficulty and muscle targeting always come from your own data — never from the file.
+            </div>
+          </div>
+        </div>, document.body)}
+
+      {/* share sheet */}
+      {shareFor && createPortal(
+        <div onClick={() => setShareFor(null)} style={{ position: "fixed", inset: 0, overflowY: "auto",
+          overscrollBehavior: "contain", zIndex: 1200, background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)",
+          display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+            background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`, border: `1px solid ${GOLD}22`,
+            borderTop: `2px solid ${GOLD}`, width: "100%", maxWidth: 480, padding: "18px 18px 36px",
+            maxHeight: "85dvh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: GOLD, letterSpacing: TRACK }}>SHARE PROGRAM</div>
+              <button onClick={() => setShareFor(null)} aria-label="Close" style={{ background: "none", border: "none",
+                color: MUTED, fontSize: 22, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginBottom: 16 }}>{shareFor.name}</div>
+
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: ACCENT, letterSpacing: TRACK, marginBottom: 6 }}>SHARE CODE</div>
+            <textarea readOnly value={shareCode} rows={3} onFocus={e => e.target.select()}
+              style={{ ...fieldStyle, resize: "vertical", fontFamily: "monospace", fontSize: 10 }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 8, marginBottom: 18 }}>
+              <button onClick={() => {
+                navigator.clipboard?.writeText(shareCode).then(() => toast("Code copied", GREEN)).catch(() => toast("Select and copy the code", MUTED));
+              }} style={{ flex: 1, padding: "11px", cursor: "pointer", background: `${ACCENT}22`,
+                border: `1px solid ${ACCENT}55`, borderRadius: 8, fontFamily: FONT_DISPLAY, fontSize: 10,
+                fontWeight: 700, letterSpacing: TRACK, color: ACCENT }}>COPY CODE</button>
+              <button onClick={() => exportFile(shareFor)} style={{ flex: 1, padding: "11px", cursor: "pointer",
+                background: "transparent", border: `1px solid ${MUTED}44`, borderRadius: 8, fontFamily: FONT_DISPLAY,
+                fontSize: 10, fontWeight: 700, letterSpacing: TRACK, color: MUTED }}>SAVE FILE</button>
+            </div>
+
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK, marginBottom: 6 }}>SEND TO A FRIEND</div>
+            {!signedIn && (
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
+                Sign in and add friends to send a program straight to them. The share code above works without an account.
+              </div>
+            )}
+            {signedIn && friends.length === 0 && (
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>No friends yet — add some from the Friends screen.</div>
+            )}
+            {signedIn && friends.map(f => (
+              <button key={f.friend_id} disabled={busy} onClick={() => sendToFriend(f)} style={{
+                width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "11px 12px", marginBottom: 6, cursor: busy ? "wait" : "pointer", background: BG3,
+                border: `1px solid ${ACCENT2}22`, borderRadius: 8, opacity: busy ? .6 : 1 }}>
+                <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, fontWeight: 700, color: TEXT }}>
+                  {f.display_name || `@${f.username}`}
+                </span>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GOLD, letterSpacing: TRACK }}>SEND →</span>
+              </button>
+            ))}
+          </div>
+        </div>, document.body)}
     </div>
   );
 }
 
+// How many exercises an import dropped because they are not in this hunter's
+// database — surfaced so a shared program never silently loses days of work.
+function countDroppedExercises(raw, clean) {
+  const decoded = decodeProgram(raw) || raw;
+  const before = (decoded?.days || []).reduce((n, d) => n + (Array.isArray(d?.exercises) ? d.exercises.length : 0), 0);
+  const after  = (clean?.days || []).reduce((n, d) => n + d.exercises.length, 0);
+  return Math.max(0, before - after);
+}
 
 
 function StatBadge({ muscle, level, xp }) {
@@ -4640,7 +5225,7 @@ function Toasts({ toasts }) {
 
 // ─── NAV BAR ──────────────────────────────────────────────────────────────────
 
-function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 }) {
+function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0, programInbox = 0 }) {
   const NAV_ICONS = {
     leaderboard: (c) => (
       <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
@@ -4707,7 +5292,7 @@ function NavBar({ screen, setScreen, overallLevel, settings, pendingCount = 0 })
   const TABS = [
     { id: "character", label: themeLabel(settings, "hunter", "Hunter") },
     { id: "progress",  label: themeLabel(settings, "progress", "Progress") },
-    { id: "program",   label: "Program" },
+    { id: "program",   label: "Program", badge: programInbox },
     { id: "menu",      label: "Home" },
     { id: "schedule",  label: themeLabel(settings, "schedule", "Schedule") },
     { id: "database",  label: themeLabel(settings, "database", "Database") },
@@ -5377,7 +5962,7 @@ function MenuScreen({ st, setScreen, onLogFood, onUpdateWeight, settings, onUpda
   const _isArchitect = settings?.monarchTheme === "architect";
   const _isShadow    = settings?.monarchTheme === "shadow";
   const _isBeast     = settings?.monarchTheme === "beast";
-  const programDays = st.program ? (st.gender === "male" ? MALE_PROGRAMS : FEMALE_PROGRAMS).find(p => p.id === st.program)?.days : null;
+  const programDays = resolveProgram(st)?.days || null;
   const todayDayIdx = (new Date().getDay() + 6) % 7;
   const schedule = st.customSchedule || programDays || [];
   const todayWorkout = schedule[todayDayIdx];
@@ -8568,6 +9153,7 @@ export default function IronRealm() {
   const [remoteProfile, setRemoteProfile] = useState(null);
   const [authBusy, setAuthBusy]           = useState(false);
   const [pendingCount, setPendingCount]   = useState(0);
+  const [programInbox, setProgramInbox]   = useState(0);
   const [authError, setAuthError]         = useState(null);
   // First-launch routing: "welcome" | "auth-signin" | "auth-signup" | "onboard"
   const [welcomeStage, setWelcomeStage]   = useState("welcome");
@@ -8814,6 +9400,19 @@ export default function IronRealm() {
       setAuthBusy(false);
     }
   }, [session, toast]);
+
+  // Programs friends have sent, for the Program tab badge — a share is
+  // otherwise invisible unless the hunter happens to open the tab.
+  useEffect(() => {
+    if (!supabaseConfigured || !session?.user) { setProgramInbox(0); return; }
+    let cancelled = false;
+    const refresh = () => programsService.countProgramInbox()
+      .then(n => { if (!cancelled) setProgramInbox(n); }).catch(() => {});
+    refresh();
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; document.removeEventListener("visibilitychange", onVisible); };
+  }, [session, screen]);
 
   const handleToggleSharePrs = useCallback(async () => {
     if (!session?.user || !remoteProfile) return;
@@ -9125,10 +9724,17 @@ export default function IronRealm() {
     }
   };
 
+  // Save, replace or delete a custom program. Deleting the ACTIVE program falls
+  // back to Free Workout rather than leaving the profile pointing at a dead id
+  // (which would render an empty schedule with no way back).
   const handleSaveCustomProgram = (prog, deleteId = null) => {
     updateActive(p => {
       const existing = p.customPrograms || [];
-      if (deleteId && !prog.name) return { ...p, customPrograms: existing.filter(cp => cp.id !== deleteId) };
+      if (deleteId && !prog.name) {
+        const next = { ...p, customPrograms: existing.filter(cp => cp.id !== deleteId) };
+        if (p.program === deleteId) { next.program = "free"; next.customSchedule = null; }
+        return next;
+      }
       return { ...p, customPrograms: [...existing.filter(cp => cp.id !== deleteId), prog] };
     });
   };
@@ -9194,12 +9800,12 @@ export default function IronRealm() {
       {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onSetPatronLift={handleSetPatronLift} toast={toast}
         settings={settings} onUpdateSettings={handleUpdateSettings} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} />}
       {screen === "progress"  && <ProgressScreen st={st} />}
-      {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} />}
+      {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} account={account} onInboxCount={setProgramInbox} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}
       {screen === "friends"     && <FriendsScreen account={account} toast={toast} />}
       </div>
       </div>
-      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} pendingCount={pendingCount} />
+      <NavBar screen={screen} setScreen={setScreen} overallLevel={st.overallLevel} settings={settings} pendingCount={pendingCount} programInbox={programInbox} />
     </>
   );
 }

@@ -53,6 +53,12 @@ In the dashboard, **Authentication → Providers**:
   for production. Add `capacitor://localhost` and `https://localhost` to the
   redirect allow-list for the native apps.
 
+### 4b. Program sharing (optional)
+
+Run `migrations/012_program_sharing.sql` to let hunters send custom programs to
+their friends. Without it the app still exports and imports programs as files
+and share codes; only the "send to a friend" path is disabled.
+
 ### 5. Verify
 
 In **Database → Tables** you should see `profiles`, `friend_requests`,
