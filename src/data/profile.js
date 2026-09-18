@@ -95,12 +95,38 @@ export function rateSafety(lbsPerWeek, weightLbs, direction) {
   return { level: "ok", pct: 0, pctLabel: "holding steady", note: "Eating at maintenance" };
 }
 
-// The lowest daily intake the app will plan for: never under BMR, and never
-// under the conventional clinical floors. Below this the target is clamped and
-// the UI says so rather than silently prescribing a starvation diet.
+// ─── INTAKE FLOORS ───────────────────────────────────────────────────────────
+// Two of them, because "don't plan a crash diet by accident" and "never plan one
+// at all" are different rules.
+//
+// ADVISORY floor — resting metabolic rate, or the conventional 1,500 / 1,200
+// kcal guidance, whichever is higher. A target below this is where the risks of
+// aggressive dieting start to stack up, so the app stops here by default and
+// says it did. A hunter who understands the trade-off can lift it (see
+// `belowFloorAcknowledged`); the number they set is then used exactly, because a
+// silently adjusted target is a wrong target.
 export function intakeFloor(bmr, isFemale) {
   return Math.max(Math.round(bmr || 0), isFemale ? 1200 : 1500);
 }
+
+// HARD floor — not liftable by consent. Very-low-calorie diets below ~800 kcal
+// are a supervised medical intervention, not a setting in a fitness tracker, so
+// the app will not compute a plan there no matter what is acknowledged.
+export const HARD_INTAKE_FLOOR = 800;
+
+// The floor that actually applies to a profile.
+export function effectiveIntakeFloor(bmr, isFemale, acknowledged) {
+  return acknowledged ? HARD_INTAKE_FLOOR : intakeFloor(bmr, isFemale);
+}
+
+// What a hunter is agreeing to when they lift the advisory floor. Kept here so
+// the same words appear in the consent panel and can be reviewed in one place.
+export const BELOW_FLOOR_RISKS = [
+  "Muscle and strength loss rises sharply once the deficit outpaces what fat can supply.",
+  "Low energy availability can disrupt hormones, menstrual cycles and bone density.",
+  "Rapid loss raises the risk of gallstones, and of nutrient deficiencies and fatigue.",
+  "Below about 800 kcal a day is a medically supervised intervention. The app will not plan there.",
+];
 
 export const EQUIPMENT_CATEGORIES = [
   { id: "BODYWEIGHT", name: "Bodyweight (floor & wall only)" },

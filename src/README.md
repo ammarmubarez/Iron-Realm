@@ -30,6 +30,29 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.13 — the calorie floor can be lifted, with informed consent
+
+Two floors instead of one, because "don't plan a crash diet by accident" and
+"never plan one at all" are different rules:
+
+- **Advisory floor** (`intakeFloor`): resting metabolic rate, or 1,500/1,200 kcal,
+  whichever is higher. Default behaviour, and the card now says both what it
+  capped to *and* what the hunter actually asked for.
+- **Lifting it**: "Use my exact number instead" opens a consent panel listing the
+  real risks (muscle loss, low energy availability and its hormonal/bone effects,
+  gallstones and deficiencies, and that sub-800 kcal is supervised medicine). The
+  confirm button stays disabled until the checkbox is ticked. Acknowledgement is
+  stored per profile as `belowFloorAckAt`, and "Put the safety cap back" reverses
+  it. Once lifted, `calcTDEE` uses the exact offset — a silently adjusted target
+  is a wrong target.
+- **Hard floor** (`HARD_INTAKE_FLOOR`, 800 kcal): not liftable by consent at all.
+  Verified: a 150 lb male or 130 lb female requesting −2,000 lands on 800, not
+  below.
+
+`public/terms.html` gained section 1b covering self-set targets and stating
+plainly that acknowledging a risk records the decision — it does not make the
+target safe or move responsibility away from the user and their clinicians.
+
 ## v2.12 — editing no longer deletes, and every XP change is on the record
 
 **The bug.** Editing an exercise logged from the Schedule deleted it. The Schedule

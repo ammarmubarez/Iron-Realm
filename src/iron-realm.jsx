@@ -8,7 +8,8 @@ import { OVERALL_THRESHOLDS, MUSCLE_THRESHOLDS, OVERALL_MILESTONE_NAMES, OVERALL
   WORK_KCAL_PER_KG_REP, STIM, effortFactor, loadFactor, repFactor, volumeFactor, ageDetrainingFactor, muscleDetrainingFactor } from "./data/progression";
 import { MUSCLE_META, _ID_TO_MUSCLE, _CUSTOM_SUB_OPTIONS } from "./data/muscles";
 import { _ACCENT_PRESETS, FITNESS_GOALS, GOAL_CONFIG, EQUIPMENT_CATEGORIES, ACTIVITY_LEVELS, DAILY_RITUALS,
-  KCAL_PER_LB, offsetFromRate, rateFromOffset, GOAL_DIRECTION, RATE_PRESETS, rateSafety, intakeFloor } from "./data/profile";
+  KCAL_PER_LB, offsetFromRate, rateFromOffset, GOAL_DIRECTION, RATE_PRESETS, rateSafety, intakeFloor,
+  HARD_INTAKE_FLOOR, effectiveIntakeFloor, BELOW_FLOOR_RISKS } from "./data/profile";
 import { MONARCHS, NAME_AURAS, RELIC_RARITIES, RELIC_POOL, RELIC_FRAME_COLORS, COSMETIC_TITLES, ASPECTS } from "./data/cosmetics";
 import { DAILY_TIPS } from "./data/tips";
 import { MIND_ACTIVITIES } from "./data/mind";
@@ -38,7 +39,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.12.0";
+const APP_VERSION = "2.13.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -177,6 +178,7 @@ const newProfile = (id, name = "Hunter") => ({
   mindLog: [],  // [{ id, date, stat:'intelligence'|'faith', activity, label, qty, xp }] — mind/spirit growth ledger
   mindTasks: [],     // pinned daily tasks: [{ id, stat, activity, label, qty, xp }]
   mindTasksLog: {},  // { 'YYYY-MM-DD': [taskId, ...] } — which daily tasks were completed each day
+  belowFloorAckAt: null,  // when the hunter lifted the advisory calorie floor (null = capped)
   xpLog:        [],   // append-only audit of every change to the workout ledger
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
   patronLift:   null,   // exercise name pinned as signature lift
@@ -768,9 +770,11 @@ function calcTDEE(profile) {
   const lvl = ACTIVITY_LEVELS.find(a => a.id === profile.activityLevel) || ACTIVITY_LEVELS[2];
   const base = Math.round(bmr * lvl.multiplier);
   // The hunter's own plan wins; profiles created before v2.11 fall back to the
-  // goal's historical fixed offset. Never plan below the intake floor — a
-  // 2 lb/week target on a small frame would otherwise prescribe a crash diet.
-  return Math.max(intakeFloor(bmr, isFemale), base + calorieOffsetFor(profile));
+  // goal's historical fixed offset. The advisory floor stops an accidental crash
+  // diet; a hunter who has acknowledged the risks gets the number they actually
+  // set, down to the hard floor, because a silently adjusted target is wrong.
+  return Math.max(effectiveIntakeFloor(bmr, isFemale, !!profile?.belowFloorAckAt),
+    base + calorieOffsetFor(profile));
 }
 
 // Signed kcal/day this profile is aiming for, relative to maintenance.
@@ -5511,9 +5515,12 @@ function WelcomeScreen({ supabaseConfigured, onCreateAccount, onSignIn, onGuest 
 // weekly rate and the daily calorie offset follows (1 lb ≈ 3,500 kcal), or type
 // the offset directly and the rate follows. One stored field, `calorieOffset`,
 // so the two can never disagree. Shown in onboarding and in Settings → Account.
-function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onChange }) {
+function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onChange,
+                            belowFloorAckAt = null, onAcknowledgeFloor }) {
   const [manual, setManual] = useState(false);
   const [draft, setDraft]   = useState("");
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentRead, setConsentRead] = useState(false);
   const direction = GOAL_DIRECTION[goal] ?? 0;
   const presets   = RATE_PRESETS[String(direction)] || [0];
   const isFemale  = gender === "female";
@@ -5523,10 +5530,16 @@ function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onC
   const bmr = isFemale ? 10 * kg + 6.25 * cm - 5 * (age || 25) - 161
                        : 10 * kg + 6.25 * cm - 5 * (age || 25) + 5;
   const maintenance = Math.round(bmr * (ACTIVITY_LEVELS.find(a => a.id === "moderate")?.multiplier || 1.5));
-  const floor       = intakeFloor(bmr, isFemale);
+  const acked       = !!belowFloorAckAt;
+  const advisory    = intakeFloor(bmr, isFemale);
+  const floor       = effectiveIntakeFloor(bmr, isFemale, acked);
   const target      = Math.max(floor, maintenance + offset);
   const effective   = target - maintenance;
   const clamped     = effective !== offset;
+  const belowAdvisory = target < advisory;
+  // Offered when the plan is being held back by the advisory floor and the
+  // hunter has not lifted it yet.
+  const canUncap    = !acked && clamped && floor === advisory;
   const rate        = rateFromOffset(effective);
   const safety      = rateSafety(rate, weightLbs || 170, direction);
   const tone        = safety.level === "hard" ? RED : safety.level === "ok" ? GREEN : GOLD;
@@ -5586,7 +5599,73 @@ function CaloriePlanPicker({ goal, weightLbs, heightIn, age, gender, offset, onC
         )}
         {clamped && (
           <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: RED, marginTop: 4, lineHeight: 1.4 }}>
-            Capped at {floor.toLocaleString()} kcal — going lower than this is below what your body burns at rest.
+            {acked
+              ? `Held at ${floor.toLocaleString()} kcal — the app will not plan below this. Lower than roughly ${HARD_INTAKE_FLOOR} kcal a day needs medical supervision.`
+              : `Capped at ${floor.toLocaleString()} kcal — below what your body burns at rest. Your plan asks for ${(maintenance + offset).toLocaleString()}.`}
+          </div>
+        )}
+        {belowAdvisory && !clamped && (
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: RED, marginTop: 4, lineHeight: 1.4 }}>
+            ⚠ Below the {advisory.toLocaleString()} kcal guidance floor. You lifted the cap — this is the target you set.
+          </div>
+        )}
+
+        {canUncap && !consentOpen && (
+          <button onClick={() => { setConsentOpen(true); setConsentRead(false); }} style={{
+            marginTop: 10, width: "100%", background: "none", border: `1px solid ${RED}55`, borderRadius: 6,
+            padding: "9px 11px", cursor: "pointer", fontFamily: FONT_DISPLAY, fontSize: 9,
+            fontWeight: 700, letterSpacing: TRACK, color: RED }}>
+            USE MY EXACT NUMBER INSTEAD
+          </button>
+        )}
+        {acked && (
+          <button onClick={() => onAcknowledgeFloor?.(null)} style={{
+            marginTop: 10, background: "none", border: `1px solid ${MUTED}33`, borderRadius: 6,
+            padding: "7px 11px", cursor: "pointer", fontFamily: FONT_DISPLAY, fontSize: 9,
+            fontWeight: 700, letterSpacing: TRACK, color: MUTED }}>
+            PUT THE SAFETY CAP BACK
+          </button>
+        )}
+
+        {consentOpen && (
+          <div style={{ marginTop: 10, background: `${RED}0d`, border: `1px solid ${RED}44`,
+            borderRadius: 8, padding: "12px 13px" }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: RED,
+              letterSpacing: TRACK, marginBottom: 8 }}>BEFORE YOU LIFT THE CAP</div>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT, lineHeight: 1.6, marginBottom: 10 }}>
+              Iron Realm is a training log, not a medical service, and this is not medical advice.
+              Eating below what your body burns at rest carries real risks:
+            </div>
+            <ul style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+              {BELOW_FLOOR_RISKS.map((r, i) => (
+                <li key={i} style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, lineHeight: 1.5, marginBottom: 4 }}>{r}</li>
+              ))}
+            </ul>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: MUTED, lineHeight: 1.5, marginBottom: 10 }}>
+              Talk to a doctor or dietitian before running a deficit this large, especially if you
+              have any medical condition, are pregnant, or have a history of disordered eating.
+            </div>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", marginBottom: 10 }}>
+              <input type="checkbox" checked={consentRead} onChange={e => setConsentRead(e.target.checked)}
+                style={{ marginTop: 3, width: 16, height: 16, accentColor: RED, flexShrink: 0 }} />
+              <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: TEXT, lineHeight: 1.5 }}>
+                I have read this, I am choosing this target myself, and I accept the risks.
+              </span>
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <button onClick={() => setConsentOpen(false)} style={{ padding: "10px", cursor: "pointer",
+                background: "transparent", border: `1px solid ${MUTED}44`, borderRadius: 6,
+                fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700, letterSpacing: TRACK, color: MUTED }}>
+                KEEP THE CAP
+              </button>
+              <button disabled={!consentRead} onClick={() => { onAcknowledgeFloor?.(Date.now()); setConsentOpen(false); }}
+                style={{ padding: "10px", cursor: consentRead ? "pointer" : "not-allowed",
+                  background: consentRead ? RED : BG3, border: `1px solid ${consentRead ? RED : MUTED + "33"}`,
+                  borderRadius: 6, fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 700,
+                  letterSpacing: TRACK, color: consentRead ? "#fff" : MUTED, opacity: consentRead ? 1 : .5 }}>
+                LIFT THE CAP
+              </button>
+            </div>
           </div>
         )}
 
@@ -5631,6 +5710,7 @@ function OnboardScreen({ onComplete }) {
   const [age, setAge] = useState("25");
   // Calorie plan, seeded from the goal's default when the goal is picked.
   const [calorieOffset, setCalorieOffset] = useState(null);
+  const [belowFloorAckAt, setBelowFloorAckAt] = useState(null);
 
   const Rune = ({ char, top, left, size, delay }) => (
     <div style={{ position: "absolute", top, left, fontSize: size, color: ACCENT,
@@ -5848,13 +5928,15 @@ function OnboardScreen({ onComplete }) {
 
               <CaloriePlanPicker goal={goal} weightLbs={lbs} heightIn={totalIn}
                 age={parseInt(age) || 25} gender={gender}
-                offset={calorieOffset ?? 0} onChange={setCalorieOffset} />
+                offset={calorieOffset ?? 0} onChange={setCalorieOffset}
+                belowFloorAckAt={belowFloorAckAt} onAcknowledgeFloor={setBelowFloorAckAt} />
 
               <button className="btn-gold" onClick={() => onComplete({
                 name: name.trim() || "Hunter", gender, goal,
                 weightLbs: lbs, heightIn: totalIn,
                 age: parseInt(age) || null,
                 calorieOffset: calorieOffset ?? 0,
+                belowFloorAckAt,
               })} style={{ width: "100%", padding: "16px", fontSize: 16, letterSpacing: TRACK, marginTop: 20 }}>
                 ARISE
               </button>
@@ -8128,12 +8210,14 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
   const [editGoal, setEditGoal] = useState(st.goal || "maintain");
   const [editOffset, setEditOffset] = useState(
     Number.isFinite(st.calorieOffset) ? st.calorieOffset : (GOAL_CONFIG[st.goal] || { tdeeOffset: 0 }).tdeeOffset);
+  const [editFloorAck, setEditFloorAck] = useState(st.belowFloorAckAt || null);
 
   const openEdit = () => {
     setEditName(st.name); setEditAge(String(st.age || "")); setEditWeight(String(st.weightLbs || 170));
     setEditHeightFt(String(Math.floor((st.heightIn || 70) / 12))); setEditHeightIn(String((st.heightIn || 70) % 12));
     setEditGender(st.gender || "male"); setEditGoal(st.goal || "maintain");
     setEditOffset(Number.isFinite(st.calorieOffset) ? st.calorieOffset : (GOAL_CONFIG[st.goal] || { tdeeOffset: 0 }).tdeeOffset);
+    setEditFloorAck(st.belowFloorAckAt || null);
     setEditMode(v => !v);
   };
   const handleSaveEdit = () => {
@@ -8146,6 +8230,7 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
       gender: editGender,
       goal: editGoal,
       calorieOffset: editOffset,
+      belowFloorAckAt: editFloorAck,
     });
     setEditMode(false);
     toast("Profile updated", GREEN);
@@ -8219,7 +8304,8 @@ function HunterAccountPanel({ store, onSwitchProfile, onCreateProfile, onDeleteP
               weightLbs={getWtUnit() === "kg" ? (parseFloat(editWeight) || 170) / 0.453592 : (parseFloat(editWeight) || 170)}
               heightIn={(parseInt(editHeightFt) || 5) * 12 + (parseInt(editHeightIn) || 10)}
               age={parseInt(editAge) || 25} gender={editGender}
-              offset={editOffset} onChange={setEditOffset} />
+              offset={editOffset} onChange={setEditOffset}
+              belowFloorAckAt={editFloorAck} onAcknowledgeFloor={setEditFloorAck} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: profiles.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
             <Button variant="primary" size="md" block onClick={handleSaveEdit}>Save changes</Button>
@@ -9884,9 +9970,10 @@ export default function IronRealm() {
 
   const updateActive = (fn) => setStore(s => ({ ...s, profiles: { ...s.profiles, [s.activeId]: fn(s.profiles[s.activeId]) } }));
 
-  const handleOnboard = ({ name, gender, goal, weightLbs, heightIn, age, calorieOffset }) => {
+  const handleOnboard = ({ name, gender, goal, weightLbs, heightIn, age, calorieOffset, belowFloorAckAt }) => {
     updateActive(p => ({ ...p, onboarded: true, name, gender, goal, weightLbs, heightIn,
-      age: age || null, calorieOffset: Number.isFinite(calorieOffset) ? calorieOffset : null }));
+      age: age || null, calorieOffset: Number.isFinite(calorieOffset) ? calorieOffset : null,
+      belowFloorAckAt: belowFloorAckAt || null }));
   };
 
   const handleSwitchProfile = (id) => {
