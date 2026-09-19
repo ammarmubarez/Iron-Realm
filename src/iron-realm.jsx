@@ -40,7 +40,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.14.0";
+const APP_VERSION = "2.15.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -211,6 +211,9 @@ const INIT_STORE = {
 
 
 
+// Cardio you can do in a hotel room, a stairwell or on the pavement outside.
+const CARDIO_NO_EQUIPMENT_RE = /burpee|jumping jack|high knees|mountain climber|shadow boxing|jump rope|dance|zumba|stair climbing|^walking|^running|incline walking|hiking|hiit \/ sprints/i;
+
 function needsBench(exercise) {
   if (!exercise) return false;
   const primary = exerciseEquipment(exercise);
@@ -229,7 +232,11 @@ function exerciseEquipment(exercise) {
     if (BAR_NAME_PATTERNS.some(p => n.includes(p))) return "PULLUP_BAR";
     return "BODYWEIGHT";
   }
-  if (exercise.type === "cardio")       return "CARDIO";
+  // Most cardio wants a machine, but a hotel room and a stairwell cover a fair
+  // slice of it — treat those as bodyweight so travel mode doesn't wipe out
+  // endurance entirely.
+  if (exercise.type === "cardio")
+    return CARDIO_NO_EQUIPMENT_RE.test(exercise.name || "") ? "BODYWEIGHT" : "CARDIO";
   if (exercise.type !== "strength")     return null;
   const name = (exercise.name || "").toLowerCase();
   if (name.includes("dumbbell"))   return "DUMBBELL";
@@ -1775,6 +1782,9 @@ function isCompoundLift(ex) {
   return creditList(ex, ex.primary).filter(([, c]) => c >= 0.35).length >= 2;
 }
 function prescriptionFor(ex, sets) {
+  // Defensive: cardio is prescribed in minutes by generateCardioSession and
+  // must never come out of here wearing a rep range.
+  if (ex.type === "cardio") return { sets: 1, reps: "20 min", rir: null, restSec: 0, cardio: true, minutes: 20 };
   if (ex.iso) return { sets, reps: "30–45 s", rir: "1–2 RIR", restSec: 90 };
   if (ex.type === "calisthenics") return { sets, reps: "8–15", rir: "1–2 RIR", restSec: 120 };
   if (isCompoundLift(ex)) return { sets, reps: "6–10", rir: "1–2 RIR", restSec: 150 };
@@ -1792,7 +1802,212 @@ function weeklyCreditedSets(muscle, workouts) {
   return total;
 }
 
+// ─── ENDURANCE SESSIONS (v2.15) ──────────────────────────────────────────────
+// Cardio is dosed in MINUTES at an intensity, not in sets and reps, so it can
+// not ride the hypertrophy machinery above: there is no rep range, no load, no
+// 1RM and no "hard set". Until now the randomizer filtered every cardio entry
+// out of the candidate pool on its first line, so choosing ENDURANCE produced
+// an empty plan and the button looked dead.
+//
+// THE DOSE
+//  · ACSM/AHA: 150 min a week of moderate activity OR 75 min of vigorous, and
+//    the two are interchangeable — a vigorous minute counts as two moderate
+//    ones. That "moderate-equivalent minute" is the unit used throughout here.
+//    The weekly target is scaled by the goal's cardio bias, so a powerlifter is
+//    pointed at ~75 min a week and someone cutting at ~225.
+//  · The session gets HALF of what is left of the week (you are not meant to
+//    clear the balance in one sitting), floored at a 15-minute walk so the plan
+//    is never empty, then clamped to the band the modality actually makes sense
+//    in: 10–25 min of sprints, 25–75 min of walking.
+//  · Concurrent training: cardio blunts strength and hypertrophy adaptation in
+//    proportion to its duration and frequency, and running interferes far more
+//    than cycling (Wilson 2012 meta-analysis). When the same session already
+//    contains lifting, cardio is capped at 30 min and impact work is pushed
+//    down the ranking.
+//  · Polarised intensity: ~80 % of endurance minutes should be easy and ~20 %
+//    hard (Seiler 2010). The picker checks how the week has actually gone and
+//    steers toward whichever side is short.
+//  · Heart-rate zones from HRmax = 208 − 0.7 × age (Tanaka 2001), which is
+//    markedly more accurate for adults over 30 than 220 − age.
+const CARDIO_DOSE = {
+  weeklyModerateMin: 150,   // ACSM/AHA baseline, in moderate-equivalent minutes
+  vigorousMET: 6,           // at or above this, one minute counts as two
+  sessionFloor: 15,         // a recovery walk — never prescribe nothing
+  sessionsPerWeek: 3,       // the week's target is meant to land across ~3 days
+  concurrentCapMin: 30,     // ceiling when lifting shares the session
+  recentHours: 24,          // cardio recovers fast, but not that fast
+  recentMult: 0.6,
+  splitLeftoverMin: 20,     // add a second piece only if this much is still owed
+  hardShareTarget: 0.2,     // the 20 % of the polarised 80/20
+};
+// [minimum MET, sensible session length band in minutes]
+const CARDIO_BANDS = [
+  { met: 11, lo: 10, hi: 25 },
+  { met: 9,  lo: 15, hi: 40 },
+  { met: 6,  lo: 20, hi: 50 },
+  { met: 0,  lo: 25, hi: 75 },
+];
+const CARDIO_ZONES = [
+  { met: 11, name: "Zone 5", lo: 0.88, hi: 0.96, cue: "all-out on the work interval" },
+  { met: 9,  name: "Zone 4", lo: 0.80, hi: 0.88, cue: "hard — short sentences only" },
+  { met: 6,  name: "Zone 3", lo: 0.70, hi: 0.80, cue: "steady — breathing, not gasping" },
+  { met: 0,  name: "Zone 2", lo: 0.60, hi: 0.70, cue: "conversational the whole way" },
+];
+// Impact / whole-body fatigue: what to avoid stacking on top of a lifting day.
+const CARDIO_IMPACT_RE = /run|sprint|jump|burpee|high knees|stair|hiit|tire|sled|box step|battle rope|dance|zumba/i;
+// Conditioning movements are performed in rounds, not for a continuous half
+// hour — nobody swings a kettlebell steadily for 35 minutes. Whatever their MET
+// says, these get an interval prescription and a shorter ceiling.
+const CARDIO_CONDITIONING_RE = /burpee|mountain climber|jumping jack|high knees|kettlebell swing|battle rope|tire flip|sled|box step|shadow boxing|jump rope|hiit|sprint|farmer/i;
+const CARDIO_CONDITIONING_MAX_MIN = 20;
+const hrMaxFor = (age) => Math.round(208 - 0.7 * (age > 0 ? age : 30));
+// The MET a modality runs at when performed at its default setting.
+function cardioMetOf(ex) {
+  if (ex?.cardioMode === "speed") return metFromSpeed(ex.defaultSpeed || 3.5);
+  if (ex?.cardioMode === "spm")   return metFromStepRate(ex.defaultSpm || 60);
+  return ex?.met || MET_VALUES.cardio[ex?.diff] || 7;
+}
+// Moderate-equivalent minutes banked in the trailing 7 days, split easy/hard.
+function weeklyCardioLoad(workouts) {
+  const cutoff = Date.now() - 7 * 86400000;
+  let easyMin = 0, hardMin = 0, lastDate = 0;
+  for (const w of workouts || []) {
+    if (!w.date || w.date < cutoff || w.exercise?.type !== "cardio") continue;
+    const c = cardioOf(w);
+    const met = c.met || cardioMetOf(w.exercise);
+    const mins = c.minutes || 0;
+    if (met >= CARDIO_DOSE.vigorousMET) hardMin += mins; else easyMin += mins;
+    if (w.date > lastDate) lastDate = w.date;
+  }
+  const modEq = easyMin + hardMin * 2;
+  const total = easyMin + hardMin;
+  return { modEq, easyMin, hardMin, lastDate, hardShare: total > 0 ? hardMin / total : 0 };
+}
+
+function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan) {
+  const workouts = profile?.workouts || [];
+  let pool = [...(EXERCISE_DB.cardio || []),
+              ...(profile?.customExercises || []).filter(e => e.type === "cardio")];
+  if (Array.isArray(travelEquipment)) {
+    const doable = pool.filter(e => isTravelFriendly(e, travelEquipment));
+    if (doable.length) pool = doable;   // no machines on the road ≠ no cardio
+  }
+  if (diffFilter && diffFilter !== "all") {
+    const filtered = pool.filter(e => e.diff === diffFilter);
+    if (filtered.length >= 2) pool = filtered;
+  }
+  if (!pool.length) return [];
+
+  // ── how many moderate-equivalent minutes this session is worth ──
+  const goalCfg = GOAL_CONFIG[profile?.goal] || {};
+  const bias = Math.max(0.5, Math.min(1.6, goalCfg.cardioBias ?? 1));
+  const weeklyTarget = Math.round(CARDIO_DOSE.weeklyModerateMin * bias / 5) * 5;
+  const week = weeklyCardioLoad(workouts);
+  const remaining = Math.max(0, weeklyTarget - week.modEq);
+  const perSession = weeklyTarget / CARDIO_DOSE.sessionsPerWeek;
+  let modEq = Math.max(CARDIO_DOSE.sessionFloor, Math.min(perSession, remaining / 2));
+
+  const notes = [];
+  // Fuel, at half weight: a deficit does not stop you walking, but stacking
+  // long hard cardio on top of a deep one is where lean mass goes.
+  const fuel = fuelContext(profile);
+  const fuelMod = fuelDoseModifier(fuel);
+  const fuelMult = 1 + (fuelMod.mult - 1) * 0.5;
+  modEq *= fuelMult;
+  if (fuelMod.note) notes.push(`${fuelMod.note} → ×${fuelMult.toFixed(2)}`);
+
+  const now = Date.now(), HR = 3600000;
+  const hoursSince = week.lastDate ? (now - week.lastDate) / HR : Infinity;
+  if (hoursSince < CARDIO_DOSE.recentHours) modEq *= CARDIO_DOSE.recentMult;
+  if (week.modEq >= weeklyTarget) notes.push("weekly target already met — easy day");
+
+  const lifting = (priorPlan || []).some(e => e.type !== "cardio");
+  if (lifting) notes.push(`capped at ${CARDIO_DOSE.concurrentCapMin} min after lifting`);
+
+  // ── pick the modality ──
+  const lastPerformed = {};
+  workouts.forEach(w => {
+    const name = w.exerciseName || w.exercise?.name;
+    if (name && (!lastPerformed[name] || w.date > lastPerformed[name])) lastPerformed[name] = w.date || 0;
+  });
+  const diffMap = { beginner: 1, intermediate: 2, advanced: 3, elite: 4 };
+  const userTier = Math.min(4, Math.ceil((profile?.overallLevel || 1) / 10));
+  // The week is short on hard minutes, nothing was done yesterday and no lift
+  // is competing for recovery → this is the day for the vigorous 20 %.
+  const wantHard = week.hardShare < CARDIO_DOSE.hardShareTarget
+    && hoursSince >= CARDIO_DOSE.recentHours && !lifting && remaining > CARDIO_DOSE.sessionFloor;
+  const score = (ex, easyOnly) => {
+    const met = cardioMetOf(ex);
+    const last = lastPerformed[ex.name];
+    let s = 100 - Math.abs(userTier - (diffMap[ex.diff] || 2)) * 8;
+    if (last) { const h = (now - last) / HR; s += h < 24 ? -60 : h < 48 ? -20 : 0; }
+    if (lifting && CARDIO_IMPACT_RE.test(ex.name)) s -= 35;
+    if (easyOnly) s -= met >= CARDIO_DOSE.vigorousMET ? 40 : 0;
+    else if (wantHard) s += met >= 9 ? 22 : 0;
+    else s -= met >= 9 ? 25 : 0;
+    return s + Math.random() * 20;
+  };
+  const minutesFor = (ex, budget) => {
+    const met = cardioMetOf(ex);
+    const band = CARDIO_BANDS.find(b => met >= b.met) || CARDIO_BANDS[CARDIO_BANDS.length - 1];
+    const conditioning = CARDIO_CONDITIONING_RE.test(ex.name || "");
+    const hi = conditioning ? Math.min(band.hi, CARDIO_CONDITIONING_MAX_MIN) : band.hi;
+    let mins = budget / (met >= CARDIO_DOSE.vigorousMET ? 2 : 1);
+    mins = Math.max(Math.min(band.lo, hi), Math.min(hi, mins));
+    if (lifting) mins = Math.min(mins, CARDIO_DOSE.concurrentCapMin);
+    return { minutes: Math.max(5, Math.round(mins / 5) * 5), met, conditioning };
+  };
+
+  const ranked = [...pool].sort((a, b) => score(b, false) - score(a, false));
+  const pieces = [];
+  const first = ranked[0];
+  if (!first) return [];
+  pieces.push({ ex: first, ...minutesFor(first, modEq) });
+  const spent = pieces[0].minutes * (pieces[0].met >= CARDIO_DOSE.vigorousMET ? 2 : 1);
+  const leftover = modEq - spent;
+  // Still owed real time after the first piece has hit its sensible ceiling?
+  // Finish on a second, easier modality rather than doubling down on impact.
+  if (leftover >= CARDIO_DOSE.splitLeftoverMin && !lifting) {
+    const second = [...pool].filter(e => e.name !== first.name).sort((a, b) => score(b, true) - score(a, true))[0];
+    if (second) pieces.push({ ex: second, ...minutesFor(second, leftover) });
+  }
+
+  const weightKg = (profile?.weightLbs || 170) * 0.453592;
+  const hrMax = hrMaxFor(profile?.age);
+  const totalModEq = pieces.reduce((s, p) => s + p.minutes * (p.met >= CARDIO_DOSE.vigorousMET ? 2 : 1), 0);
+  return pieces.map(({ ex, minutes, met, conditioning }) => {
+    const zone = CARDIO_ZONES.find(z => met >= z.met) || CARDIO_ZONES[CARDIO_ZONES.length - 1];
+    // Above ~11 METs nobody holds a steady state, and conditioning movements are
+    // done in rounds regardless: prescribe intervals, and use the blended cost
+    // of work + recovery for the calorie figure.
+    const interval = met >= 11 || conditioning;
+    const rounds = interval ? Math.max(6, Math.min(15, Math.round(minutes / 2))) : 0;
+    const effMet = interval ? met / 3 + 4.5 * (2 / 3) : met;
+    return {
+      ...ex,
+      primary: ex.primary || "cardio",
+      rx: {
+        cardio: true, sets: 1, minutes, reps: `${minutes} min`, rir: null, restSec: 0,
+        met: +effMet.toFixed(1), peakMet: +met.toFixed(1),
+        mode: interval ? "interval" : (ex.cardioMode || "timed"),
+        speed: ex.cardioMode === "speed" ? (ex.defaultSpeed || 3.5) : null,
+        spm:   ex.cardioMode === "spm"   ? (ex.defaultSpm || 60)   : null,
+        rounds, workSec: 40, easySec: 80,
+        zone: zone.name, zoneCue: interval ? "hard on the work interval, easy between rounds" : zone.cue,
+        hrLo: Math.round(hrMax * zone.lo), hrHi: Math.round(hrMax * zone.hi),
+        kcal: Math.round(effMet * weightKg * minutes / 60),
+        group: "cardio", credit: 1,
+        weeklyBefore: Math.round(week.modEq), weeklyTarget,
+        projectedModEq: Math.round(week.modEq + totalModEq),
+        note: notes.join(" · ") || null,
+      },
+    };
+  });
+}
+
 function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = null, priorPlan = []) {
+  // Endurance has its own engine — minutes at an intensity, not sets and reps.
+  if (muscle === "cardio") return generateCardioSession(profile, diffFilter, travelEquipment, priorPlan);
   const workouts = profile?.workouts || [], customExercises = profile?.customExercises || [], overallLevel = profile?.overallLevel || 1, goal = profile?.goal;
   let allDB = [...(EXERCISE_DB[muscle] || []), ...(customExercises || []).filter(e => e.primary === muscle)]
     .filter(e => e.type !== "cardio");
@@ -1913,8 +2128,15 @@ function buildRandomPlan(muscles, st, settings, diff) {
   return acc;
 }
 // "Suggested: 3 sets · 6–10 reps at 180 lb"
+// Cardio: "Suggested: 30 min at 3.5 mph" / "10 × 40 s hard, 80 s easy (~20 min)"
 function rxLine(rx, ex) {
   if (!rx) return null;
+  if (rx.cardio) {
+    if (rx.mode === "interval") return `Suggested: ${rx.rounds} × ${rx.workSec}s hard / ${rx.easySec}s easy (~${rx.minutes} min)`;
+    if (rx.mode === "speed" && rx.speed) return `Suggested: ${rx.minutes} min at ${rx.speed} mph`;
+    if (rx.mode === "spm" && rx.spm)     return `Suggested: ${rx.minutes} min at ${rx.spm} steps/min`;
+    return `Suggested: ${rx.minutes} min · ${rx.zone.toLowerCase()} effort`;
+  }
   const isHold = /\bs$/.test(rx.reps);
   if (isHold) return `Suggested: ${rx.sets} holds · ${rx.reps}`;
   const at = rx.load ? ` at ${wtVal(rx.load)} ${wtLabel()}` : (ex?.type === "calisthenics" ? " · bodyweight" : "");
@@ -1923,6 +2145,10 @@ function rxLine(rx, ex) {
 // "1–2 reps in reserve · rest 2:30 · from your bench PR"
 function rxNote(rx) {
   if (!rx) return null;
+  if (rx.cardio) {
+    return [`${rx.zone} · ${rx.hrLo}–${rx.hrHi} bpm`, rx.zoneCue, `≈ ${rx.kcal.toLocaleString()} XP`]
+      .filter(Boolean).join(" · ");
+  }
   const m = Math.floor(rx.restSec / 60), sec = rx.restSec % 60;
   const src = rx.loadSource === "pr" ? "from your PR" : rx.loadSource === "family" ? "from a related PR"
     : rx.loadSource === "estimate" ? "estimated for your level & weight" : rx.load == null && rx.reps && !/\bs$/.test(rx.reps) ? "pick a weight that leaves 1–2 reps" : null;
@@ -1934,6 +2160,11 @@ function planSummary(plan) {
   return groups.map(g => {
     const rx = plan.find(e => e.rx?.group === g).rx;
     const name = (MUSCLE_META[g]?.name || g).toUpperCase();
+    if (rx.cardio) {
+      const mins = plan.filter(e => e.rx?.group === g).reduce((s, e) => s + e.rx.minutes, 0);
+      return `${name} ≈ ${mins} min · week ${rx.projectedModEq} / ${rx.weeklyTarget} min target`
+        + (rx.note ? ` · ${rx.note}` : "");
+    }
     const recent = rx.recentHours != null && rx.recentHours < 48 ? ` · trained ${rx.recentHours < 24 ? "today" : "yesterday"}, dose halved` : "";
     return `${name} ≈ ${Math.round(rx.projected)} hard sets${rx.indirect >= 1 ? ` (${Math.round(rx.indirect)} indirect)` : ""}${rx.weeklyBefore >= 8 ? ` · ${Math.round(rx.weeklyBefore)} already this week` : ""}${recent}`;
   }).join(" · ") + (plan[0]?.rx?.fuel ? ` · fuel: ${plan[0].rx.fuel}` : "");
@@ -2027,13 +2258,17 @@ function ExerciseLogModal({ exercise, muscle, weightLbs, profile, onConfirm, onC
   });
   const removeSet = (i) => setSetRows(s => s.filter((_, idx) => idx !== i));
 
+  // Opened from the randomizer, the exercise carries its prescription — start
+  // the fields on the suggested dose so it can be logged in one tap.
+  const rx = exercise.rx?.cardio ? exercise.rx : null;
   const [cardioMinutes, setCardioMinutes] = useState(
     editingEntry?.cardioData?.minutes != null ? String(editingEntry.cardioData.minutes)
-      : (editingEntry && editingEntry.reps != null && exercise.type === "cardio" ? String(editingEntry.reps) : ""));
+      : (editingEntry && editingEntry.reps != null && exercise.type === "cardio" ? String(editingEntry.reps)
+      : (rx ? String(rx.minutes) : "")));
   const [speedMph, setSpeedMph] = useState(String(
-    editingEntry?.cardioData?.speedMph ?? exercise.defaultSpeed ?? 3.5));
+    editingEntry?.cardioData?.speedMph ?? rx?.speed ?? exercise.defaultSpeed ?? 3.5));
   const [stepsPerMin, setStepsPerMin] = useState(String(
-    editingEntry?.cardioData?.stepsPerMin ?? exercise.defaultSpm ?? 60));
+    editingEntry?.cardioData?.stepsPerMin ?? rx?.spm ?? exercise.defaultSpm ?? 60));
 
   const lastSession = (() => {
     if (!profile?.workouts) return null;
@@ -3004,6 +3239,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
   const runRandomizer = () => {
     if (randoMuscles.length === 0) return;
     const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff);
+    if (!combined.length) { toast("Nothing matched those filters — try another difficulty", RED); return; }
     setRandoPlan(combined); setViewMode("plan"); setRandoMode(false);
     toast(`${combined.length} exercises generated`, GOLD);
   };
@@ -3470,6 +3706,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
   const runRandomizer = () => {
     if (!randoMuscles.length) return;
     const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff);
+    if (!combined.length) { toast("Nothing matched those filters — try another difficulty", RED); return; }
     setRandoPlan(combined);
     setRandoMode(false);
     toast(`${combined.length} exercises generated — tap to log`, GOLD);

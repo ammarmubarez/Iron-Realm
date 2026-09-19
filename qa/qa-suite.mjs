@@ -452,6 +452,45 @@ await t('sched: regenerate works', async () => {
   await page.getByText('REGENERATE').first().click(); await page.waitForTimeout(700);
   ok(await has(/exercises generated|GENERATED|CHEST/i));
 });
+// v2.15 regression: ENDURANCE used to be selectable but produced an empty
+// plan, because generateWorkout filtered every cardio entry out of the pool.
+await t('sched: ENDURANCE randomizes to a real cardio session', async () => {
+  await page.getByText('RANDOMIZE', { exact: true }).first().click(); await page.waitForTimeout(600);
+  // clear the chest/back selection from the previous tests, then pick endurance
+  for (const m of ['CHEST', 'BACK']) {
+    const c = page.getByText(m, { exact: true }).first();
+    if (await c.count()) { await c.click(); await page.waitForTimeout(150); }
+  }
+  await page.getByText('ENDURANCE', { exact: true }).first().click(); await page.waitForTimeout(200);
+  ok(await has(/1 selected/), 'endurance not selectable');
+  await page.getByText('GENERATE WORKOUT').click(); await page.waitForTimeout(900);
+  ok(await has(/TODAY'S PLAN — ENDURANCE/i), 'no endurance plan generated');
+});
+await t('sched: cardio is prescribed in minutes, never in sets × reps', async () => {
+  const body = await text();
+  ok(/Suggested: \d+ min|Suggested: \d+ × \d+s hard/.test(body), 'no minute-based cardio prescription');
+  const line = (body.split('\n').find(l => /^Suggested:/.test(l.trim())) || '').trim();
+  ok(!/reps/.test(line), `cardio prescribed with a rep range: "${line}"`);
+});
+await t('sched: cardio prescription carries a heart-rate zone', async () => {
+  ok(await has(/Zone [2-5] · \d+–\d+ bpm/), 'no HR zone on the cardio prescription');
+});
+await t('sched: logging an endurance suggestion prefills the minutes', async () => {
+  await page.getByText('LOG', { exact: true }).first().click(); await page.waitForTimeout(800);
+  const mins = await page.evaluate(() => {
+    const ovl = [...document.querySelectorAll('div')].find(d => getComputedStyle(d).position === 'fixed' && /MIN|DURATION|min\b/i.test(d.innerText));
+    const inp = [...(ovl || document).querySelectorAll('input[type="number"]')]
+      .find(i => !/Calories|Protein/i.test(i.placeholder || ''));
+    return inp ? inp.value : null;
+  });
+  ok(mins && parseFloat(mins) > 0, `minutes not prefilled from the prescription (got ${JSON.stringify(mins)})`);
+  await page.evaluate(() => {
+    const ovl = [...document.querySelectorAll('div')].filter(d => getComputedStyle(d).position === 'fixed' && parseInt(getComputedStyle(d).zIndex) > 1000).pop();
+    const x = [...(ovl || document).querySelectorAll('button')].find(b => /^[×✕x]$/i.test(b.innerText.trim()));
+    if (x) x.click();
+  });
+  await page.waitForTimeout(500);
+});
 await t('sched: scrolls fully', async () => {
   const r = await scrollScreenToBottom();
   ok(!r.scrollable || r.top >= r.max - 2, `bottom ${r.top}/${r.max}`);

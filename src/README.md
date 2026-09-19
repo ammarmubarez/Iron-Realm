@@ -30,6 +30,43 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.15 — the randomizer can finally prescribe endurance
+
+ENDURANCE was selectable in the randomizer but produced nothing: the very first
+line of `generateWorkout()` ran `.filter(e => e.type !== "cardio")` over the
+candidate pool, so the `cardio` group came back empty and the plan was silently
+blank. Cardio is not dosed in sets and reps, so it gets its own engine,
+`generateCardioSession()`, which `generateWorkout()` delegates to.
+
+- **Unit: the moderate-equivalent minute.** ACSM/AHA put the floor at 150 min a
+  week of moderate activity *or* 75 min of vigorous, so a minute at ≥ 6 METs
+  counts as two. The weekly target is `150 × goal.cardioBias`, clamped to
+  0.5–1.6× — 75 min for a powerlifter, 225 for a cut, 240 for a cardio goal.
+- **Session size** = half of what's left of the week (you're not meant to clear
+  the balance in one sitting), floored at a 15-minute walk so the plan is never
+  empty, then clamped to the band the modality makes sense in (`CARDIO_BANDS`:
+  10–25 min of sprints, 25–75 min of walking).
+- **Concurrent training**: cardio blunts strength adaptation in proportion to
+  its duration and frequency, and running interferes far more than cycling
+  (Wilson 2012). With lifting in the same session, cardio caps at 30 min and
+  impact work drops 35 points in the ranking.
+- **Polarised intensity** (Seiler 2010): the picker measures the week's actual
+  easy/hard split and steers toward whichever side of 80/20 is short.
+- **Conditioning movements** (kettlebell swings, burpees, sled work…) are done
+  in rounds, not for a continuous half hour — `CARDIO_CONDITIONING_RE` caps them
+  at 20 min and prescribes `10 × 40 s hard / 80 s easy`, as does anything over
+  11 METs. The calorie figure uses the blended work+recovery MET.
+- **Zones** from HRmax = 208 − 0.7 × age (Tanaka 2001), which beats 220 − age
+  badly over 30. Output: `Suggested: 30 min at 3.5 mph` /
+  `Zone 2 · 112–131 bpm · conversational the whole way · ≈ 215 XP`.
+- `rxLine`/`rxNote`/`planSummary` branch on `rx.cardio`; `prescriptionFor()`
+  carries a defensive cardio guard so a rep range can never reach a treadmill.
+  Tapping LOG prefills the minutes and speed/step-rate from the prescription.
+- Travel mode no longer wipes out endurance: `CARDIO_NO_EQUIPMENT_RE` classes
+  burpees, jumping jacks, stairs and going for a walk as BODYWEIGHT.
+- Both randomizer screens now surface an empty result as a toast instead of
+  rendering a blank banner.
+
 ## v2.14 — maintenance measured from your own weigh-ins
 
 `data/metabolism.js`. Mifflin-St Jeor is a population average that scatters
