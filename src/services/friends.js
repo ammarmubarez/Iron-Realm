@@ -9,11 +9,12 @@ export async function fetchLeaderboard(sortBy = "weekly_xp") {
   const col = ["weekly_xp", "overall_xp", "overall_level"].includes(sortBy)
     ? sortBy
     : "weekly_xp";
-  const { data, error } = await supabase
-    .from("friend_leaderboard")
-    .select("*")
-    .order(col, { ascending: false })
-    .limit(200);
+  // A prestiged hunter is back at level 1 by choice; on the level and lifetime
+  // boards their marks rank first so the reset does not read as a demotion.
+  // The weekly board is this week's work and ignores them.
+  let q = supabase.from("friend_leaderboard").select("*");
+  if (col !== "weekly_xp") q = q.order("prestige_count", { ascending: false, nullsFirst: false });
+  const { data, error } = await q.order(col, { ascending: false }).limit(200);
   if (error) throw error;
   return data || [];
 }
@@ -63,7 +64,7 @@ export async function searchUsers(query) {
   if (q.length < 2) return [];
   const { data, error } = await supabase
     .from("profile_directory")
-    .select("user_id, username, display_name, overall_level, rank_label")
+    .select("user_id, username, display_name, overall_level, rank_label, prestige_count")
     .like("username", `${q}%`)
     .limit(10);
   if (error) throw error;
@@ -98,7 +99,7 @@ export async function fetchRequests(myUserId) {
   if (userIds.length) {
     const { data: profs } = await supabase
       .from("profile_directory")
-      .select("user_id, username, display_name, overall_level")
+      .select("user_id, username, display_name, overall_level, prestige_count")
       .in("user_id", userIds);
     (profs || []).forEach((p) => {
       profileMap[p.user_id] = p;

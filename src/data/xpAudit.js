@@ -17,7 +17,7 @@
 //   A revert is therefore cheap and lossless, and reverting is itself an event.
 
 export const XP_LOG_MAX = 250;          // keep the tail; older events age out
-export const XP_EVENT_TYPES = ["log", "edit", "delete", "revert", "import", "repair"];
+export const XP_EVENT_TYPES = ["log", "edit", "delete", "revert", "import", "repair", "prestige"];
 
 export const newWorkoutId = () =>
   `wk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -53,6 +53,7 @@ export function describeEvent(e) {
     case "revert": return `Reverted "${e.revertedType || "a change"}" on ${name} · ${amount}`;
     case "import": return `Imported data · ${amount}`;
     case "repair": return `Recalculated from the workout log · ${amount}`;
+    case "prestige": return `Prestige ${e.prestigeCount || ""} · Hunter level ${e.prestigeLevel || "?"} → 1 · ${amount}`;
     default:       return `${e.type} · ${amount}`;
   }
 }

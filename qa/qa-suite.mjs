@@ -657,6 +657,103 @@ await t('fix: atrophy banner does NOT false-flag EMG-maintained shoulders', asyn
   ok(/1 detraining/.test(body), `expected exactly 1 decaying group (cardio); tile says: ${(body.match(/\d+ detraining[^\n]*/) || ['?'])[0]}`);
 });
 
+// ═══ SUITE: CARDIO ROWS (v2.16) — a treadmill is minutes at a speed, never sets × reps ═══
+await t('cardio row: logged treadmill shows minutes + speed, not "1 sets × 30 reps"', async () => {
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('iron_realm_store_v1'));
+    const p = s.profiles[s.activeId];
+    const now = Date.now();
+    p.workouts = [...(p.workouts || []),
+      { id: 'qa_tm', date: now - 3600000, muscle: 'cardio', exerciseName: 'Treadmill',
+        exercise: { name: 'Treadmill', diff: 'beginner', type: 'cardio', cardioMode: 'speed', defaultSpeed: 3.5 },
+        sets: 1, reps: 30, weight: 185, xp: 180, cals: 180, cardioData: { minutes: 30, speedMph: 3.5, stepsPerMin: null, met: 4.3 } },
+      { id: 'qa_cy', date: now - 7200000, muscle: 'cardio', exerciseName: 'Cycling',
+        exercise: { name: 'Cycling', diff: 'intermediate', type: 'cardio', cardioMode: 'timed', met: 7.5 },
+        sets: 1, reps: 25, weight: 185, xp: 260, cals: 260 }];   // legacy entry with no cardioData
+    localStorage.setItem('iron_realm_store_v1', JSON.stringify(s));
+  });
+  await page.reload({ waitUntil: 'networkidle' }); await page.waitForTimeout(1800);
+  await nav('Schedule');
+  const body = await text();
+  ok(/30 min at 3\.5 mph · 4\.3 MET/.test(body), 'treadmill row not rendered as minutes at speed');
+  ok(/25 min · 7\.5 MET/.test(body), 'legacy cardio row (no cardioData) not rendered as minutes');
+  ok(!/1 sets × (30|25) reps/.test(body), 'a cardio entry still renders as sets × reps');
+});
+
+// ═══ SUITE: PRESTIGE (v2.16) ═══
+// Built from the LEDGER: the app rebuilds every stat from workouts on load, so
+// levels are seeded by seeding work, not by writing `levels`.
+const seedPrestigeProfile = async ({ hunter = true, balanced = true } = {}) => {
+  await page.evaluate(([hunter, balanced]) => {
+    const GROUPS = ["chest","back","legs","shoulders","bicep","tricep","forearms","core","glutes","calves"];
+    const now = Date.now();
+    const workouts = GROUPS.map((key, i) => ({
+      id: 'qa_p_' + key, date: now - (i + 1) * 3600000, muscle: key, exerciseName: 'QA ' + key,
+      exercise: { name: 'QA ' + key, type: 'strength', diff: 'intermediate', primary: key },
+      sets: 5, reps: 10, weight: 100, sets_detail: Array.from({ length: 5 }, () => ({ reps: 10, weight: 100 })),
+      xp: hunter ? 600000 : 100, cals: 100, stimMult: balanced || key !== 'forearms' ? 400 : 1 }));
+    workouts.push({ id: 'qa_p_cardio', date: now - 12 * 3600000, muscle: 'cardio', exerciseName: 'QA run',
+      exercise: { name: 'QA run', type: 'cardio', diff: 'advanced', cardioMode: 'timed', met: 12 },
+      sets: 1, reps: 60, weight: 185, xp: hunter ? 600000 : 100, cals: 100, stimMult: 100,
+      cardioData: { minutes: 60, speedMph: null, stepsPerMin: null, met: 12 } });
+    const s = JSON.parse(localStorage.getItem('iron_realm_store_v1'));
+    const p = s.profiles[s.activeId];
+    Object.assign(p, { workouts, xpLog: [], prestige: { count: 0, consumedXP: 0, history: [] },
+      cosmetics: { ...(p.cosmetics || {}), aspect: 'beast' } });
+    localStorage.setItem('iron_realm_store_v1', JSON.stringify(s));
+  }, [hunter, balanced]);
+  await page.reload({ waitUntil: 'networkidle' }); await page.waitForTimeout(1800);
+};
+await t('prestige: gate needs Hunter 55 — a balanced level-2 hunter is told how far', async () => {
+  await seedPrestigeProfile({ hunter: false });
+  await nav('Hunter');
+  const body = await text();
+  ok(/BALANCE · 11 \/ 11 AT LEVEL 10\+/.test(body), 'balance row not satisfied by the seed');
+  ok(/\d+ LEVELS TO GO/.test(body), 'button does not say how many levels are short');
+});
+await t('prestige: gate needs balance — one group under the floor is named', async () => {
+  await seedPrestigeProfile({ balanced: false });
+  await nav('Hunter');
+  const body = await text();
+  ok(/✓ HUNTER LEVEL 5\d \/ 55/.test(body), 'hunter half of the gate not met by the seed');
+  ok(/1 GROUP BELOW LEVEL 10/.test(body), 'short group not reported');
+});
+await t('prestige: consent sheet gates the button on the acknowledgement', async () => {
+  await seedPrestigeProfile();
+  await nav('Hunter');
+  await page.getByText(/^PRESTIGE → I$/).click(); await page.waitForTimeout(600);
+  const body = await text();
+  ok(/Hunter level 5\d → 1/.test(body), 'sheet does not state the reset');
+  ok(/Every muscle level, PR/.test(body), 'sheet does not state what stays');
+  ok(await page.getByText('PRESTIGE NOW', { exact: true }).isDisabled(), 'confirm enabled before acknowledgement');
+  await page.locator('input[type="checkbox"]').last().check(); await page.waitForTimeout(300);
+  ok(!(await page.getByText('PRESTIGE NOW', { exact: true }).isDisabled()), 'confirm still disabled after acknowledgement');
+});
+await t('prestige: confirming resets Hunter to 1, keeps muscle levels, logs an audit event', async () => {
+  await page.getByText('PRESTIGE NOW', { exact: true }).click(); await page.waitForTimeout(900);
+  ok(await page.locator('[data-testid="prestige-ceremony"]').count() > 0, 'no ceremony');
+  await page.locator('[data-testid="prestige-ceremony"]').click(); await page.waitForTimeout(600);
+  const p = await profile();
+  ok(p.overallLevel === 1 && p.overallXP === 0, `hunter not reset: L${p.overallLevel} / ${p.overallXP} XP`);
+  ok(p.prestige.count === 1 && p.prestige.consumedXP > 0 && p.prestige.history.length === 1, 'prestige block wrong');
+  ok(["chest","back","legs","shoulders","bicep","tricep","forearms","core","glutes","calves","cardio"].every(k => p.levels[k] >= 10), 'a muscle level was reset');
+  const last = p.xpLog[p.xpLog.length - 1];
+  ok(last && last.type === 'prestige' && last.delta < 0, 'no prestige audit event');
+  ok(/PRESTIGE I · REFORGED/.test(await text()), 'mark not shown in the header');
+});
+await t('prestige: survives reload — the rebuild subtracts the spent XP', async () => {
+  await page.reload({ waitUntil: 'networkidle' }); await page.waitForTimeout(1800);
+  const p = await profile();
+  ok(p.overallLevel === 1 && p.prestige.count === 1, `after reload: L${p.overallLevel}, count ${p.prestige?.count}`);
+});
+await t('prestige: XP log describes it and offers no UNDO', async () => {
+  await nav('Progress');
+  await page.getByText('XP log', { exact: true }).click(); await page.waitForTimeout(600);
+  const body = await text();
+  ok(/Prestige 1 · Hunter level 5\d → 1/.test(body), 'XP log line missing');
+  ok(!/Prestige 1[\s\S]{0,120}UNDO/.test(body), 'UNDO offered on a prestige');
+});
+
 // ─── report ───
 const pass = results.filter(r => r.ok).length;
 console.log(`\n══════ QA RESULTS: ${pass}/${results.length} passed ══════`);

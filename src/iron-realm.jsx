@@ -20,6 +20,7 @@ import { blankProgram, normalizeProgram, toShareCode, fromShareCode, toShareFile
 import * as programsService from "./services/programs";
 import { XP_LOG_MAX, newWorkoutId, buildEvent, appendEvent, anomalyFor, describeEvent } from "./data/xpAudit";
 import { toAuditRow } from "./data/xpAudit";
+import { PRESTIGE, tierFor, romanFor, emptyPrestige, prestigeConsumedXP, prestigeEligibility, recordPrestige } from "./data/prestige";
 import * as xpAuditService from "./services/xpAudit";
 import Button, { buttonCSS } from "./ui/Button";
 import ListGroup, { ListRow } from "./ui/ListGroup";
@@ -40,7 +41,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.15.0";
+const APP_VERSION = "2.16.0";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -182,6 +183,7 @@ const newProfile = (id, name = "Hunter") => ({
   belowFloorAckAt: null,  // when the hunter lifted the advisory calorie floor (null = capped)
   xpLog:        [],   // append-only audit of every change to the workout ledger
   cosmetics:    { unlockedTitles: [], equippedTitle: null },
+  prestige:     emptyPrestige(),   // { count, consumedXP, history } — see data/prestige.js
   patronLift:   null,   // exercise name pinned as signature lift
   createdAt: Date.now(),
 });
@@ -566,6 +568,16 @@ function cardioOf(w) {
   if (w.cardioData) return w.cardioData;
   return { minutes: w.reps || 0, met: w.exercise?.met || null };
 }
+// A logged cardio entry stores its minutes in `reps` and body weight in
+// `weight` so the ledger has one shape — it must never be rendered as
+// "1 sets × 30 reps @ 220 lb". "30 min at 3.5 mph · 4.3 MET" is what happened.
+function cardioSummary(w) {
+  const c = cardioOf(w);
+  const mins = c.minutes || w.reps || 0;
+  const at = c.speedMph > 0 ? ` at ${c.speedMph} mph` : c.stepsPerMin > 0 ? ` at ${c.stepsPerMin} steps/min` : "";
+  const met = c.met || w.exercise?.met;
+  return `${mins} min${at}${met ? ` · ${Number(met).toFixed(1)} MET` : ""}`;
+}
 
 // Rebuild every derived stat from the workout ledger — the one source of
 // truth. Used on load, on log, on edit and on delete, so stats can never drift
@@ -633,6 +645,11 @@ function rebuildProfileStats(p) {
   const newSubStats = {};
   Object.entries(subEvents).forEach(([k, evts]) => { newSubStats[k] = atrophiedXP(evts, atrophyParams(k, p)); });
   newOverallXP += mindOverallBonus(p.mindLog);
+  // Prestige: XP already spent on marks is subtracted here and only here, so
+  // the ledger stays whole (muscle levels, PRs and the audit trail are built
+  // from it) while the Hunter level restarts. Clamped — deleting workouts
+  // after a prestige cannot push the total negative or mint XP back.
+  newOverallXP = Math.max(0, newOverallXP - prestigeConsumedXP(p));
   const newLevels = Object.fromEntries(Object.keys(newStats).map(k => [k, getMuscleLevel(newStats[k] || 0)]));
   const tl = getPRTimeline(workouts);
   const newPrs = Object.fromEntries(Object.entries(tl).map(([n, evts]) => [n, evts[evts.length - 1].e1rm]));
@@ -905,6 +922,29 @@ function getRank(level) {
   };
 }
 
+
+// ─── PRESTIGE EMBLEM ─────────────────────────────────────────────────────────
+// A shared hexagonal frame with a tier-specific mark inside, so the shape says
+// the tier before the numeral does. Renders nothing for an unprestiged hunter.
+function PrestigeEmblem({ count, size = 28, withName = false, style }) {
+  const tier = tierFor(count);
+  if (!tier) return null;
+  const c = tier.color;
+  return (
+    <span title={`Prestige ${romanFor(count)} · ${tier.name}`} aria-label={`Prestige ${count}, ${tier.name}`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, ...style }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block", filter: `drop-shadow(0 0 ${size / 6}px ${c}66)` }}>
+        <path d="M12 1.5 L21.5 7 V17 L12 22.5 L2.5 17 V7 Z" fill={`${c}1f`} stroke={c} strokeWidth="1.4" strokeLinejoin="round" />
+        <path d={tier.mark} fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fillRule="evenodd" />
+      </svg>
+      {withName && (
+        <span style={{ fontFamily: FONT_DISPLAY, fontSize: Math.max(8, size * 0.36), fontWeight: 700, letterSpacing: TRACK, color: c, whiteSpace: "nowrap" }}>
+          PRESTIGE {romanFor(count)} · {tier.name.toUpperCase()}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function auraUnlocked(aura, level) { return (level || 1) >= aura.minLevel; }
 
@@ -1434,6 +1474,161 @@ function LevelUpCeremony({ level, settings, onDone }) {
       <div style={{ position: "absolute", bottom: 48, fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
         color: MUTED, letterSpacing: TRACK, animation: "fadeIn .4s ease-out 1.2s both" }}>TAP TO CONTINUE</div>
     </div>, document.body)
+  );
+}
+
+// The prestige moment. Same stage as the level-up ceremony, but it is the mark
+// that slams in, not a number — the number just went back to 1.
+function PrestigeCeremony({ count, onDone }) {
+  const tier = tierFor(count) || tierFor(1);
+  useEffect(() => {
+    const t = setTimeout(onDone, 4200);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  const parts = useMemo(() => Array.from({ length: 34 }, () => ({
+    tx: (Math.random() - 0.5) * 420, ty: (Math.random() - 0.5) * 420,
+    d: 0.6 + Math.random() * 1.0, delay: Math.random() * 0.3, gold: Math.random() < 0.35,
+  })), []);
+  return createPortal(
+    <div onClick={onDone} data-testid="prestige-ceremony" style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 3000,
+      display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", cursor: "pointer",
+      background: "radial-gradient(circle at 50% 45%, rgba(3,6,15,.6), rgba(3,6,15,.97))", animation: "fadeIn .25s ease-out both" }}>
+      {[0, 0.2, 0.4].map((d, i) => (
+        <div key={i} style={{ position: "absolute", width: 140, height: 140, borderRadius: "50%",
+          border: `2px solid ${tier.color}`, animation: `shockwave 1.2s cubic-bezier(.2,.7,.3,1) ${d}s both` }} />
+      ))}
+      {parts.map((p, i) => (
+        <span key={i} style={{ position: "absolute", width: 5, height: 5, borderRadius: "50%",
+          background: p.gold ? GOLD : tier.color, "--tx": `${p.tx}px`, "--ty": `${p.ty}px`,
+          animation: `burst ${p.d}s cubic-bezier(.16,1,.3,1) ${0.15 + p.delay}s both` }} />
+      ))}
+      <div className="glitch-in" style={{ fontFamily: FONT_DISPLAY, fontSize: 13, letterSpacing: TRACK, color: ACCENT, marginBottom: 18 }}>
+        PRESTIGE {romanFor(count)}
+      </div>
+      <div style={{ animation: "slamIn .6s cubic-bezier(.16,1,.3,1) .12s both" }}>
+        <PrestigeEmblem count={count} size={132} />
+      </div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 900, letterSpacing: TRACK, color: tier.color, marginTop: 18,
+        animation: "fadeIn .4s ease-out .5s both" }}>{tier.name.toUpperCase()}</div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, marginTop: 10, textAlign: "center", padding: "0 32px", lineHeight: 1.5,
+        animation: "fadeIn .4s ease-out .8s both" }}>
+        Hunter level back to 1. Your muscles remember everything.
+      </div>
+      <div style={{ position: "absolute", bottom: 48, fontFamily: "'Rajdhani',sans-serif", fontSize: 11,
+        color: MUTED, letterSpacing: TRACK, animation: "fadeIn .4s ease-out 1.2s both" }}>TAP TO CONTINUE</div>
+    </div>, document.body);
+}
+
+// Consent sheet: says exactly what changes and what does not before the
+// button does anything irreversible.
+function PrestigeConfirmSheet({ profile, onConfirm, onClose }) {
+  const [ack, setAck] = useState(false);
+  const next = (profile.prestige?.count || 0) + 1;
+  const tier = tierFor(next);
+  const xp = profile.overallXP || 0;
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, overflowY: "auto", overscrollBehavior: "contain", zIndex: 1200,
+      background: "rgba(3,6,15,0.95)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} className="slide-up" style={{
+        background: `linear-gradient(160deg, ${BG2}fc, ${BG}fa)`, border: `1px solid ${tier.color}33`, borderTop: `2px solid ${tier.color}`,
+        width: "100%", maxWidth: 480, maxHeight: "88dvh", overflowY: "auto", padding: "22px 20px 40px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <PrestigeEmblem count={next} size={44} />
+            <div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 700, color: tier.color, letterSpacing: TRACK }}>PRESTIGE {romanFor(next)}</div>
+              <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED }}>{tier.name} · your mark from here on</div>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: MUTED, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ background: BG3, border: `1px solid ${RED}33`, borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: RED, letterSpacing: TRACK, marginBottom: 6 }}>WHAT RESETS</div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: TEXT, lineHeight: 1.5 }}>
+            Hunter level <b>{profile.overallLevel}</b> → <b>1</b>. All <b>{xp.toLocaleString()}</b> Hunter XP is spent on the mark — including anything past level {PRESTIGE.hunterLevel}. Your rank letter starts again at E.
+          </div>
+        </div>
+        <div style={{ background: BG3, border: `1px solid ${GREEN}33`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: GREEN, letterSpacing: TRACK, marginBottom: 6 }}>WHAT STAYS</div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 13, color: TEXT, lineHeight: 1.5 }}>
+            Every muscle level, PR, workout, relic, title, aspect and your whole history. Your body did the work; a number resetting doesn't undo it. The prestige is recorded in your XP log.
+          </div>
+        </div>
+
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", marginBottom: 14 }}>
+          <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} style={{ marginTop: 3, accentColor: tier.color }} />
+          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: TEXT, lineHeight: 1.45 }}>
+            I understand this cannot be undone and my Hunter level returns to 1.
+          </span>
+        </label>
+        <button disabled={!ack} onClick={onConfirm} style={{ width: "100%", padding: "14px", cursor: ack ? "pointer" : "not-allowed",
+          background: ack ? `linear-gradient(90deg, ${tier.color}33, ${tier.color}22)` : DARK1,
+          border: `1px solid ${ack ? tier.color + "88" : MUTED + "33"}`, borderRadius: 10,
+          fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: ack ? tier.color : MUTED, letterSpacing: TRACK, opacity: ack ? 1 : 0.6 }}>
+          PRESTIGE NOW
+        </button>
+      </div>
+    </div>, document.body);
+}
+
+// Hunter-screen card: readiness against both halves of the gate, and the
+// button once both are met. Shows what is short rather than a bare "no".
+function PrestigeCard({ st, onPrestige }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const elig = prestigeEligibility(st);
+  const tier = tierFor(elig.count);
+  const accent = tier?.color || GOLD;
+  const hunterPct = Math.min(1, elig.hunterLevel / PRESTIGE.hunterLevel);
+  return (
+    <div data-testid="prestige-card" style={{ background: BG2, borderRadius: 16, padding: "14px 16px 16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 600, color: MUTED, letterSpacing: TRACK_CAPS, textTransform: "uppercase" }}>Prestige</div>
+        {elig.count > 0
+          ? <PrestigeEmblem count={elig.count} size={22} withName />
+          : <span style={{ fontFamily: FONT_DISPLAY, fontSize: 9, color: MUTED, letterSpacing: TRACK }}>NO MARK YET</span>}
+      </div>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 12, color: MUTED, lineHeight: 1.45, marginBottom: 12 }}>
+        Reach Hunter level {PRESTIGE.hunterLevel} with every muscle group and endurance at level {PRESTIGE.muscleFloor}+ to prestige. Hunter level returns to 1 and you keep a mark; muscle levels are yours for good.
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: elig.hunterOk ? GREEN : TEXT, letterSpacing: TRACK }}>
+          {elig.hunterOk ? "✓ " : ""}HUNTER LEVEL {elig.hunterLevel} / {PRESTIGE.hunterLevel}
+        </span>
+        <span style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{Math.round(hunterPct * 100)}%</span>
+      </div>
+      <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,.08)", overflow: "hidden", marginBottom: 12 }}>
+        <div style={{ width: `${Math.round(hunterPct * 100)}%`, height: "100%", background: elig.hunterOk ? GREEN : accent, transition: "width .6s cubic-bezier(.16,1,.3,1)" }} />
+      </div>
+
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: elig.short.length ? TEXT : GREEN, letterSpacing: TRACK, marginBottom: 8 }}>
+        {elig.short.length ? "" : "✓ "}BALANCE · {elig.groups.length - elig.short.length} / {elig.groups.length} AT LEVEL {PRESTIGE.muscleFloor}+
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 14 }}>
+        {elig.groups.map(g => {
+          const mm = MUSCLE_META[g.key];
+          return (
+            <div key={g.key} style={{ background: g.ok ? `${GREEN}14` : BG3, border: `1px solid ${g.ok ? GREEN + "44" : MUTED + "22"}`,
+              borderRadius: 8, padding: "6px 4px", textAlign: "center" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 7, color: g.ok ? GREEN : MUTED, letterSpacing: TRACK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {(mm?.name || g.key).toUpperCase()}
+              </div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: g.ok ? GREEN : TEXT }}>{g.level}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <button disabled={!elig.ready} onClick={() => elig.ready && setConfirmOpen(true)} style={{ width: "100%", padding: "12px", cursor: elig.ready ? "pointer" : "not-allowed",
+        background: elig.ready ? `linear-gradient(90deg, ${GOLD}33, ${GOLD}22)` : DARK1,
+        border: `1px solid ${elig.ready ? GOLD + "88" : MUTED + "33"}`, borderRadius: 10,
+        fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: elig.ready ? GOLD : MUTED, letterSpacing: TRACK, opacity: elig.ready ? 1 : 0.6 }}>
+        {elig.ready ? `PRESTIGE → ${romanFor(elig.count + 1)}` : elig.hunterOk ? `${elig.short.length} GROUP${elig.short.length === 1 ? "" : "S"} BELOW LEVEL ${PRESTIGE.muscleFloor}` : `${PRESTIGE.hunterLevel - elig.hunterLevel} LEVELS TO GO`}
+      </button>
+      {confirmOpen && <PrestigeConfirmSheet profile={st} onClose={() => setConfirmOpen(false)}
+        onConfirm={() => { setConfirmOpen(false); onPrestige(); }} />}
+    </div>
   );
 }
 
@@ -2979,7 +3174,10 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                         }}>DEL</button>
                       </div>
                     </div>
-                    {w.sets_detail && (
+                    {w.exercise?.type === "cardio" && (
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{cardioSummary(w)}</div>
+                    )}
+                    {w.exercise?.type !== "cardio" && w.sets_detail && (
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
                         {w.sets_detail.map((s, si) => (
                           <span key={si} style={{
@@ -2990,7 +3188,7 @@ function FreeWorkoutScreen({ st, onLogExercise, onUnlogExercise, settings, toast
                         ))}
                       </div>
                     )}
-                    {!w.sets_detail && w.sets && (
+                    {w.exercise?.type !== "cardio" && !w.sets_detail && w.sets && (
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
                         {w.sets} sets × {w.reps} reps{w.weight ? ` @ ${wtVal(w.weight)}${wtLabel()}` : ""}
                       </div>
@@ -4094,7 +4292,10 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                           color: RED, letterSpacing: TRACK }}>DEL</button>
                       </div>
                     </div>
-                    {w.sets_detail && (
+                    {w.exercise?.type === "cardio" && (
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>{cardioSummary(w)}</div>
+                    )}
+                    {w.exercise?.type !== "cardio" && w.sets_detail && (
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
                         {w.sets_detail.map((s, si) => (
                           <span key={si} style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10,
@@ -4104,7 +4305,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
                         ))}
                       </div>
                     )}
-                    {!w.sets_detail && w.sets && (
+                    {w.exercise?.type !== "cardio" && !w.sets_detail && w.sets && (
                       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
                         {w.sets} sets × {w.reps} reps{w.weight ? ` @ ${wtVal(w.weight)}${wtLabel()}` : ""}
                       </div>
@@ -8713,7 +8914,7 @@ function ProgressScreen({ st, onRevertXpEvent }) {
 }
 
 function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProfile, onUpdateProfile, onSetPatronLift, toast,
-                          settings, onUpdateSettings, onLogMind, onAddMindTask, onRemoveMindTask, onToggleMindTask }) {
+                          settings, onUpdateSettings, onLogMind, onAddMindTask, onRemoveMindTask, onToggleMindTask, onPrestige }) {
   const st = store.profiles[store.activeId];
   const rank = getRank(st.overallLevel);
   const { current, needed } = getLevelFromXP(st.overallXP);
@@ -8790,10 +8991,13 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: TEXT, lineHeight: 1.1,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.name}</div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, padding: "3px 10px",
-              borderRadius: 999, background: `${rank.color}1a`, border: `1px solid ${rank.color}22` }}>
-              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: rank.color }}>{rank.rank}</span>
-              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: TEXT }}>{rank.label}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px",
+                borderRadius: 999, background: `${rank.color}1a`, border: `1px solid ${rank.color}22` }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: rank.color }}>{rank.rank}</span>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12, color: TEXT }}>{rank.label}</span>
+              </div>
+              <PrestigeEmblem count={st.prestige?.count || 0} size={20} withName />
             </div>
           </div>
         </div>
@@ -8813,6 +9017,11 @@ function CharacterScreen({ store, onSwitchProfile, onCreateProfile, onDeleteProf
         <div className="card-in card-in-2" style={{ background: BG2, borderRadius: 16, padding: "14px 8px 6px", marginBottom: 18 }}>
           <div style={{ padding: "0 8px" }}>{sectionHead("Body matrix")}</div>
           <BodyFigure levels={st.levels} subLevels={subMuscleLevels} gender={st.gender} highlight={selectedMuscle} />
+        </div>
+
+        {/* ── PRESTIGE (v2.16) ── */}
+        <div className="card-in card-in-2" style={{ marginBottom: 18 }}>
+          <PrestigeCard st={st} onPrestige={onPrestige} />
         </div>
 
         {/* ── MIND & SPIRIT (moved here from Home in v2.1) ── */}
@@ -9167,7 +9376,15 @@ function ProfileViewerModal({ profile, isAdmin, viewHidden, onClose, onToggleHid
               fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 900, color: rc,
             }}>{profile.rank_label || "E"}</div>
             <div>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: ACCENT }}>@{profile.username}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: ACCENT }}>@{profile.username}</div>
+                <PrestigeEmblem count={profile.prestige_count || 0} size={18} />
+              </div>
+              {(profile.prestige_count || 0) > 0 && (
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 8, letterSpacing: TRACK, color: tierFor(profile.prestige_count)?.color, marginTop: 2 }}>
+                  PRESTIGE {romanFor(profile.prestige_count)} · {tierFor(profile.prestige_count)?.name.toUpperCase()}
+                </div>
+              )}
               {profile.equipped_title && (
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 11, color: GOLD, fontStyle: "italic", marginTop: 2 }}>
                   {profile.equipped_title}
@@ -9514,12 +9731,13 @@ function LeaderboardScreen({ account, toast }) {
                   <div title={`Active ${_timeAgo(row.updated_at)}`} style={{
                     width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
                     background: _activityColor(row.updated_at),
-                    
+
                   }} />
                   <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, letterSpacing: TRACK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     <AuraName name={`@${row.username}${isMe ? " ◈" : ""}`}
                       level={row.overall_level} color={isMe ? ACCENT : (row.banner_color || TEXT)} />
                   </div>
+                  <PrestigeEmblem count={row.prestige_count || 0} size={16} />
                 </div>
                 {row.equipped_title && (
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: GOLD, fontStyle: "italic", marginTop: 1 }}>
@@ -9732,7 +9950,10 @@ function FriendsScreen({ account, toast }) {
                   fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 900, color: rc,
                 }}>{u.rank_label || "E"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: TEXT }}>@{u.username}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, color: TEXT }}>@{u.username}</div>
+                    <PrestigeEmblem count={u.prestige_count || 0} size={14} />
+                  </div>
                   <div style={{ fontFamily: "'Rajdhani',sans-serif", fontSize: 10, color: MUTED }}>
                     LVL {u.overall_level}{!canView ? " · profile locked" : ""}
                   </div>
@@ -10327,6 +10548,27 @@ export default function IronRealm() {
 
   // Undo one audit event: drop what it added, restore what it removed. Because
   // every stat is derived from the ledger, putting the ledger back is enough.
+  // Prestige: spend the Hunter XP on a mark. Eligibility is re-checked on the
+  // profile being written, not the one that rendered the button, and the
+  // subtraction happens inside the one rebuild path so the ledger stays whole.
+  const [prestigeCeremony, setPrestigeCeremony] = useState(null);
+  const handlePrestige = () => {
+    let awarded = 0;
+    updateActive(p => {
+      const elig = prestigeEligibility(p);
+      if (!elig.ready) return p;
+      const before = p.overallXP || 0;
+      const prestige = recordPrestige(p.prestige, { level: p.overallLevel, xp: before });
+      const next = withRebuiltStats({ ...p, prestige });
+      const event = buildEvent({ type: "prestige", overallBefore: before, overallAfter: next.overallXP || 0, source: "hunter",
+        extra: { prestigeCount: prestige.count, prestigeLevel: p.overallLevel, prestigeId: prestige.history[prestige.history.length - 1].id } });
+      awarded = prestige.count;
+      return { ...next, xpLog: appendEvent(next.xpLog, event) };
+    });
+    if (awarded > 0) setTimeout(() => setPrestigeCeremony(awarded), 250);
+    else toast("Not eligible to prestige yet", RED);
+  };
+
   const handleRevertXpEvent = (eventId) => {
     updateActive(p => {
       const event = (p.xpLog || []).find(e => e.id === eventId);
@@ -10593,6 +10835,7 @@ export default function IronRealm() {
       <Toasts toasts={toasts} />
       {awakeningPending && <AwakeningModal onChoose={handleChooseAspect} />}
       {ceremonyLevel && <LevelUpCeremony level={ceremonyLevel} settings={settings} onDone={() => setCeremonyLevel(null)} />}
+      {prestigeCeremony && !ceremonyLevel && <PrestigeCeremony count={prestigeCeremony} onDone={() => setPrestigeCeremony(null)} />}
       {relicDrop && !ceremonyLevel && <RelicDropModal relic={relicDrop}
         onEquip={() => { const id = relicDrop.id; updateActive(p => ({ ...p, cosmetics: { ...(p.cosmetics || {}), equippedRelic: id } })); toast(`${relicDrop.name} equipped`, RELIC_FRAME_COLORS[id]); setRelicDrop(null); }}
         onClose={() => setRelicDrop(null)} />}
@@ -10602,7 +10845,7 @@ export default function IronRealm() {
       {screen === "workout"   && <FreeWorkoutScreen st={st} onLogExercise={handleLogExercise} onUnlogExercise={handleUnlogExercise} settings={settings} toast={toast} />}
       {screen === "database"  && <DatabaseScreen st={st} onLogExercise={handleLogExercise} onSaveCustomExercise={handleSaveCustomExercise} onToggleBookmark={handleToggleBookmark} settings={settings} toast={toast} />}
       {screen === "character" && <CharacterScreen store={store} onSwitchProfile={handleSwitchProfile} onCreateProfile={handleCreateProfile} onDeleteProfile={handleDeleteProfile} onUpdateProfile={handleUpdateProfile} onSetPatronLift={handleSetPatronLift} toast={toast}
-        settings={settings} onUpdateSettings={handleUpdateSettings} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} />}
+        settings={settings} onUpdateSettings={handleUpdateSettings} onLogMind={handleLogMind} onAddMindTask={handleAddMindTask} onRemoveMindTask={handleRemoveMindTask} onToggleMindTask={handleToggleMindTask} onPrestige={handlePrestige} />}
       {screen === "progress"  && <ProgressScreen st={st} onRevertXpEvent={handleRevertXpEvent} />}
       {screen === "program"     && <ProgramScreen st={st} onSelectProgram={handleSelectProgram} onSaveCustomProgram={handleSaveCustomProgram} setScreen={setScreen} toast={toast} account={account} onInboxCount={setProgramInbox} />}
       {screen === "leaderboard" && <LeaderboardScreen account={account} toast={toast} />}

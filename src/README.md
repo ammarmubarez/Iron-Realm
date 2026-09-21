@@ -30,6 +30,46 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.16 — prestige, and cardio rows that read as cardio
+
+`data/prestige.js` + `PrestigeEmblem` / `PrestigeCard` / `PrestigeConfirmSheet`
+/ `PrestigeCeremony` in `iron-realm.jsx`, migration `014_prestige.sql`.
+
+- **Gate**: Hunter level `PRESTIGE.hunterLevel` (55) AND every muscle group plus
+  endurance at level `PRESTIGE.muscleFloor` (10). Muscle level 55 is ~10,200 hard
+  sets per muscle — ~13 years each — so "all muscles to 55" would never fire;
+  the floor still forbids prestiging on bench and curls. Levels are
+  post-atrophy: a detrained group can drop back under the floor.
+- **Hunter XP is per-level, not cumulative.** `OVERALL_THRESHOLDS[n]` is the
+  cost of level n+1 (500 × n^1.6), so level 55 is ~6.29 M kcal — ~67 years at
+  1,800 kcal of logged training a week. Level 20 ≈ 434 k (~4.6 yr), level 30 ≈
+  1.27 M (~13.6 yr). The gate is a constant; set it for the horizon you want.
+- **What resets**: Hunter XP → 0 (level 1, rank E). **What does not**: muscle
+  levels, PRs, workouts, relics, titles, aspect. Muscle levels are a biological
+  state that drives `tierFromLevel`, the randomizer dose and atrophy — a number
+  resetting does not make a chest smaller.
+- **How the XP is spent**: the ledger is the source of truth and
+  `rebuildProfileStats` re-derives Hunter XP on every change, so a prestige
+  cannot "set XP to 0". Each prestige records what it consumed and the rebuild
+  subtracts the running total (`prestigeConsumedXP`), clamped at 0 — deleting
+  workouts afterwards cannot mint XP back. It is a `prestige` event in the XP
+  log with no UNDO.
+- **Marks**: ten tiers (Reforged → Eternal), a shared hexagonal frame with a
+  distinct inner mark and colour per tier so it reads without the numeral.
+  Shown in the Hunter header, the prestige card, leaderboard rows, friend
+  profiles and search results. The server mirrors only `prestige_count`.
+- **Leaderboard**: level and lifetime boards order by marks first, so a
+  prestiged hunter at level 1 is not shown as demoted; the weekly board ignores
+  marks.
+- **Cardio rows**: a logged cardio entry stores minutes in `reps` and body
+  weight in `weight` (one ledger shape), and the Schedule / Home rows rendered
+  that as "1 sets × 30 reps @ 220 lb". `cardioSummary(w)` now renders
+  "30 min at 3.5 mph · 4.3 MET" (speed), "… at 60 steps/min" (stepping) or
+  "25 min · 7.5 MET", including legacy entries with no `cardioData`.
+- Migration 014 also widens the `xp_audit.type` CHECK to accept `prestige`.
+  Until it runs, audit rows from a prestiged device fail the CHECK and that
+  device's audit batch stops mirroring.
+
 ## v2.15 — the randomizer can finally prescribe endurance
 
 ENDURANCE was selectable in the randomizer but produced nothing: the very first

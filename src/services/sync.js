@@ -69,6 +69,7 @@ export function buildSnapshotFromLocal(localProfile, settings = {}) {
     rank_label:     _rankLetter(level),
     overall_level:  level,
     overall_xp:     localProfile.overallXP || 0,
+    prestige_count: Math.max(0, Math.min(10, localProfile.prestige?.count || 0)),
     weekly_xp:      sumWeeklyXP(workouts),
     total_workouts: workouts.length,
     prs:            localProfile.prs || {},
