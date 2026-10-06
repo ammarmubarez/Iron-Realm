@@ -30,6 +30,28 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.16.2 — the randomizer uses the whole database
+
+Chest has 40 exercises; across 40 generated plans only 15 ever appeared and
+eight presses took most slots — no push-ups, no dips, two fly sightings.
+
+- **Goal bias was multiplicative** on the whole score (cut: compounds ×1.5,
+  isolation ×1.2, calisthenics ×1.0) — a 30–50 point wall. It is now an
+  additive nudge bounded to ±20 (`biasFor`), so the goal still tilts the
+  session without fencing off categories.
+- **Tier distance** costs 8 points a step instead of 10.
+- **Wildcard slot** (`"*"`): once two pressing patterns are in, a fly / cable /
+  push-up variant gets +15 — the lengthened-position stimulus with less joint
+  load than a third press (Schoenfeld 2021; Pedrosa 2022).
+- **Sampling** widened to the top six within 40 points.
+- **Anchor guarantee**: a session always carries at least one multi-joint lift;
+  if sampling produces three isolation picks, the weakest is swapped for the
+  best compound still available. Applies to every group.
+
+Result (40 plans, level 1 cut): 24 distinct chest lifts, presses still the
+most common, flyes/push-ups in rotation; level 20 draws dips, archer and ring
+push-ups. Same picker and bias apply to every group.
+
 ## v2.16.1 — REGENERATE regenerates
 
 The randomizer's score added `Math.random() * 20` to a deterministic score

@@ -41,7 +41,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.16.1";
+const APP_VERSION = "2.16.2";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -2235,17 +2235,28 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
   const goalCfg = GOAL_CONFIG[goal] || { compoundBias: 1.0, isoBias: 1.0, calistBias: 1.0 };
   const diffMap = { beginner: 1, intermediate: 2, advanced: 3, elite: 4 };
   const userTier = Math.min(4, Math.ceil((overallLevel || 1) / 10));
-  const score = (ex, region) => {
+  // Goal bias used to MULTIPLY the whole score (cut: compounds ×1.5, isolation
+  // ×1.2, calisthenics ×1.0) — a 30–50 point wall that no fly, pec deck, dip or
+  // push-up could climb, so chest drew on ~8 of its 40 lifts. It is now an
+  // additive nudge, bounded to ±20: the goal still tilts the session, it no
+  // longer fences off whole categories.
+  const biasFor = (ex) => {
+    const b = ex.type === "calisthenics" ? goalCfg.calistBias : isCompoundLift(ex) ? goalCfg.compoundBias : goalCfg.isoBias;
+    return Math.max(-20, Math.min(20, 15 * ((b ?? 1) - 1)));
+  };
+  const score = (ex, region, picked = []) => {
     let s = 100 + recoveryPenalty(ex.name);
-    s -= Math.abs(userTier - (diffMap[ex.diff] || 2)) * 10;
-    if (ex.type === "calisthenics") s *= goalCfg.calistBias;
-    else if (isCompoundLift(ex))    s *= goalCfg.compoundBias;
-    else                            s *= goalCfg.isoBias;
+    s -= Math.abs(userTier - (diffMap[ex.diff] || 2)) * 8;
+    s += biasFor(ex);
     // prefer the lift that loads THIS group hardest, and the slot's region hardest
     s += 30 * (statCredits(ex, ex.primary)[muscle] || 0);
     // prefer lifts with a stored 1RM: the load can be prescribed and overload tracked
     if (profile?.prs?.[ex.name] > 0) s += 15;
     if (region && region !== "*") s += 0.2 * ((emgFor(ex) || {})[region] || 0);
+    // Wildcard slot after two pressing patterns: a fly / cable / push-up variant
+    // adds the lengthened-position stimulus with less joint load than a third
+    // press (Schoenfeld 2021 on variation; Pedrosa 2022 on long-length work).
+    if (region === "*" && picked.filter(isCompoundLift).length >= 2 && !isCompoundLift(ex)) s += 15;
     if (avoid.has(ex.name)) s -= AVOID_PENALTY;   // soft: a tiny pool can still reuse it
     return s + Math.random() * 20;
   };
@@ -2275,13 +2286,25 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
   const slots = direct <= 6 ? baseSlots.slice(0, 2) : direct >= 12 ? [...baseSlots, "*"] : baseSlots;
   const selected = [], used = new Set();
   const pickFrom = (cands, region) => {
-    const best = pickRanked(cands.filter(e => !used.has(e.name)), e => score(e, region));
+    const best = pickRanked(cands.filter(e => !used.has(e.name)), e => score(e, region, selected));
     if (best) { selected.push(best); used.add(best.name); }
     return !!best;
   };
   for (const region of slots) {
     if (region === "*" || !pickFrom(allDB.filter(e => ((emgFor(e) || {})[region] || 0) >= 85), region)) {
       pickFrom(allDB, "*");   // no lift leads that region under the current filters — take the best remaining
+    }
+  }
+  // A session anchors on at least one multi-joint lift — it carries the heavy
+  // stimulus and is the thing progressive overload is tracked on. With wider
+  // sampling, three isolation picks in a row is possible; swap the weakest for
+  // the best compound still on the table.
+  if (!selected.some(isCompoundLift)) {
+    const anchor = pickRanked(allDB.filter(e => isCompoundLift(e) && !used.has(e.name)), e => score(e, "*", selected));
+    if (anchor) {
+      const weakest = [...selected].sort((x, y) => (statCredits(x, x.primary)[muscle] || 0) - (statCredits(y, y.primary)[muscle] || 0))[0];
+      selected.splice(selected.indexOf(weakest), 1, anchor);
+      used.add(anchor.name);
     }
   }
   // compounds first: heavy multi-joint work before isolation
@@ -2332,8 +2355,8 @@ function buildRandomPlan(muscles, st, settings, diff, avoidNames = []) {
 // so a ±20 jitter alone never changed the winner and "regenerate" returned the
 // same lifts in a different order. Candidates within REROLL_BAND of the best
 // are sampled by rank weight — the best is still the most likely, not the only.
-const REROLL_BAND = 35;
-const REROLL_WEIGHTS = [1, 0.6, 0.35, 0.2];
+const REROLL_BAND = 40;
+const REROLL_WEIGHTS = [1, 0.75, 0.55, 0.4, 0.3, 0.22];
 const AVOID_PENALTY = 45;    // the plan being regenerated
 function pickRanked(cands, scoreFn) {
   if (!cands.length) return null;
