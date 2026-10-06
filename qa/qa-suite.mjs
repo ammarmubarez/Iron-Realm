@@ -452,6 +452,19 @@ await t('sched: regenerate works', async () => {
   await page.getByText('REGENERATE').first().click(); await page.waitForTimeout(700);
   ok(await has(/exercises generated|GENERATED|CHEST/i));
 });
+// v2.16.1 regression: the jitter never outweighed the deterministic score, so
+// REGENERATE returned the same lifts in a different order.
+await t('sched: regenerate proposes different lifts, not a reshuffle', async () => {
+  const names = async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('ir_rando_plan') || '{}').plan || [])).map(e => e.name).sort().join('|');
+  const first = await names();
+  let changed = false;
+  for (let i = 0; i < 3 && !changed; i++) {
+    await page.getByText('REGENERATE').first().click(); await page.waitForTimeout(600);
+    changed = (await names()) !== first;
+  }
+  ok(first.length > 0, 'no plan stored');
+  ok(changed, `three regenerates returned the same set: ${first}`);
+});
 // v2.15 regression: ENDURANCE used to be selectable but produced an empty
 // plan, because generateWorkout filtered every cardio entry out of the pool.
 await t('sched: ENDURANCE randomizes to a real cardio session', async () => {
@@ -662,12 +675,14 @@ await t('cardio row: logged treadmill shows minutes + speed, not "1 sets × 30 r
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem('iron_realm_store_v1'));
     const p = s.profiles[s.activeId];
-    const now = Date.now();
+    // Anchor to today's first minute, not "an hour ago": run just after
+    // midnight, an hour ago is yesterday and the row is on the wrong day tab.
+    const now = new Date().setHours(0, 2, 0, 0);
     p.workouts = [...(p.workouts || []),
-      { id: 'qa_tm', date: now - 3600000, muscle: 'cardio', exerciseName: 'Treadmill',
+      { id: 'qa_tm', date: now + 3600000, muscle: 'cardio', exerciseName: 'Treadmill',
         exercise: { name: 'Treadmill', diff: 'beginner', type: 'cardio', cardioMode: 'speed', defaultSpeed: 3.5 },
         sets: 1, reps: 30, weight: 185, xp: 180, cals: 180, cardioData: { minutes: 30, speedMph: 3.5, stepsPerMin: null, met: 4.3 } },
-      { id: 'qa_cy', date: now - 7200000, muscle: 'cardio', exerciseName: 'Cycling',
+      { id: 'qa_cy', date: now + 1800000, muscle: 'cardio', exerciseName: 'Cycling',
         exercise: { name: 'Cycling', diff: 'intermediate', type: 'cardio', cardioMode: 'timed', met: 7.5 },
         sets: 1, reps: 25, weight: 185, xp: 260, cals: 260 }];   // legacy entry with no cardioData
     localStorage.setItem('iron_realm_store_v1', JSON.stringify(s));

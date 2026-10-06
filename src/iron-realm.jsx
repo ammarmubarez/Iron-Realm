@@ -41,7 +41,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.16.0";
+const APP_VERSION = "2.16.1";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -2079,7 +2079,7 @@ function weeklyCardioLoad(workouts) {
   return { modEq, easyMin, hardMin, lastDate, hardShare: total > 0 ? hardMin / total : 0 };
 }
 
-function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan) {
+function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, avoid = new Set()) {
   const workouts = profile?.workouts || [];
   let pool = [...(EXERCISE_DB.cardio || []),
               ...(profile?.customExercises || []).filter(e => e.type === "cardio")];
@@ -2140,6 +2140,7 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan) 
     if (easyOnly) s -= met >= CARDIO_DOSE.vigorousMET ? 40 : 0;
     else if (wantHard) s += met >= 9 ? 22 : 0;
     else s -= met >= 9 ? 25 : 0;
+    if (avoid.has(ex.name)) s -= AVOID_PENALTY;
     return s + Math.random() * 20;
   };
   const minutesFor = (ex, budget) => {
@@ -2153,9 +2154,8 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan) 
     return { minutes: Math.max(5, Math.round(mins / 5) * 5), met, conditioning };
   };
 
-  const ranked = [...pool].sort((a, b) => score(b, false) - score(a, false));
   const pieces = [];
-  const first = ranked[0];
+  const first = pickRanked(pool, e => score(e, false));
   if (!first) return [];
   pieces.push({ ex: first, ...minutesFor(first, modEq) });
   const spent = pieces[0].minutes * (pieces[0].met >= CARDIO_DOSE.vigorousMET ? 2 : 1);
@@ -2163,7 +2163,7 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan) 
   // Still owed real time after the first piece has hit its sensible ceiling?
   // Finish on a second, easier modality rather than doubling down on impact.
   if (leftover >= CARDIO_DOSE.splitLeftoverMin && !lifting) {
-    const second = [...pool].filter(e => e.name !== first.name).sort((a, b) => score(b, true) - score(a, true))[0];
+    const second = pickRanked(pool.filter(e => e.name !== first.name), e => score(e, true));
     if (second) pieces.push({ ex: second, ...minutesFor(second, leftover) });
   }
 
@@ -2200,9 +2200,9 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan) 
   });
 }
 
-function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = null, priorPlan = []) {
+function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = null, priorPlan = [], avoid = new Set()) {
   // Endurance has its own engine — minutes at an intensity, not sets and reps.
-  if (muscle === "cardio") return generateCardioSession(profile, diffFilter, travelEquipment, priorPlan);
+  if (muscle === "cardio") return generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, avoid);
   const workouts = profile?.workouts || [], customExercises = profile?.customExercises || [], overallLevel = profile?.overallLevel || 1, goal = profile?.goal;
   let allDB = [...(EXERCISE_DB[muscle] || []), ...(customExercises || []).filter(e => e.primary === muscle)]
     .filter(e => e.type !== "cardio");
@@ -2246,6 +2246,7 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
     // prefer lifts with a stored 1RM: the load can be prescribed and overload tracked
     if (profile?.prs?.[ex.name] > 0) s += 15;
     if (region && region !== "*") s += 0.2 * ((emgFor(ex) || {})[region] || 0);
+    if (avoid.has(ex.name)) s -= AVOID_PENALTY;   // soft: a tiny pool can still reuse it
     return s + Math.random() * 20;
   };
 
@@ -2274,7 +2275,7 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
   const slots = direct <= 6 ? baseSlots.slice(0, 2) : direct >= 12 ? [...baseSlots, "*"] : baseSlots;
   const selected = [], used = new Set();
   const pickFrom = (cands, region) => {
-    const best = cands.filter(e => !used.has(e.name)).sort((x, y) => score(y, region) - score(x, region))[0];
+    const best = pickRanked(cands.filter(e => !used.has(e.name)), e => score(e, region));
     if (best) { selected.push(best); used.add(best.name); }
     return !!best;
   };
@@ -2314,13 +2315,34 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
 
 // Shared by both randomizer screens: build the groups in order so later groups
 // see the indirect work earlier ones already provide (bench → triceps).
-function buildRandomPlan(muscles, st, settings, diff) {
+// `avoidNames` is the plan being replaced: REGENERATE should propose
+// alternatives, not reshuffle the same lifts.
+function buildRandomPlan(muscles, st, settings, diff, avoidNames = []) {
   const acc = [];
+  const avoid = new Set(avoidNames);
   for (const m of muscles) {
-    const plan = generateWorkout(m, st, diff, settings?.travelMode ? (settings?.travelEquipment || []) : null, acc);
+    const plan = generateWorkout(m, st, diff, settings?.travelMode ? (settings?.travelEquipment || []) : null, acc, avoid);
     acc.push(...plan);
   }
   return acc;
+}
+
+// Pick from the top of a ranking instead of always taking first place. The
+// deterministic parts of a score differ by 30+ points (set credit, goal bias),
+// so a ±20 jitter alone never changed the winner and "regenerate" returned the
+// same lifts in a different order. Candidates within REROLL_BAND of the best
+// are sampled by rank weight — the best is still the most likely, not the only.
+const REROLL_BAND = 35;
+const REROLL_WEIGHTS = [1, 0.6, 0.35, 0.2];
+const AVOID_PENALTY = 45;    // the plan being regenerated
+function pickRanked(cands, scoreFn) {
+  if (!cands.length) return null;
+  const scored = cands.map(e => [scoreFn(e), e]).sort((a, b) => b[0] - a[0]);
+  const top = scored.filter(([s], i) => i < REROLL_WEIGHTS.length && s >= scored[0][0] - REROLL_BAND);
+  const total = top.reduce((sum, _, i) => sum + REROLL_WEIGHTS[i], 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < top.length; i++) { r -= REROLL_WEIGHTS[i]; if (r <= 0) return top[i][1]; }
+  return top[top.length - 1][1];
 }
 // "Suggested: 3 sets · 6–10 reps at 180 lb"
 // Cardio: "Suggested: 30 min at 3.5 mph" / "10 × 40 s hard, 80 s easy (~20 min)"
@@ -3436,7 +3458,7 @@ function DatabaseScreen({ st, onLogExercise, onSaveCustomExercise, onToggleBookm
 
   const runRandomizer = () => {
     if (randoMuscles.length === 0) return;
-    const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff);
+    const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff, (randoPlan || []).map(e => e.name));
     if (!combined.length) { toast("Nothing matched those filters — try another difficulty", RED); return; }
     setRandoPlan(combined); setViewMode("plan"); setRandoMode(false);
     toast(`${combined.length} exercises generated`, GOLD);
@@ -3903,7 +3925,7 @@ function ScheduleScreen({ st, onLogExercise, onUnlogExercise, onUpdateSchedule, 
 
   const runRandomizer = () => {
     if (!randoMuscles.length) return;
-    const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff);
+    const combined = buildRandomPlan(randoMuscles, st, settings, randoDiff, (randoPlan || []).map(e => e.name));
     if (!combined.length) { toast("Nothing matched those filters — try another difficulty", RED); return; }
     setRandoPlan(combined);
     setRandoMode(false);

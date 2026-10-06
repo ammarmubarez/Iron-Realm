@@ -30,6 +30,20 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.16.1 — REGENERATE regenerates
+
+The randomizer's score added `Math.random() * 20` to a deterministic score
+whose parts differ by 30+ points (set credit ×30, goal bias multipliers), so
+the winner of every region slot was fixed and REGENERATE only reshuffled the
+order. Two changes in `pickRanked()`:
+
+- **Rank-weighted sampling** among the top four candidates within 35 points of
+  the best (weights 1 / .6 / .35 / .2). The best lift is still the most likely
+  pick, no longer the only one. The cardio engine uses the same picker.
+- **`avoid`**: REGENERATE passes the plan it is replacing and those names take
+  a 45-point penalty — soft, so a tiny pool (forearms in travel mode) can still
+  reuse them rather than return nothing.
+
 ## v2.16 — prestige, and cardio rows that read as cardio
 
 `data/prestige.js` + `PrestigeEmblem` / `PrestigeCard` / `PrestigeConfirmSheet`
