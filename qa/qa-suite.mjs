@@ -465,15 +465,35 @@ await t('sched: regenerate proposes different lifts, not a reshuffle', async () 
   ok(first.length > 0, 'no plan stored');
   ok(changed, `three regenerates returned the same set: ${first}`);
 });
+// v2.16.3: the difficulty the hunter picks is honoured, not overridden by level.
+await t('sched: chosen difficulty is honoured (ADVANCED chest → only advanced lifts)', async () => {
+  await page.getByText('RANDOMIZE', { exact: true }).first().click(); await page.waitForTimeout(600);
+  for (const m of ['BACK']) { const c = page.getByText(m, { exact: true }).first(); if (await c.count()) { await c.click(); await page.waitForTimeout(150); } }
+  if (!(await has(/1 selected/))) { await page.getByText('CHEST', { exact: true }).first().click(); await page.waitForTimeout(150); }
+  await page.getByText('ADVANCED', { exact: true }).first().click(); await page.waitForTimeout(150);
+  await page.getByText('GENERATE WORKOUT').click(); await page.waitForTimeout(900);
+  const plan = await page.evaluate(() => JSON.parse(localStorage.getItem('ir_rando_plan') || '{}').plan || []);
+  ok(plan.length > 0, 'no plan');
+  ok(plan.every(e => e.diff === 'advanced'), `non-advanced picks: ${plan.filter(e => e.diff !== 'advanced').map(e => `${e.name} (${e.diff})`).join(', ')}`);
+});
+await t('sched: a too-small difficulty is topped up from the nearest one, and says so', async () => {
+  await page.getByText('RANDOMIZE', { exact: true }).first().click(); await page.waitForTimeout(600);
+  await page.getByText('ELITE', { exact: true }).first().click(); await page.waitForTimeout(150);
+  await page.getByText('GENERATE WORKOUT').click(); await page.waitForTimeout(900);
+  const plan = await page.evaluate(() => JSON.parse(localStorage.getItem('ir_rando_plan') || '{}').plan || []);
+  ok(plan.every(e => e.diff === 'elite' || e.diff === 'advanced'), `top-up reached past advanced: ${plan.map(e => e.diff).join(',')}`);
+  ok(await has(/only 1 elite option — topped up with advanced/), 'top-up not explained in the plan summary');
+  await page.getByText('RANDOMIZE', { exact: true }).first().click(); await page.waitForTimeout(600);
+  await page.getByText('ALL', { exact: true }).first().click(); await page.waitForTimeout(150);
+  await page.getByText('CANCEL', { exact: true }).first().click(); await page.waitForTimeout(300);
+});
 // v2.15 regression: ENDURANCE used to be selectable but produced an empty
 // plan, because generateWorkout filtered every cardio entry out of the pool.
 await t('sched: ENDURANCE randomizes to a real cardio session', async () => {
+  // CANCEL clears the selection — start clean regardless of earlier tests
   await page.getByText('RANDOMIZE', { exact: true }).first().click(); await page.waitForTimeout(600);
-  // clear the chest/back selection from the previous tests, then pick endurance
-  for (const m of ['CHEST', 'BACK']) {
-    const c = page.getByText(m, { exact: true }).first();
-    if (await c.count()) { await c.click(); await page.waitForTimeout(150); }
-  }
+  await page.getByText('CANCEL', { exact: true }).first().click(); await page.waitForTimeout(300);
+  await page.getByText('RANDOMIZE', { exact: true }).first().click(); await page.waitForTimeout(600);
   await page.getByText('ENDURANCE', { exact: true }).first().click(); await page.waitForTimeout(200);
   ok(await has(/1 selected/), 'endurance not selectable');
   await page.getByText('GENERATE WORKOUT').click(); await page.waitForTimeout(900);

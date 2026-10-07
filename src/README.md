@@ -30,6 +30,22 @@ src/
 └── services/           Supabase: auth, sync, friends, admin, cloud state, program sharing
 ```
 
+## v2.16.3 — difficulty is the hunter's choice, not their level's
+
+Two things overrode the difficulty picker:
+
+- **Level bias on every pick.** `score()` subtracted 8–10 points per step
+  between an exercise's difficulty and a "tier" derived from the Hunter level,
+  in both engines and even on ALL. Removed. On ALL, every difficulty competes
+  equally; level still scales the suggested *load* (strength standards), which
+  is physiology, not a menu filter.
+- **Silent fallback.** A chosen difficulty with fewer than 3 matches was
+  discarded wholesale for the level-weighted pool — chest has 1 elite lift,
+  biceps 1 advanced, calves 0. `applyDifficulty()` now honours the choice
+  first and tops up from the *nearest* difficulty one step at a time, each step
+  costing 30 points so an exact match always wins its slot, and the plan
+  summary says so ("only 1 elite option — topped up with advanced").
+
 ## v2.16.2 — the randomizer uses the whole database
 
 Chest has 40 exercises; across 40 generated plans only 15 ever appeared and

@@ -41,7 +41,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
 
 
-const APP_VERSION = "2.16.2";
+const APP_VERSION = "2.16.3";
 
 // ─── THEME — Iron Realm System UI ──────────────────────────────────────────────
 let ACCENT  = "#00d4ff";   // system electric cyan
@@ -2079,6 +2079,39 @@ function weeklyCardioLoad(workouts) {
   return { modEq, easyMin, hardMin, lastDate, hardShare: total > 0 ? hardMin / total : 0 };
 }
 
+// ─── DIFFICULTY IS THE HUNTER'S CHOICE (v2.16.3) ─────────────────────────────
+// The randomizer used to (a) pull every pick toward a "tier" derived from the
+// Hunter level, even on ALL, and (b) silently throw the chosen difficulty away
+// whenever fewer than 3 lifts matched it — chest has one elite lift, biceps one
+// advanced, calves none — and fall back to the level-weighted pool. Now:
+//   · ALL means all: every difficulty competes equally. Level plays no part in
+//     which lifts are picked (it still scales the suggested LOAD, via strength
+//     standards — that is physiology, not a menu filter).
+//   · A chosen difficulty is honoured first. If the group cannot fill a session
+//     from it, the gap is topped up from the nearest difficulty — never the
+//     whole database — and the plan says so.
+const DIFF_ORDER = ["beginner", "intermediate", "advanced", "elite"];
+const TOPUP_PENALTY = 30;   // per step away: an exact match always wins its slot
+function applyDifficulty(pool, diffFilter, need) {
+  if (!diffFilter || diffFilter === "all") return { pool, penalty: () => 0, note: null };
+  const want = DIFF_ORDER.indexOf(diffFilter);
+  const dist = (e) => Math.abs(DIFF_ORDER.indexOf(e.diff) - want);
+  const exact = pool.filter(e => e.diff === diffFilter);
+  if (exact.length >= need) return { pool: exact, penalty: () => 0, note: null };
+  // widen one step at a time until the session can be filled
+  let step = 1, widened = exact;
+  while (widened.length < need && step < DIFF_ORDER.length) {
+    widened = pool.filter(e => dist(e) <= step);
+    step++;
+  }
+  const extra = [...new Set(widened.filter(e => e.diff !== diffFilter).map(e => e.diff))];
+  return {
+    pool: widened,
+    penalty: (e) => TOPUP_PENALTY * dist(e),
+    note: `${exact.length ? `only ${exact.length}` : "no"} ${diffFilter} ${exact.length === 1 ? "option" : "options"} — topped up with ${extra.join("/")}`,
+  };
+}
+
 function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, avoid = new Set()) {
   const workouts = profile?.workouts || [];
   let pool = [...(EXERCISE_DB.cardio || []),
@@ -2087,10 +2120,8 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, 
     const doable = pool.filter(e => isTravelFriendly(e, travelEquipment));
     if (doable.length) pool = doable;   // no machines on the road ≠ no cardio
   }
-  if (diffFilter && diffFilter !== "all") {
-    const filtered = pool.filter(e => e.diff === diffFilter);
-    if (filtered.length >= 2) pool = filtered;
-  }
+  const diffSel = applyDifficulty(pool, diffFilter, 2);
+  pool = diffSel.pool;
   if (!pool.length) return [];
 
   // ── how many moderate-equivalent minutes this session is worth ──
@@ -2125,8 +2156,6 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, 
     const name = w.exerciseName || w.exercise?.name;
     if (name && (!lastPerformed[name] || w.date > lastPerformed[name])) lastPerformed[name] = w.date || 0;
   });
-  const diffMap = { beginner: 1, intermediate: 2, advanced: 3, elite: 4 };
-  const userTier = Math.min(4, Math.ceil((profile?.overallLevel || 1) / 10));
   // The week is short on hard minutes, nothing was done yesterday and no lift
   // is competing for recovery → this is the day for the vigorous 20 %.
   const wantHard = week.hardShare < CARDIO_DOSE.hardShareTarget
@@ -2134,7 +2163,7 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, 
   const score = (ex, easyOnly) => {
     const met = cardioMetOf(ex);
     const last = lastPerformed[ex.name];
-    let s = 100 - Math.abs(userTier - (diffMap[ex.diff] || 2)) * 8;
+    let s = 100 - diffSel.penalty(ex);
     if (last) { const h = (now - last) / HR; s += h < 24 ? -60 : h < 48 ? -20 : 0; }
     if (lifting && CARDIO_IMPACT_RE.test(ex.name)) s -= 35;
     if (easyOnly) s -= met >= CARDIO_DOSE.vigorousMET ? 40 : 0;
@@ -2194,7 +2223,7 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, 
         group: "cardio", credit: 1,
         weeklyBefore: Math.round(week.modEq), weeklyTarget,
         projectedModEq: Math.round(week.modEq + totalModEq),
-        note: notes.join(" · ") || null,
+        note: [...notes, diffSel.note].filter(Boolean).join(" · ") || null,
       },
     };
   });
@@ -2203,7 +2232,7 @@ function generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, 
 function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = null, priorPlan = [], avoid = new Set()) {
   // Endurance has its own engine — minutes at an intensity, not sets and reps.
   if (muscle === "cardio") return generateCardioSession(profile, diffFilter, travelEquipment, priorPlan, avoid);
-  const workouts = profile?.workouts || [], customExercises = profile?.customExercises || [], overallLevel = profile?.overallLevel || 1, goal = profile?.goal;
+  const workouts = profile?.workouts || [], customExercises = profile?.customExercises || [], goal = profile?.goal;
   let allDB = [...(EXERCISE_DB[muscle] || []), ...(customExercises || []).filter(e => e.primary === muscle)]
     .filter(e => e.type !== "cardio");
   if (!allDB.length) return [];
@@ -2212,10 +2241,9 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
     allDB = allDB.filter(e => isTravelFriendly(e, travelEquipment));
     if (!allDB.length) return [];
   }
-  if (diffFilter && diffFilter !== "all") {
-    const filtered = allDB.filter(e => e.diff === diffFilter);
-    allDB = filtered.length >= 3 ? filtered : allDB;
-  }
+  // 4 = the most lifts a session can ask for (3 region slots + a big-dose extra)
+  const diffSel = applyDifficulty(allDB, diffFilter, 4);
+  allDB = diffSel.pool;
 
   const now = Date.now(), HR = 3600000;
   // Most recent date each exercise was performed (any group — a bench logged
@@ -2233,8 +2261,6 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
     return h < 48 ? -65 : h < 72 ? -25 : 0;
   };
   const goalCfg = GOAL_CONFIG[goal] || { compoundBias: 1.0, isoBias: 1.0, calistBias: 1.0 };
-  const diffMap = { beginner: 1, intermediate: 2, advanced: 3, elite: 4 };
-  const userTier = Math.min(4, Math.ceil((overallLevel || 1) / 10));
   // Goal bias used to MULTIPLY the whole score (cut: compounds ×1.5, isolation
   // ×1.2, calisthenics ×1.0) — a 30–50 point wall that no fly, pec deck, dip or
   // push-up could climb, so chest drew on ~8 of its 40 lifts. It is now an
@@ -2246,7 +2272,7 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
   };
   const score = (ex, region, picked = []) => {
     let s = 100 + recoveryPenalty(ex.name);
-    s -= Math.abs(userTier - (diffMap[ex.diff] || 2)) * 8;
+    s -= diffSel.penalty(ex);
     s += biasFor(ex);
     // prefer the lift that loads THIS group hardest, and the slot's region hardest
     s += 30 * (statCredits(ex, ex.primary)[muscle] || 0);
@@ -2331,7 +2357,7 @@ function generateWorkout(muscle, profile, diffFilter = null, travelEquipment = n
     const { load, source } = loadFor(ex, rx.reps, profile);
     return { ...ex, rx: { ...rx, load, loadSource: source, credit: credits[i], group: muscle,
       projected: Math.round(total * 10) / 10, indirect: Math.round(indirect * 10) / 10, weeklyBefore: Math.round(weekly * 10) / 10,
-      recentHours: Number.isFinite(hoursSince) ? Math.round(hoursSince) : null,
+      recentHours: Number.isFinite(hoursSince) ? Math.round(hoursSince) : null, diffNote: diffSel.note,
       fuel: fuelMod.note ? `${fuelMod.note} → volume ×${fuelMod.mult.toFixed(2)}` : null } };
   });
 }
@@ -2406,7 +2432,7 @@ function planSummary(plan) {
         + (rx.note ? ` · ${rx.note}` : "");
     }
     const recent = rx.recentHours != null && rx.recentHours < 48 ? ` · trained ${rx.recentHours < 24 ? "today" : "yesterday"}, dose halved` : "";
-    return `${name} ≈ ${Math.round(rx.projected)} hard sets${rx.indirect >= 1 ? ` (${Math.round(rx.indirect)} indirect)` : ""}${rx.weeklyBefore >= 8 ? ` · ${Math.round(rx.weeklyBefore)} already this week` : ""}${recent}`;
+    return `${name} ≈ ${Math.round(rx.projected)} hard sets${rx.indirect >= 1 ? ` (${Math.round(rx.indirect)} indirect)` : ""}${rx.weeklyBefore >= 8 ? ` · ${Math.round(rx.weeklyBefore)} already this week` : ""}${recent}${rx.diffNote ? ` · ${rx.diffNote}` : ""}`;
   }).join(" · ") + (plan[0]?.rx?.fuel ? ` · fuel: ${plan[0].rx.fuel}` : "");
 }
 
